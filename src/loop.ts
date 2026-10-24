@@ -22,22 +22,25 @@ import { fingerprint, loadDeferrals, stillDeferred, type DeferralState } from '.
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
 
 /**
- * One claimed item, start to finish.
+ * How `runItem`, below, works one claimed item from start to finish.
  *
  * The rule this exists to enforce: **an Igor never goes silent on something it claimed.** The
- * claim told other people to stand off, so every exit from here either produces an artifact,
- * posts a handoff, or posts a receipt. Releasing quietly is not among the outcomes.
+ * claim told other people to stand off, so every exit from a claimed run does one of three
+ * things: it produces an artifact, posts a handoff (a comment saying what was done and what is
+ * left, followed by the release), or posts a receipt (the one-line answer to a stop). None
+ * releases quietly.
  *
- * A failure is never retried in silence. Everyone has backed off a claimed item, so a quiet
- * retry loop leaves it with nothing happening and nothing said. Where a retry is cheap the item
- * is refused and tried again next cycle, with a handoff saying so; where it is not, the item is
- * handed off and waits for an answer.
+ * A failure is never retried in silence. Everyone else stands off a claimed item, so a quiet
+ * retry loop would leave it with nothing happening and nothing said. Where a retry is cheap, the
+ * run is reported as refused and the item is tried again next cycle, with a handoff saying so.
+ * Where it is not, the item is handed off and waits until someone other than the Igor replies on
+ * it or edits it.
  */
 
 /**
- * Pulls the explanation out of a worker's report, which opens with a heading or a bare
- * statement and then elaborates. The first substantial paragraph is the answer; the rest is
- * detail the transcript keeps.
+ * The explanation, for the handoff, from the report of a worker that found nothing to do. The
+ * report opens with a heading or a bare statement and then elaborates, so the first paragraph of
+ * more than 40 characters is taken as the answer; the rest is detail the transcript keeps.
  */
 export function declineReason(transcript: string, limit = 400): string {
   const cleaned = transcript
@@ -56,8 +59,9 @@ export function declineReason(transcript: string, limit = 400): string {
 }
 
 /**
- * What was left behind, for whoever took the item over. Deliberately makes no request: an Igor
- * that lost an item should not then appear in someone's review queue over it.
+ * The note for an item this Igor lost to someone else while working it, pointing them at the
+ * draft it left behind. The note tells them the draft has no review requested: an Igor that lost
+ * an item should not then appear in someone's review queue over it.
  */
 export function handOverNote(role: Role, by: string | undefined, url: string): string {
   const who = by === undefined ? '' : ` ${by} has it now, and`
@@ -75,7 +79,8 @@ export interface ItemDeps {
 
 export type ItemOutcome =
   | 'produced'
-  /** An artifact brought up to date by the code host alone — no worker, no model, no word. */
+  /** The Igor's own pull request brought up to date with its base by the code host alone: no
+   *  claim, no worker, no model call, and nothing posted on the item. */
   | 'caught-up'
   | 'handed-off'
   | 'stopped'
@@ -87,7 +92,8 @@ export interface ItemRun {
   candidate: Candidate
   reason: string
   execution?: ExecutionResult
-  /** Undefined where the worker never reported one, which a killed run never does. */
+  /** What the worker reported spending. Undefined where it reported nothing, as a run killed
+   *  before its last event does; zero would read as a run that was free. */
   costUsd: number | undefined
   /**
    * Whether a message was left on the item. False is a bug on any outcome that took a claim,
@@ -95,23 +101,29 @@ export interface ItemRun {
    * nothing on purpose, so there it is a state.
    */
   spoke: boolean
-  /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
+  /** The kind of handoff posted, where there was one. A `budget` handoff says nothing about the
+   *  item, so the item is not deferred over it: not kept out of later cycles until someone
+   *  replies, as a handed-off item otherwise is. */
   handoff?: HandoffReason['kind']
   /**
-   * Every configuration of the Igor's own this run proved wrong, in the order the run met
-   * them. A handoff carrying any is taken as the Igor's doing rather than the item's, so the
-   * item is not suppressed over it — and all of them are kept, because a run can be refused
-   * an action and denied a command at once, and each is a separate thing to fix.
+   * Every cure key the run met, in the order it met them. A cure key names a setting of the
+   * Igor's own that the run proved wrong, such as `role:<name>:commands`. A handoff carrying any
+   * is taken as the Igor's doing rather than the item's, so the item is not deferred over it.
+   * Keep all of them: a run can be refused an action and denied a command at once, and each is a
+   * separate thing to fix.
    */
   cures: string[]
   /**
-   * Set where a surface may have failed rather than the item: on every throw out of a claimed
-   * run, which cannot tell the two apart. `serve` ends the cycle on the second consecutive one.
-   * Without that, a tracker outage refuses and posts on every remaining item, two comments per
-   * item per poll, indefinitely, which is enough volume to trip the rate limit that caused it.
+   * Set where the tracker or code host may have failed rather than the item: on every throw out
+   * of a claim or a claimed run, which cannot tell the two apart. `serve` ends the cycle on the
+   * second such run in a row. Without that, a tracker outage would make it claim, refuse and
+   * post on every remaining item, the claim comment and a handoff on each, every poll, for as
+   * long as the outage lasted. An outage is often the tracker's rate limit, and that volume of
+   * comments would keep tripping it.
    */
   surfaceFailed?: true
-  /** Set where the claim was refused because the tracker gave no answer; see `ClaimResult`. */
+  /** Set on a `refused` run whose claim got no answer from the tracker, such as a 5xx or a rate
+   *  limit, so a later cycle may succeed; see `ClaimResult.unanswered`. */
   unanswered?: true
 }
 
@@ -136,9 +148,10 @@ export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'complet
 
 export interface RunOptions extends ExecuteOptions {
   claim?: ClaimOptions
-  /** Called as each stage begins. A worker can run for minutes; silence is not a status. */
+  /** Called as each stage begins, so the caller can show progress: a worker can run for minutes. */
   onStep?: (step: Step) => void
-  /** Supplied by the budget layer once it exists; absent means budget is not being enforced. */
+  /** What the budget gate decided for this run: the seat, its token, and whether the budget is
+   *  spent. Absent, no budget is enforced. */
   budget?: {
     exhausted: () => boolean
     seat?: string
@@ -147,15 +160,17 @@ export interface RunOptions extends ExecuteOptions {
     resetApproximate?: boolean
     blocked?: SeatVerdict
     passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
-    /** The condition that stops this role, where one does. Nothing is claimed or requested. */
+    /** Set where a condition stops this role: runs kept meeting the same cure key until they
+     *  reached the threshold. `runItem` then refuses the item before any claim or host request. */
     condition?: Condition
   }
 }
 
 /**
- * Refuses an item outright where a condition stops the role, before any claim or host request.
- * Checked here as well as by each caller: a claim handed back on a condition posts a handoff
- * blaming the budget on an item that had nothing to do with it.
+ * Refuses the item before any claim or host request where a condition stops the role. Each
+ * caller checks first as well, but this check must stay: `exhausted()` is true under a
+ * condition, so a run that got as far as claiming would hand the item back with a handoff
+ * blaming the budget, on an item that had nothing to do with it.
  */
 function stoppedBy(candidate: Candidate, budget: RunOptions['budget']): ItemRun | undefined {
   if (budget?.condition === undefined) return undefined
@@ -222,27 +237,28 @@ export async function runItem(
   // a finished run would leave the item claimed and announced, with only a cycle-level error
   // logged.
   //
-  // The claim is given back as any other failure gives it back, by a handoff, which posts and
-  // then releases. Whether the run is then reported as refused or handed off depends on what a
+  // The handler gives the claim back by a handoff, which posts and then releases, as any other
+  // failure does. Whether the run is then reported as refused or handed off depends on what a
   // retry would cost: see the handler.
   //
-  // **What the run reached is carried out with it.** A throw here does not always come before
-  // the work. The last call of a successful run is the release of its claim, and a tracker that
-  // fails it lands here with a draft already open. A handoff
-  // composed without what the run reached would say "the work never started" beside that
-  // draft, and link it nowhere.
+  // **`reached` records how far the run got, for the handler to read.** A throw here does not
+  // always come before the work. The last call of a successful run is the release of its claim, and
+  // a tracker that fails it lands here with the pull request already open. A handoff composed
+  // without `reached` would say "the work never started" beside that pull request, and link it
+  // nowhere.
   //
   // **`reached` says how far the run got, never whose fault the throw was.** `codeHost.produce`
-  // runs inside `execute`, so an item's own `422` leaves `reached.result` empty, while the
-  // tracker 503 above finds it full. Read as item versus surface, it gets both backwards.
+  // runs inside `execute`, so an item's own `422` leaves `reached.result` empty, while a tracker
+  // 503 on that final release finds it full. Taking an empty `reached.result` as the surface's
+  // fault and a full one as the item's would get both of those cases backwards.
   const reached: Reached = {}
   try {
     return await runClaimedItem(deps, candidate, role, identity, claim, options, reached)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     const ran = reached.result ?? standIn(reached, role, detail)
-    // **Every return below spreads this**, so no exit can drop what the run spent: the ledger
-    // records a run only where `execution` is present, and an exit that leaves it off loses a
+    // **Every return below spreads `ended`**, so no exit can drop what the run spent. The ledger
+    // records a run only where `execution` is present, and an exit that left it off would lose a
     // paid worker from the budget.
     const ended = {
       candidate,
@@ -255,10 +271,10 @@ export async function runItem(
       reason: `${candidate.id} was claimed and the run could not finish: ${detail}`,
     }
 
-    // **A stop or a loss the run already saw gets no failure handoff.** A stop gets its receipt,
-    // since the graceful-handoff spec exempts a stop from a handoff. A loss gets silence, since
-    // the item is now somebody else's. Both key on the verdict the run read, never on the
-    // wording of a refusal.
+    // **A stop or a loss the run already saw gets no failure handoff.** A stop gets its receipt
+    // instead, since the graceful-handoff spec exempts a stop from a handoff. A loss gets no
+    // message, since the item is now somebody else's, unless a draft is left to point them at.
+    // Both key on the verdict the run last read, never on the wording of the error.
     const verdict = reached.verdict
     if (verdict?.status === 'stopped' || verdict?.status === 'lost') {
       const clear = await standDown(tracker, candidate, identity, verdict)
@@ -278,28 +294,32 @@ export async function runItem(
     }
 
     // **What a retry would cost decides what happens next, not whose fault the throw was**,
-    // which nothing here can tell. A retry is *dear* where it would spend the whole worker again
-    // to reach the same failure: the worker ran and nothing was published. Then the item is
-    // handed off and waits in the deferral record until someone other than the Igor replies to
-    // it or the item is edited.
+    // which nothing here can tell. A retry is *dear* where it would pay for the whole worker
+    // again to reach the same failure: the worker ran and nothing was published. Then the item is
+    // handed off, and the deferral record keeps it out of later cycles until someone other than
+    // the Igor replies to it or the item is edited.
     //
     // Otherwise the item is refused and tried again next cycle. A retry is cheap in two cases:
     // - Before the worker ran, nothing has been spent.
-    // - Once something is published, the in-flight rule keeps the item off the claim path anyway.
-    //   Deferring it then would only stop a later cycle bringing that pull request up to date with
-    //   its base (a catch-up).
+    // - Once something is published, the item is not claimed again while its pull request is
+    //   open (the in-flight rule), so no worker is paid again. Deferring it then would only stop
+    //   a later cycle bringing that pull request up to date with its base (a catch-up).
     //
-    // A run `execute` reported as refused reaches this handler only when something after it threw,
-    // such as the release. It is never dear: a stop or a loss is handled above, and the only other
-    // refusal is the role's action space. That refusal carries a cure key, so the handoff names
-    // the setting to change and the item is not deferred.
+    // A run whose `execute` returned `refused` reaches this handler only when something after
+    // `execute` threw, such as the release, and `retryIsDear` never counts such a run as dear. A
+    // stop or a loss is handled by the block above in this handler, and the only other refusal is
+    // a role whose `allow` permits no pull request. That refusal carries
+    // the cure key `role:<name>:allow`, so the handoff names the setting to change and the item
+    // is not deferred.
     //
     // Decided before the handoff is composed, because the handoff says which way it went.
     const spent = reached.output !== undefined
     const published = reached.published !== undefined
     const retryIsDear = spent && !published && ran?.outcome !== 'refused'
-    // A directed claim's handoff says how to hand the item over again instead, since the release
-    // removes the label a person added; `handOffFrom` reads that off the claim.
+    // `next` makes the handoff say how the item comes back: tried next cycle, or kept up to date
+    // through what it published. A directed claim, one a person handed to this Igor by label,
+    // gets a sentence on how to hand it over again instead, because the release removes that
+    // label. `handOffFrom` reads whether the claim was directed from `claim` itself.
     const next = retryIsDear ? {} : { next: published ? ('published' as const) : ('retry' as const) }
     const out = await handOffFrom(
       tracker, candidate, role, identity, claim, { kind: 'failure', detail, ...next }, ran,
@@ -314,15 +334,17 @@ export async function runItem(
 }
 
 /**
- * What a run that threw before `execute` returned can still be shown to have done: the worker's
- * own report, what it left in the tree, and whatever the host accepted. Its outcome is always
- * `failed`, never `refused`, so the handler weighs the retry by whether the worker ran. It is
- * undefined where neither the worker nor the host was reached, so a run that never started
- * still says so.
+ * A result for a run that threw before `execute` returned, built from what it can still be
+ * shown to have done: the worker's own report, what it left in the tree, and whatever the host
+ * accepted. Undefined where neither the worker nor the host was reached, so the handoff for a
+ * run that never started still says so. Its outcome is always `failed`, never `refused`, so the
+ * handler weighs the retry by whether the worker ran.
  *
- * Carries the worker's denials for the record and its warning, and **no cures**: a cure cannot
- * clear the failure that brought the run here, and a handoff carrying one is not deferred, so
- * the worker would be paid again every cycle to meet the same failure.
+ * Carries the worker's denials, for the run record and the "sandbox denied" warning printed
+ * when it is recorded, and **no cures**. A cure cannot clear the failure that brought the run
+ * here, and a handoff carrying one is never deferred, so the worker would be paid again every
+ * cycle to meet the same failure. Each denial carries its own cure key, and the run's denials
+ * count toward those keys' conditions even with no `cures` (`keysOf` in `conditions.ts`).
  */
 function standIn(reached: Reached, role: Role, detail: string): ExecutionResult | undefined {
   const { output, published, changed } = reached
@@ -338,8 +360,10 @@ function standIn(reached: Reached, role: Role, detail: string): ExecutionResult 
     ...(typeof output?.session_id === 'string' && output.session_id !== '' ? { session: output.session_id } : {}),
     ...(denials.length === 0 ? {} : { denials }),
     ...(published === undefined ? {} : { artifact: published.artifact, caughtUp: published.caughtUp }),
-    // With no worker output, as after a clean merge, the run ran no command, so it is marked
-    // `workerless` exactly as `execute` marks such a run: it observed no condition.
+    // With no worker output, as where the host reported a conflict on a catch-up but the merge in
+    // the clone came out clean, no worker ran, so the result is marked `workerless` as `execute`
+    // marks such a run: it counts toward a condition it met, and is never evidence that one
+    // cleared.
     ...(output === undefined ? { workerless: true as const } : {}),
     reason: detail,
   }
@@ -370,23 +394,24 @@ async function runClaimedItem(
   identity: string,
   claim: ClaimResult,
   options: RunOptions,
-  /** Filled as each point is passed, so a throw after it still knows what the run reached. */
+  /** Filled in as the run passes each point, so the handler still knows how far it got after a
+   *  throw. */
   reached: Reached,
 ): Promise<ItemRun> {
   const { tracker, codeHost, trees } = deps
   const step = options.onStep ?? (() => {})
 
-  // Budget is checked after claiming and before spending, so an Igor that cannot afford the
-  // work says so on the item rather than claiming and going quiet.
+  // Budget is checked after the claim and before any spending, so an Igor that cannot afford
+  // the work hands the item back saying so, rather than holding the claim and going quiet.
   if (options.budget?.exhausted()) {
     const reason: HandoffReason = {
       kind: 'budget',
       ...(options.budget.seat === undefined ? {} : { seat: options.budget.seat }),
       ...(options.budget.resetAt === undefined ? {} : { resetAt: options.budget.resetAt }),
       ...(options.budget.resetApproximate === true ? { resetApproximate: true } : {}),
-      // Carried so the handoff can say which way there was no seat. Without it every route to
-      // "no seat" reads as a spent budget, including the one where no seat's usage could be
-      // read at all — #49.
+      // Why no seat in the pool could be used (`blocked`), so the handoff can say so. Without it,
+      // every route to "no seat" would read as a spent budget, including the one where no seat's
+      // usage could be read at all (#49).
       ...(options.budget.blocked === undefined ? {} : { blocked: options.budget.blocked }),
       ...(options.budget.passedOver === undefined ? {} : { passedOver: options.budget.passedOver }),
     }
@@ -398,8 +423,9 @@ async function runClaimedItem(
   }
 
   step('working')
-  // Recorded when the host answers, not when `execute` returns: a throw after a publish — the
-  // check that a resolution took — escapes with the artifact already on the branch.
+  // Sets `reached.published` when the host accepts, not when `execute` returns: a throw after a
+  // publish, such as from checking that a pushed conflict resolution landed, escapes `execute`
+  // with the artifact already on the branch.
   const recording: CodeHost = {
     name: codeHost.name,
     produce: async (request) => {
@@ -409,7 +435,7 @@ async function runClaimedItem(
     },
     resolve: async (request) => {
       const sha = await codeHost.resolve(request)
-      // A resolution goes onto the artifact being caught up, which is the only caller of it.
+      // Only a catch-up resolves, and the resolution goes onto the pull request it catches up.
       const onto = options.catchUp
       if (onto !== undefined) {
         reached.published = { artifact: { kind: 'pull-request', ref: onto.ref, url: onto.url }, caughtUp: true }
@@ -421,11 +447,11 @@ async function runClaimedItem(
   const execution = await execute(trees, tracker, recording, candidate, role, {
     ...options,
     ...(options.lore === undefined ? {} : { lore: options.lore }),
-    // The worker must authenticate as the seat the gate chose, so its token is passed by name
-    // rather than trusted to arrive through the spread above.
+    // The worker must authenticate as the seat the gate chose, so that seat's token source is
+    // set here explicitly rather than trusted to arrive through the spread above.
     ...(options.budget?.token === undefined ? {} : { seatToken: options.budget.token }),
-    // Named alongside the token it goes with: a token source that cannot be read is the seat's
-    // own misconfiguration, and the key that says so needs the seat's name.
+    // Passed with the token source: where the token cannot be read, the run records the cure key
+    // `seat:<id>:token`, which needs the seat's id.
     ...(options.budget?.seat === undefined ? {} : { seat: options.budget.seat }),
     // A pull request links its transcript only where the store reaches `execute`.
     ...(options.store === undefined ? {} : { store: options.store }),
@@ -433,15 +459,15 @@ async function runClaimedItem(
     onChanges: (changed) => {
       reached.changed = changed
     },
-    // The whole verdict is kept, not just its status, because a stop the handler meets after a
-    // throw needs a receipt naming who stopped it.
+    // Keeps the whole verdict, not just the status `execute` asks for: after a throw, the
+    // handler's stop receipt names who stopped the run, and its hand-over note who took the item.
     claimStatus: async () => {
       reached.verdict = await checkpoint(tracker, claim, identity)
       return reached.verdict.status
     },
-    // Recorded the moment the worker returns, not when `execute` does: a publish that throws —
-    // the 422 a branch left by a closed pull request produces — escapes `execute` with the
-    // spend already made and no result to show for it.
+    // Recorded the moment the worker returns, not when `execute` does: a publish that throws,
+    // such as the 422 from a branch a closed pull request left behind, escapes `execute` with
+    // the worker already paid and no result to show for it.
     worker: async (input) => {
       const out = await (options.worker ?? headlessClaude)(input)
       reached.output = out
@@ -466,16 +492,19 @@ async function runClaimedItem(
     }
 
     case 'refused': {
-      // The claim went away mid-execution. A stop, most likely — so a receipt, not a handoff.
+      // `execute` refuses when the claim went away mid-run or when the role's `allow` permits no
+      // pull request. The checkpoint tells them apart: a stop gets a receipt, a loss at most a
+      // hand-over note, and a claim still held a failure handoff.
       const verdict = await checkpoint(tracker, claim, identity)
       let stoodDown = true
       if (verdict.status === 'stopped' || verdict.status === 'lost') {
-        // Released before anything is said, so the receipt is true by the time it can be read.
-        // `takeClaim` does the same for a stand-down inside the settle window. Without it, the
-        // Igor's name stays on an item it has just announced it released.
+        // Released before anything is said, so the receipt's closing "and released this" is true
+        // by the time anyone reads it. Posted before the release, it would sit beside the Igor's
+        // name on an item it had just announced it released. `takeClaim` does the same for a stop
+        // it finds while verifying a fresh claim.
         //
-        // The answer is kept, not discarded: the receipt below ends "and released this", and
-        // where the holder did not clear that sentence is false on an item somebody is reading.
+        // The answer is kept, not discarded: where the holder field did not clear, that closing
+        // sentence is false on an item somebody is reading, and a correction must follow it.
         stoodDown = await standDown(tracker, candidate, identity, verdict)
       }
       if (verdict.status === 'stopped') {
@@ -490,12 +519,12 @@ async function runClaimedItem(
         }
       }
       if (verdict.status === 'lost') {
-        // Silent where there is nothing to hand over: whoever took it is visibly on it, and a
-        // message would only tell them what they just did. A draft left behind is different:
-        // unannounced, it is work nobody knows exists.
+        // A loss with nothing left behind gets no message: whoever took the item is visibly on
+        // it, and a message would only tell them what they just did. A draft left behind gets a
+        // hand-over note, because unannounced it is work nobody knows exists.
         //
-        // Never silent where the release did not take: this Igor's name is still on the item
-        // beside whoever took it, and nothing else on the item explains the second name.
+        // A release that did not take always gets a correction: this Igor's name is still on the
+        // item beside whoever took it, and nothing else on the item explains the second name.
         const artifact = execution.artifact
         if (artifact !== undefined) {
           await tracker.report(candidate, handOverNote(role, verdict.by, artifact.url)).catch(() => undefined)
@@ -510,9 +539,10 @@ async function runClaimedItem(
           costUsd: execution.costUsd, spoke: artifact !== undefined || !stoodDown, cures: execution.cures ?? [],
         }
       }
-      // Still held, so the refusal was the action space rather than the claim: that is a
-      // dead end the Igor cannot get past, which is what a handoff is for. An action space
-      // with nothing in it names a cure of its own, and the run carries any it met on the way.
+      // Still held, so `execute` refused because the role's `allow` permits no pull request,
+      // not because of the claim. The Igor cannot get past that, which is what a handoff is for.
+      // The refusal carries the cure key `role:<name>:allow`, and the handoff names it along
+      // with any other key the run met.
       const cures = execution.cures ?? []
       const out = await handOffFrom(
         tracker, candidate, role, identity, claim,
@@ -525,10 +555,9 @@ async function runClaimedItem(
     }
 
     case 'budget': {
-      // Exhaustion found mid-run and exhaustion found before starting are one condition seen
-      // at two moments, so they converge on one handoff — and on one kind, which is what keeps
-      // the item out of the deferral record: nothing about it caused this, so it comes back
-      // when capacity does.
+      // A budget spent mid-run gets the same handoff as one found spent before starting, of the
+      // same kind, `budget`. That kind keeps the item out of the deferral record: nothing about
+      // the item caused this, so it comes back when capacity does.
       const reason: HandoffReason = {
         kind: 'budget',
         ...(options.budget?.seat === undefined ? {} : { seat: options.budget.seat }),
@@ -544,14 +573,15 @@ async function runClaimedItem(
     case 'failed':
     case 'nothing-to-do': {
       // "Nothing to do" still owes an explanation. The Igor claimed the item, so releasing it
-      // unchanged and unremarked leaves it looking handled when nobody has handled it. It is
-      // not a failure in the sense of something breaking, so it should not read as one.
-      // The worker's own account of why it declined is the most useful sentence available,
-      // and it is otherwise only in the transcript, which nobody reading the item will open.
+      // unchanged and unremarked would leave it looking handled when nobody had handled it. The
+      // handoff has a kind of its own, so it does not read as something breaking, and it quotes
+      // the worker's own account of why it declined, which is otherwise only in the transcript
+      // that nobody reading the item will open.
       //
-      // Whatever the run earned, in full: a worker that could not start for an unset seat
-      // token and one the allowlist stopped both hand back here, and a run can carry more
-      // than one key. Taking any single one of them parks the item behind the others.
+      // A failure hands back every cure key the run earned, not one of them. Runs of both kinds
+      // arrive here: a worker that could not start because a seat token was unset, and a worker
+      // the allowlist stopped. One run can carry more than one key. Handing back only one would
+      // get only that setting fixed, and the item would fail again on the next.
       const cures = execution.cures ?? []
       const reason: HandoffReason =
         execution.outcome === 'nothing-to-do'
@@ -567,18 +597,18 @@ async function runClaimedItem(
 }
 
 /**
- * An artifact of the Igor's own that no longer merges, brought back up to date.
+ * Brings this Igor's own pull request up to date with its base, where it no longer merges (a
+ * catch-up).
  *
- * Two paths, and the split is the point. The code host is asked to merge the base in, which is
- * one request and settles the ordinary case with no clone, no worker and no model call —
- * *and no word on the item*, because a catch-up nobody had to think about is not news. Only a
- * conflict the host reports back escalates, and then it escalates into the ordinary run: the
- * item is claimed, a worker is handed files with markers in them, and every outcome the claim
- * protocol owes is the one `runItem` already produces.
+ * The code host is asked first to merge the base in. That one request settles the usual case
+ * with no clone, no worker and no model call, and says nothing on the item: a merge nobody had to
+ * think about is not news. Only a conflict the host reports back escalates, into an ordinary
+ * claimed run through `runItem`: the item is claimed, a worker is given files with conflict
+ * markers in them, and that run already produces every message the claim protocol owes.
  *
- * Nothing is claimed on the quiet path. The claim exists to tell other people to stand off
- * work they might otherwise duplicate, and an assign-then-unassign per cycle on a merge nobody
- * would have raced is timeline noise bought for nothing.
+ * The host merge claims nothing. A claim tells other people to stand off work they might
+ * otherwise duplicate, and nobody races a merge like this one, so assigning and unassigning on
+ * every catch-up would put noise on the item's timeline for nothing.
  */
 export async function catchUpItem(
   deps: ItemDeps,
@@ -605,8 +635,9 @@ export async function catchUpItem(
       base: artifact.base,
     })
   } catch (error) {
-    // Nothing was claimed and nobody was told to stand off, so there is no receipt owed and
-    // no handoff to write. The next cycle asks again, which is what a rate limit wants.
+    // Nothing was claimed and nobody was told to stand off, so no receipt or handoff is owed.
+    // The pull request still does not merge, so the next cycle finds it and asks again; waiting a
+    // cycle is also what a rate limit needs.
     return {
       outcome: 'refused',
       candidate,
@@ -633,9 +664,12 @@ export async function catchUpItem(
     }
   }
 
-  // A person's label on the item is their hand-over, which a catch-up does not answer, so the
-  // run gives back its claim through a tracker that leaves that label where it is, on every exit.
-  // The earliest a stop of this run can have been said: the run's start less the settle interval.
+  // A person may have put this Igor's label on the item to hand it over, and a catch-up does not
+  // answer that hand-over. So on every exit the run gives back its claim through `keepingLabel`,
+  // which leaves such a label where it is.
+  // `floor` is the earliest a stop aimed at this run can have been written: the run's start less
+  // the settle interval, because the claim's settle window comes before the run and a stop
+  // written during it is aimed at this run.
   const floor = new Date((options.claim?.now ?? Date.now)() - role.settleSeconds * 1000).toISOString()
   const run = await runItem(
     { ...deps, tracker: keepingLabel(deps.tracker, floor) }, candidate, role, identity, { ...options, catchUp: artifact },
@@ -666,32 +700,35 @@ export async function catchUpItem(
 }
 
 /**
- * The tracker as a catch-up sees it: giving back the claim removes the label only where this Igor
- * put it there, or where a person stopped the Igor, and otherwise leaves it and answers that the
- * claim is given back, which it is.
+ * The tracker a catch-up's claimed run uses. Its release removes this Igor's label only where
+ * this Igor put it there or a person stopped this run. Otherwise it leaves the label, which a
+ * person put there to hand the item over, and answers that the claim is given back, which it is.
  *
- * Who set the label is read when the claim is given back, never from the cycle's candidate. A
- * person can add or remove the label between the cycle reading the item and the release, and the
- * claim itself puts back a label a person removed, which makes it this Igor's to remove.
+ * Who set the label is read at the release, never taken from the cycle's candidate. A person can
+ * add or remove the label between the cycle reading the item and the release, and the claim
+ * itself puts back a label a person removed, which makes that label this Igor's to remove.
  *
- * A stop of this run releases the label as any stop does, whether or not the run saw it: one that
- * lands after the run's last checkpoint, while the resolution is being pushed, is still a stop.
- * A stop of this run is one created at or after the hand-over, `floor`, the run's start less the
- * settle interval, and, where the claim's check found a stop a go-ahead lifted, that go-ahead. A
- * stop said before any of them belongs to something else, such as one a go-ahead or the cooldown
- * already lifted, and a catch-up that ends any other way keeps the label. Creation time decides,
- * never the read's `since`, which a surface may apply to when a comment was last edited. A comment
- * with no readable time counts. Where the comments cannot be read, the label is kept.
+ * A stop of this run removes the label even where the run never saw it: one written after the
+ * run's last checkpoint, while the resolution is being pushed, is still a stop. A stop counts as
+ * this run's when it was created at or after the latest of: the hand-over; `floor`, the run's
+ * start less the settle interval; and, where the claim's check found a stop that a go-ahead
+ * lifted, that go-ahead. An earlier stop belongs to something else, such as a stop a go-ahead or
+ * the cooldown already lifted, and a catch-up that ends any other way keeps the label. Creation
+ * time decides, never the read's `since`, which some surfaces apply to when a comment was last
+ * edited. A comment with no readable time counts. Where the comments cannot be read, the label
+ * stays.
  *
- * Where who set it cannot be read, the cycle's candidate decides. A candidate without the label
- * means the claim put it there, so it is released as any claim is, and a release that does not
- * take is reported. A candidate with the label could be showing a person's hand-over, so the label
- * is kept: removing it is the mistake nothing on the item would explain, and saying it is still
- * there would tell that person to take back what they handed over.
+ * Where the tracker names no setter at all, the label is released as the claim's. Where the read of
+ * who set the label fails, the cycle's candidate decides. A candidate without the label means the
+ * claim put it there, so it is released as any claim is, and a release that does not take is
+ * reported. A candidate with the label may be showing a person's hand-over, so the label stays:
+ * removing it would be a mistake nothing on the item explains, and reporting it as still there
+ * would tell that person to take back what they handed over.
  */
 function keepingLabel(tracker: Tracker, floor: string): Tracker {
-  // The go-ahead that lifted a stop the claim's check found, read off the check's held verdict.
-  // Only the claim's check is liftable, so a checkpoint's verdict never sets it.
+  // Where the claim's check found a stop that a go-ahead had lifted: that go-ahead's time, from
+  // the check's held verdict. Checkpoints also call `verifyClaim`, but only the claim's own check
+  // returns `liftedAt`, so only that call sets it.
   let liftedAt: string | undefined
   return Object.assign(Object.create(tracker) as Tracker, {
     verifyClaim: async (...args: Parameters<Tracker['verifyClaim']>): Promise<ClaimVerdict> => {
@@ -707,7 +744,8 @@ function keepingLabel(tracker: Tracker, floor: string): Tracker {
         (setting) => setting,
         () => null,
       )
-      // A failed read keeps a label the cycle saw, without asking whether a stop cancelled it.
+      // Who set the label could not be read. A label the cycle saw stays, even if a stop has
+      // since cancelled the hand-over; one the cycle did not see is the claim's, and is released.
       if (set === null) return candidate.holders.includes(tracker.holder) ? true : tracker.release(candidate, as)
       if (set?.self !== false) return tracker.release(candidate, as)
       const from = [set.at, liftedAt].reduce<string>(
@@ -724,11 +762,12 @@ function keepingLabel(tracker: Tracker, floor: string): Tracker {
 }
 
 /**
- * What a resolution undid on purpose, where it undid anything.
+ * The clause added to a catch-up's note naming the base changes the resolution undid on
+ * purpose, as the worker declared them. Empty where it undid none.
  *
- * A declaration is not an exemption from being seen: the same sentence a refusal would have
- * put on the item says what was dropped instead, because an undone base change is invisible in
- * the diff whether or not somebody meant it.
+ * A declaration lets an undo be published instead of failing the run, but not unannounced: an
+ * undone base change is invisible in the diff either way, so the item is told what was dropped,
+ * in the same words the failure would have used.
  */
 export const undoneNote = (reverts: readonly string[] = []): string =>
   reverts.length === 0 ? '' : ` It drops what the base did to ${reverts.join(', ')}, as declared.`
@@ -758,9 +797,9 @@ export interface CycleCandidate {
   directed?: true
   /** For a waiting notice: the holders that keep this Igor off the item. */
   holders?: string[]
-  /** For an item waiting on this Igor's word: what to post, once. */
+  /** For a waiting item: the notice to post on it, once, saying what this Igor waits for. */
   notice?: string
-  /** For an item a person handed over: when, which is where its claim's stop scan starts. */
+  /** For a handed-over item: when it was handed over. Its claim scans for stops from then. */
   handedOverAt?: string
   /** For a handed-over item stopped while nothing was running: the stop to answer. */
   stop?: ClaimVerdict
@@ -776,13 +815,14 @@ export interface CycleReport {
   skippedDeferred: number
   /** Carrying a stop the cooldown has not run out on. */
   skippedStopped: number
-  /** Dropped unasked because the tracker stopped answering, which is not a stop. */
+  /** Left unread because the tracker stopped answering this cycle; not a stop, and they wait. */
   skippedUnreadable: number
   triaged: number
   /**
-   * Candidates that reached the model stage and were never asked about, because nothing could
-   * pay for the call. Not skips: nothing about them produced this and nothing about them will
-   * lift it, so they hold their source's mark back and come back when capacity does.
+   * Candidates that reached the model stage and were never asked about: no seat could pay, the
+   * chosen seat's credential could not be read, the cycle's cap was reached first, or a condition
+   * stopped the role. `reason` says which. Not skips: nothing about the items caused this or will
+   * lift it, so the watermark waits for them and they are read again in a later cycle.
    */
   untriaged: CycleCandidate[]
   /**
@@ -793,26 +833,28 @@ export interface CycleReport {
   heldPool?: {
     blocked?: SeatVerdict
     resetAt?: string
-    /** The hour is derived rather than stated, so a reader is owed "around" instead of "at". */
+    /** The reset hour is an estimate the provider did not state, so it reads "around", not "at". */
     resetApproximate?: boolean
     passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
   }
   /**
-   * The condition that stopped this role before triage, where one did. A fourth reason to be
-   * idle, apart from a held pool, from pacing and from an empty queue: the role is stuck on its
-   * own configuration, and the key says what would cure it.
+   * The condition that stopped this role before triage, where one did. A condition is a failure
+   * that kept recurring on one cure key, the setting that would fix it, so the role is stuck on
+   * its own configuration. It is a fourth reason for an idle cycle, beside a held pool, pacing and
+   * an empty queue.
    */
   condition?: Condition
   /**
-   * Saves the discovery watermark, kept earlier than the `updatedAt` of each `toClaim` item whose
-   * id is passed in `untaken`. Set only where `markAfterWork` asked for it and the cycle was not a
-   * preview. Until it is called the mark is where the cycle found it: a cycle that fails before
-   * calling it drops no item, though it pays again next cycle for the triage calls it made.
+   * Saves the discovery watermark, held below the `updatedAt` of each `toClaim` item whose id is
+   * in `untaken`: the ones the caller never took. Present only where `markAfterWork` asked for it
+   * and the cycle is not a preview. Until it is called the mark stays where the cycle found it, so
+   * a cycle that fails first drops no item; it only pays again next cycle for its triage calls.
    */
   settle?: (untaken: readonly string[]) => Promise<void>
   /**
-   * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
-   * marks the ones only the clock will bring back, which the watermark has to wait for.
+   * Every candidate dropped before a model call, with the reason, so a lane can be tuned. `held`
+   * marks the ones only time will bring back, such as a stop's cooldown or a tracker outage; the
+   * watermark stays below them.
    */
   skipped: { candidate: Candidate; reason: string; stage: string; held?: boolean }[]
   /** Model verdicts, both ways — a skip with a reason is as useful as a claim. */
@@ -836,23 +878,24 @@ export interface CycleReport {
    */
   readAt: string
   /**
-   * Artifacts of the Igor's own that no longer merge. Kept apart from `toClaim` because they
-   * cost no model call to decide on and are not claimed to act on — see `catchUpItem`.
+   * This Igor's own pull requests that no longer merge into their base. Kept apart from `toClaim`
+   * because deciding on them costs no model call, and acting on them claims nothing unless the
+   * host reports a conflict; see `catchUpItem`.
    */
   toCatchUp: CycleCandidate[]
   triageCostUsd: number
-  /** Triage calls whose envelope stated no usable cost, making the figure above a floor. */
+  /** Triage calls whose output reported no usable cost, so `triageCostUsd` is a lower bound. */
   triageCostUnreported: number
-  /** The seat the cost above was drawn from. Undefined where budget is unenforced or exhausted. */
+  /** The seat triage drew on. Undefined where budget is off, no seat had room, or no triage ran. */
   triageSeat?: string
   failures: string[]
   coldStart: boolean
 }
 
 export interface CycleOptions extends RunOptions {
-  /** Cap on model calls per cycle, so one loose lane cannot spend a day's budget. */
+  /** Most triage calls per cycle, one per candidate, so a broad lane can't spend a day's budget. */
   limit?: number
-  /** Look back this far instead of reading the stored watermark. */
+  /** Look back this many days instead of from the stored watermark, and save no watermark. */
   sinceDays?: number
   triageModel?: string
   now?: number
@@ -865,8 +908,8 @@ export interface CycleOptions extends RunOptions {
    */
   gate?: () => Promise<Gate>
   /**
-   * Who the Igor is on the tracker. Absent means every holder reads as somebody else, which
-   * is what a preview that does not know who would run should assume.
+   * This Igor's identity on the tracker. Absent in a preview that does not know which Igor would
+   * run: then every holder counts as somebody else, and no handed-over items are looked for.
    */
   identity?: string
   /**
@@ -895,23 +938,26 @@ export interface CycleOptions extends RunOptions {
  */
 export const UNTRIAGED_NO_SEAT = 'no seat could pay for the triage call'
 
-/** The same, where the seat the gate named has no credential behind it. */
+/** The untriaged reason where the gate named a seat whose credential could not be resolved. */
 const NO_CREDENTIAL = "the chosen seat's credential could not be read"
 
-/** And where the cycle's own cap on model calls was reached before the candidate was. */
+/** The untriaged reason where the cycle's cap on triage calls (`limit`) cut the candidate off. */
 const OVER_LIMIT = "this cycle's triage limit was reached first"
 
 /** Where a condition stopped the role: the key that stopped it is in the cycle's `condition`. */
 export const UNTRIAGED_CONDITION = 'a condition on this role stopped it before triage'
 
 /**
- * Discovery, triage, and the decision — everything up to but not including a claim.
+ * One cycle up to, but not including, the claims: discovery, the filters, triage, and the lists
+ * of items to act on. Kept apart from acting so a supervised run can show what it would do and
+ * stop there.
  *
- * Separated from acting so a supervised run can show what it would do and stop. A cycle that
- * acts advances the watermark over what it skipped as well as what it claimed, because deciding
- * not to act on an item is still having considered it, and reconsidering it every cycle would
- * cost the model call again for the same answer. A `preview` cycle decided nothing, so it
- * writes nothing.
+ * Outside a preview the watermark moves past what the cycle skipped as well as what it chose:
+ * deciding not to act on an item is still a decision, and reconsidering it every cycle would pay
+ * for the same model answer again. Three kinds of item still hold the mark back: items nothing
+ * examined, skips only the clock brings back (`held`), and, under `markAfterWork`, chosen items
+ * the caller did not take. The save at the end of this function says how. A preview saves
+ * nothing.
  */
 export async function planCycle(
   deps: CycleDeps,
@@ -958,11 +1004,11 @@ export async function planCycle(
   }
 
   const survivors: Candidate[] = []
-  // Read over everything the query returned rather than over what the watermark let through.
-  // A base moving does not touch the item it came from — `main` advanced eight commits under
-  // #21 and the issue's `updatedAt` never moved — so a stale artifact sits below the mark and
-  // would never be looked at again. The mark exists to avoid re-paying for a model call, and
-  // this costs none: the data is already on the page discovery fetched.
+  // Stale pull requests are looked for in everything the query returned, not only in what the
+  // watermark let through. A base moving does not update the item the pull request came from
+  // (`main` advanced eight commits under #21 and the issue's `updatedAt` never moved), so that
+  // item usually sits below the mark and would never be looked at again. The mark exists to avoid
+  // paying for a model call twice, and this check costs none: it reads the page discovery fetched.
   const catchingUp = new Set<string>()
   for (const result of results) {
     for (const candidate of result.candidates) {
@@ -994,13 +1040,14 @@ export async function planCycle(
     }
   }
 
-  // Items a person handed to this Igor go ahead of everything the model would decide about,
-  // with no lane and no triage: the person exercised their own judgement, which is what those
-  // stages stand in for. They are found wherever they are, not only where the role's query looks.
+  // Items a person handed to this Igor go into `toClaim` with no lane and no triage, ahead of
+  // anything the model decides: the person made the judgement those stages stand in for. They
+  // are looked for in each source repository, not only where the role's query looks.
   if (holding !== undefined && options.identity !== undefined) {
     const { directed, waiting, stopped } = await findDirected(deps.tracker, role, options.identity, holding, report)
     const taken = new Set(directed.map((d) => d.candidate.id))
-    // An item being caught up is this Igor's own work in flight: it is neither claimed nor owed a notice.
+    // An item being caught up is this Igor's own work in flight: it is neither claimed nor owed a
+    // notice.
     const notCaughtUp = (c: CycleCandidate): boolean => !catchingUp.has(c.candidate.id)
     report.toClaim.push(...directed.filter(notCaughtUp))
     report.waiting.push(...waiting.filter(notCaughtUp))
@@ -1010,47 +1057,50 @@ export async function planCycle(
     }
   }
 
-  // Oldest first, because the limit below truncates and everything past it holds the mark back.
-  // Cap an arbitrary order and the mark is pulled under candidates this cycle decided, which
-  // triages them again next cycle and never advances: measured at a full cap of calls every
-  // cycle on a backlog that never drains. In age order the cap falls above everything decided.
+  // Oldest first, because the cap below cuts the list and every candidate past it holds the
+  // watermark back. In any other order the cut would leave undecided items older than decided
+  // ones, the mark would fall below the decided ones, and they would be triaged again next cycle,
+  // every cycle: measured as a full cap of calls each cycle on a backlog that never drained. In
+  // age order everything decided is older than everything cut.
   survivors.sort(byAge)
 
   const limit = options.limit ?? 10
   const quiet = await loadDeferrals(deps.destination)
   const window = stopWindow(now, role.cooldownMinutes)
-  // Both gates read an item through one fetch, reaching back as far as either of them asks
-  // about for that item. Where they disagree about an item the tracker will not answer for —
-  // the stop gate ends the cycle, the deferral gate works the item — the stop gate wins,
-  // because it reads first and an item it could not read never reaches the other. What that
-  // costs is a cycle of latency on a read that would have failed only the second time.
+  // Both gates, stops and then deferrals, read an item's comments through one fetch, reaching back
+  // as far as either asks about for that item. Where the tracker will not answer for an item, the
+  // stop gate's rule wins over the deferral gate's. The stop gate reads first and holds that item
+  // and every item after it for this cycle, so the item never reaches the deferral gate, which
+  // keeps an item it cannot read and would have let it be worked. The cost is one cycle of delay
+  // on those items.
   const comments = oneFetchPerItem(deps.tracker, (c) => {
     const entry = quiet.items[c.id]
-    // A record whose fingerprint no longer matches is void, and a void record is not a window.
+    // A deferral record reaches back to when the item was handed back. One whose fingerprint no
+    // longer matches (the item has changed since) is void, so only the stop window is read.
     return entry !== undefined && entry.fingerprint === fingerprint(c) ? earliest(entry.at, window) : window
   })
-  // Both filters run before the limit is applied, so an item nobody has answered and an item
-  // somebody stopped do not consume triage slots — and both are told the limit, so they stop
-  // looking once the cycle has enough work. The stop gate goes first because its answer is the
-  // one a person is owed: an item that is both stopped and unanswered reports the stop.
+  // Both filters run before the cap, so neither an item still waiting on a reply nor one somebody
+  // stopped uses a triage slot. Both are told the cap too, so they stop reading once the cycle has
+  // enough work. The stop gate goes first because its answer is the one a person is owed: an item
+  // both stopped and unanswered is reported as stopped.
   //
-  // A stop and a handoff bind a catch-up exactly as they bind ordinary work. Somebody who said
-  // stop meant the artifact too, and the deferral record is what keeps a conflict the worker
-  // could not resolve from being retried at full worker cost every cycle after.
+  // Catch-ups pass through both gates as ordinary work does. Somebody who said stop meant the
+  // pull request too, and the deferral record keeps a conflict the worker could not resolve from
+  // being retried at full worker cost every cycle.
   //
-  // Gated through a report of its own so that **nothing here can hold the watermark**. An
-  // ordinary item the tracker would not answer for sits above the mark, so `heldBelow` pulls
-  // the mark back by as long as the outage. A catch-up item is below the mark by construction
-  // — #21's issue had not moved in months — so the same rule would reset the mark to the age
-  // of the oldest rotting artifact and re-read every item newer than it on the next cycle.
-  // Holding it buys nothing either way: a stale artifact is found by scanning everything the
-  // query returned, which the mark does not bound.
+  // Catch-ups are gated into a report of their own, `asked`, so that **nothing here can hold the
+  // watermark**. An ordinary item the tracker would not answer for sits above the mark, so
+  // `heldBelow` keeps the mark below it for as long as the outage lasts. A catch-up's item is
+  // usually far below the mark (#21's issue had not moved in months), so the same rule would reset
+  // the mark to the age of the oldest stale pull request and re-read every item newer than it next
+  // cycle. Holding the mark gains nothing for them either: stale pull requests are found by
+  // scanning everything the query returned, which the mark does not limit.
   const asked: Pick<CycleReport, 'skipped' | 'skippedStopped' | 'skippedDeferred' | 'skippedUnreadable'> = {
     skipped: [], skippedStopped: 0, skippedDeferred: 0, skippedUnreadable: 0,
   }
-  // A catch-up on an item a person handed over since its stop is a go-ahead, so the stop gate is
-  // told when each was handed over. Read only for catch-ups carrying this Igor's label, which
-  // are few; one that cannot be read is gated as before.
+  // A person who hands an item to this Igor after stopping it gives a go-ahead, so the stop gate is
+  // told when each catch-up's item was handed over. Only catch-ups carrying this Igor's label are
+  // read, which are few; where the read fails, the item is gated without it.
   const handedOver = new Map<string, string>()
   if (holding !== undefined) {
     for (const { candidate } of report.toCatchUp) {
@@ -1087,8 +1137,9 @@ export async function planCycle(
     comments, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit, holding,
   )
   const considered = await dropDeferred(comments, awake, quiet, options.identity ?? '', report, limit)
-  // Survivors the cap never reached. Nothing examined them and nothing decided about them, so
-  // they wait exactly as a held pool's candidates do rather than being passed over for good.
+  // Survivors the cap cut off before either gate read them. Nothing decided anything about them,
+  // so they go into `untriaged`, as a held pool's candidates do, and hold the watermark instead of
+  // being passed for good.
   const examined = new Set([
     ...considered.map((c) => c.id),
     ...report.skipped.map((s) => s.candidate.id),
@@ -1096,10 +1147,11 @@ export async function planCycle(
   for (const candidate of survivors) {
     if (!examined.has(candidate.id)) report.untriaged.push({ candidate, reason: OVER_LIMIT })
   }
-  // Before triage rather than per item: a role stuck on its own configuration would meet the
-  // same cure on every item, so it asks the model about none and claims none. The items are left
-  // untriaged, which holds the discovery watermark below them, and the directed ones and the
-  // catch-ups are found again next cycle, so dropping them here loses nothing.
+  // Asked once before triage, not per item: a role stuck on its own configuration would meet the
+  // same cure key on every item, so it triages none and claims none. Its candidates go into
+  // `untriaged`, which holds the watermark below them, and directed items and catch-ups are found
+  // again next cycle, so dropping them here loses nothing. A read that fails is reported, and the
+  // cycle goes on as though no condition stopped the role.
   const condition = await options.stopped?.().catch((error: unknown) => {
     report.failures.push(`could not read conditions: ${error instanceof Error ? error.message : String(error)}`)
     return undefined
@@ -1110,15 +1162,16 @@ export async function planCycle(
     report.toClaim = []
     report.toCatchUp = []
   } else if (considered.length > 0) {
-    // Resolved only now — a cycle with nothing to triage never reads a seat's usage for it.
-    // The seat a worker would draw from, spending what it allows and nothing wider. Where it
-    // names no seat there is no call: the triage model call is a spend like any other.
+    // The gate is asked only now, so a cycle with nothing to triage never reads a seat's usage.
+    // Triage spends from the seat a worker would draw on, within what that seat allows. Where the
+    // gate is exhausted no call is made, because a triage call spends like any other model call.
+    // With no gate at all, the budget is off and the call is made.
     const gate = options.budget ?? (options.gate === undefined ? undefined : await options.gate())
     if (gate?.exhausted() === true) {
-      // A gate that names no seat is the answer, not an obstacle to get past. Falling through
-      // to `workerEnv` spends whatever login is ambient — one no seat named, no ceiling bounds
-      // and nothing in the record can attribute — or, on a host with no such login, fails
-      // saying the machine is not logged in when its only problem is that every seat is held.
+      // No seat means no call: don't fall through to `workerEnv` without one. It would spend
+      // whatever login is ambient on the machine, which no seat names, no ceiling bounds and
+      // nothing in the record can attribute. On a host with no such login it would fail saying
+      // the machine is not logged in, when the real problem is that every seat is held.
       report.heldPool = {
         ...(gate.blocked === undefined ? {} : { blocked: gate.blocked }),
         ...(gate.resetAt === undefined ? {} : { resetAt: gate.resetAt }),
@@ -1166,37 +1219,36 @@ export async function planCycle(
     )
   }
 
-  // The cycle's only two writes, and a preview makes neither: somebody looking at the backlog
-  // decided nothing, and a mark or a record saying otherwise costs those items the real cycle
-  // that would have worked them.
+  // The watermark and the decision record are the cycle's only writes, and a preview makes
+  // neither: somebody looking at the backlog decided nothing, and a mark or a record saying
+  // otherwise would cost those items the real cycle that would have worked them.
   if (options.preview !== true) {
     // The watermark is a timestamp per source: discovery reconsiders only items whose `updatedAt`
-    // is after it. Saving it decides which items the next cycle sees again.
+    // is after it. Saving it decides which items the next cycle sees again. A look-back
+    // (`sinceDays`) reads behind the stored mark on purpose, so it saves no mark.
     //
-    // A look-back (`sinceDays`) reads deliberately behind the stored mark, so it saves no mark.
+    // The mark is held below the `updatedAt` of three kinds of item. A mark that passed one of
+    // them would drop it from the pool for good:
     //
-    // An item dropped before anything examined it holds the mark below its `updatedAt`. A
-    // cooldown ends with the clock and an outage with the tracker's recovery, and neither edits
-    // the item, so nothing else would bring it above a mark that passed it. Every other skip was
-    // a decision, and the edit or reply that would reverse that decision moves the item's
-    // `updatedAt` by itself.
-    //
-    // An item the model stage never asked about is the same case one stage later, and a worse
-    // one: it was never dropped, so nothing in `skipped` holds it, and a mark let past it drops
-    // it from the pool for good. Triage takes items oldest first and stops at its cap, so these
-    // are the newest items read, and the mark is held below one only where it is newer than every
-    // item this source decided. Where one ties a decided item, as tracker timestamps coarse enough
-    // for one bulk edit to stamp a page of items can, it is passed rather than holding the mark
-    // below the decided item too, which would triage that again every cycle the tie lasted.
+    // - An item dropped before anything examined it (`skipped` with `held` set): a stop still
+    //   cooling down, or a tracker that did not answer. A cooldown ends with the clock and an
+    //   outage with the tracker's recovery, and neither edits the item, so nothing would bring it
+    //   back above the mark. Every other skip was a decision, and the edit or reply that would
+    //   reverse that decision moves the item's `updatedAt` by itself.
+    // - An item triage never asked about (`untriaged`). It was never dropped, so nothing in
+    //   `skipped` holds it. Triage takes items oldest first and stops at its cap, so these are the
+    //   newest items read, and one holds the mark only where it is newer than every item this
+    //   source decided. An untriaged item whose `updatedAt` equals a decided item's is passed.
+    //   Such ties happen where tracker timestamps are coarse enough for one bulk edit to stamp a
+    //   page of items, and holding the mark below the tie would triage the decided item again
+    //   every cycle the tie lasted.
+    // - An item the model said to proceed with that the caller never took (`untaken`): a cap, the
+    //   budget or a condition stopped the caller first, or the tracker did not answer its claim.
+    //   A caller that may stop early saves the mark itself, through `settle` (`markAfterWork`),
+    //   and names the items it never took.
     //
     // `decided` is per source, because each source's mark moves on its own: an item decided in
     // another source is nothing this source's mark has to clear.
-    //
-    // An item the model said to proceed with is decided, but the cycle has not acted on it until
-    // a caller takes it. A caller that may stop before taking every one, because the budget ran
-    // out or a condition opened, settles the mark itself (`markAfterWork`) and names the ones it
-    // never took. Those hold the mark as an unexamined item does: passed by it, an item the cycle
-    // chose to work would never be seen again.
     const saveMark = async (untaken: readonly string[] = []): Promise<void> => {
       if (options.sinceDays !== undefined || results.length === 0) return
       const held = [...report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id), ...untaken]
@@ -1223,8 +1275,9 @@ export async function planCycle(
     }
     if (options.markAfterWork === true) report.settle = saveMark
     else await saveMark()
-    // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
-    // say afterwards what this cycle decided — so it is reported like any other cycle failure.
+    // A failed record does not fail the cycle, but it is reported like any other cycle failure:
+    // a write that vanished silently would leave nobody able to say afterwards what this cycle
+    // decided.
     await recordDecisions(deps.destination, role, report).catch((error: unknown) => {
       report.failures.push(
         `could not record decisions: ${error instanceof Error ? error.message : String(error)}`,
@@ -1235,12 +1288,13 @@ export async function planCycle(
 }
 
 /**
- * The seam the whole cycle reads comments through. A cycle passes one that fetches per item
- * once; a caller with a single question can pass the tracker itself.
+ * The one tracker call the stop and deferral gates read comments with. A cycle passes
+ * `oneFetchPerItem`, so each item's comments are fetched once; a caller asking one question can
+ * pass the tracker itself.
  */
 export type CommentSource = Pick<Tracker, 'commentsSince'>
 
-/** The older of two moments. An undatable one loses, since it cannot be shown to be older. */
+/** The earlier of two timestamps. One that does not parse is never picked over one that does. */
 function earliest(a: string, b: string): string {
   const x = Date.parse(a)
   const y = Date.parse(b)
@@ -1258,10 +1312,11 @@ function covers(cached: string, since: string): boolean {
 }
 
 /**
- * Trims a wider payload to the window a consumer asked for.
+ * Drops the comments from before `since`, so a gate served from a fetch that reached further
+ * back gets only what it asked for.
  *
- * An undatable comment stays in: a stop nobody can date holds its item, so dropping it here
- * would lift a stop by arithmetic.
+ * A comment whose time does not parse stays in. A stop nobody can date holds its item, so
+ * dropping that stop here would let the item be taken again.
  */
 function notBefore(comments: readonly Comment[], since: string): Comment[] {
   const floor = Date.parse(since)
@@ -1275,18 +1330,19 @@ function notBefore(comments: readonly Comment[], since: string): Comment[] {
 /**
  * One comment fetch per item, shared by every gate that asks about it.
  *
- * `lookback` gives the earliest moment any of them will ask about for *that* item: the stop
- * window, or its deferral when that is older. Per item and not one width for the cycle — a
- * deferral reaches back thirty days where a stop window is an hour, and `commentsSince` is
- * paginated, so the widest window any one item needs is several requests on every other item.
+ * `lookback` gives the earliest moment any gate will ask about for *that* item: the stop
+ * window, or the item's deferral when that is older. It is per item because the two differ
+ * widely: a deferral reaches back thirty days where a stop window is an hour, and
+ * `commentsSince` is paginated. One width for the whole cycle would spend several requests on
+ * every item to serve the few that have a deferral.
  *
- * Each consumer gets its own window back out of the shared payload, so a comment older than
- * what it asked about cannot answer its question. A request reaching back further than what
- * was fetched is fetched again rather than served short: handing back a truncated list is how
- * a deferral outlives the reply that lifted it.
+ * Each gate gets back only the comments from its own `since`, so a comment older than what it
+ * asked about cannot answer its question. A request reaching back further than what was
+ * fetched is fetched again rather than served short: a truncated list can miss the reply that
+ * lifts a deferral, and the deferral then outlives that reply.
  *
- * A failed read is kept as the failure, so a second consumer sees the same error rather than
- * retrying against a tracker that is most likely rate-limiting.
+ * A failed read is kept as the failure, so a second gate asking about the item gets the same
+ * error rather than retrying against a tracker that is most likely rate-limiting.
  */
 export function oneFetchPerItem(tracker: CommentSource, lookback: (c: Candidate) => string): CommentSource {
   const held = new Map<string, { since: string; payload: Promise<Comment[]> }>()
@@ -1303,15 +1359,17 @@ export function oneFetchPerItem(tracker: CommentSource, lookback: (c: Candidate)
 }
 
 /**
- * Drops survivors handed back earlier that nothing has answered since.
+ * Drops survivors this Igor handed back that nobody has answered since: the item still matches
+ * the fingerprint its deferral recorded, and nobody but this Igor has commented since.
  *
- * Comments are read only for items that already have a record and still match their
- * fingerprint, and not at all once the cycle has the `wanted` items it can act on, since
- * everything past that is dropped by the caller regardless. In a cycle the answer is already
- * in hand, because the read the stop gate took reaches back to this item's deferral.
+ * Comments are read only for items that have a deferral and still match its fingerprint, and
+ * not at all once the cycle has the `wanted` items it can act on, since the caller drops
+ * everything past that regardless. In `planCycle` this makes no request of its own: the read
+ * the stop gate took already reaches back to the item's deferral (`oneFetchPerItem`).
  *
- * A source that will not answer means the item is reconsidered: the record is a cache, and
- * failing toward the work is the right direction for one.
+ * Where the tracker will not answer, the item is kept and reconsidered. Keeping it costs at
+ * worst one repeated handoff; dropping it could leave an item somebody had answered waiting
+ * for a reply that never comes.
  */
 export async function dropDeferred(
   tracker: CommentSource,
@@ -1365,13 +1423,13 @@ function instant(iso: string): number {
 }
 
 /**
- * The most recent stop, because the cooldown runs from the last one anybody issued: the last in
- * `spoken`, which is in creation order, so two stops in the same second, or one with no readable
- * time, are ordered as they were said.
+ * The latest stop addressed to this Igor, because the cooldown runs from the last stop anybody
+ * issued. Latest means last in `spoken`, which is in creation order, so two stops in the same
+ * second, or one with no readable time, are ordered as they were said.
  *
  * A stop made by removing this Igor's label leaves no comment of its own, so this Igor's receipt
- * for it counts as the stop, at the receipt's time. Only this Igor's own: anyone can copy the
- * marker into a comment.
+ * for it (carrying `STOPPED_MARKER`) counts as the stop, at the receipt's time. Only this Igor's
+ * own receipt counts: anyone can copy the marker into a comment.
  */
 function latestStop(spoken: readonly Comment[], identity: string): Comment | undefined {
   let latest: Comment | undefined
@@ -1384,24 +1442,24 @@ function latestStop(spoken: readonly Comment[], identity: string): Comment | und
 }
 
 /**
- * Drops survivors somebody stopped, until the tracker says they may come back.
+ * Drops survivors somebody stopped, until the stop's cooldown runs out, somebody says to carry
+ * on, or a person hands the item to this Igor again.
  *
- * Without this the stop lasts one cycle. A stop moves the item's `updatedAt`, the lane still
- * admits it and triage gives the same verdict on the same text, so the Igor re-claims what it
- * was just told to put down — and the claim message promises anyone reading it that a stop
+ * Without this a stop would last one cycle. A stop moves the item's `updatedAt`, the lane still
+ * admits it and triage gives the same verdict on the same text, so the Igor would re-claim what
+ * it was just told to put down, and the claim message promises anyone reading it that a stop
  * works immediately.
  *
- * The stop is read off the item every cycle rather than remembered, so nothing an Igor can
- * lose sits between a person writing **stop** and the Igor honouring it. One comment read per
- * item examined, over the cooldown window alone — a stop older than that lets the item back
- * regardless — and the `wanted` break ends the scan once the cycle has as much work as it can
- * triage.
+ * The stop is read off the item every cycle rather than remembered, so nothing an Igor can lose
+ * sits between a person writing **stop** and the Igor honouring it. Each item examined costs one
+ * comment read, reaching back over the cooldown window only: a stop older than that lets the
+ * item back regardless. The scan ends once the cycle has the `wanted` items it can triage.
  *
- * `eligibleAfterStop` holds the rule for what may follow a stop; this supplies the stop and
- * what was said after it. A tracker that will not answer cannot tell "no stop" from "cannot
- * say", so the item waits a cycle, and so does everything behind it. That is the opposite of
- * how `dropDeferred` fails, and deliberately: one cycle of latency costs less than claiming
- * something a person put down.
+ * `eligibleAfterStop` holds the rule for what may follow a stop; this supplies the stop and what
+ * was said after it. A tracker that will not answer cannot tell "no stop" from "cannot say", so
+ * the item waits a cycle, and so does every item after it: one cycle of latency costs less than
+ * claiming something a person put down. `dropDeferred` keeps such an item instead, for the
+ * reason its own comment gives.
  */
 export async function dropStopped(
   tracker: CommentSource,
@@ -1411,7 +1469,7 @@ export async function dropStopped(
   report: Pick<CycleReport, 'skipped' | 'skippedStopped' | 'skippedUnreadable'>,
   now: number,
   wanted = Infinity,
-  /** How the tracker's holder field shows this Igor, for who else holds an item. */
+  /** How the tracker's holder field shows this Igor, to tell whether somebody else took an item. */
   holding?: Holding,
   /**
    * When a person last put this Igor in an item's holder field, by item id. A hand-over newer
@@ -1428,9 +1486,10 @@ export async function dropStopped(
     try {
       spoken = await tracker.commentsSince(candidate, window)
     } catch {
-      // The rest of the cycle goes down with this item, unasked. A tracker that will not
-      // answer cannot be claimed on either, so a request apiece would buy nothing — and the
-      // likeliest reason it stopped answering is a rate limit these requests are feeding.
+      // This item and every one after it are skipped unasked, each `held` so the watermark
+      // waits for it. A tracker that will not answer cannot be claimed on either, so a request
+      // apiece would buy nothing, and the likeliest reason it stopped answering is a rate limit
+      // that more requests would feed.
       for (const rest of survivors.slice(i)) {
         report.skipped.push({
           candidate: rest, reason: 'the tracker stopped answering', stage: 'unreadable', held: true,
@@ -1455,12 +1514,13 @@ export async function dropStopped(
       since: async () =>
         spoken.filter(
           (c) =>
-            // Only what followed the stop, in the order it was said. The window is wider than
-            // the stop, so an earlier go-ahead is in hand here and would otherwise lift a stop
-            // issued after it, in the same second or before.
+            // Only comments said after the stop, by position in `spoken`, which is in creation
+            // order. `spoken` covers the whole cooldown window, so without this a go-ahead said
+            // before the stop would lift it. Position orders two comments stamped the same
+            // second, where their times cannot.
             spoken.indexOf(c) > spoken.indexOf(stop) &&
-            // Nothing the Igor says to itself is permission to resume, and a stop is the
-            // wrong place to rely on its own receipt never matching a go-ahead.
+            // Nothing this Igor says is permission for it to resume, even where its own receipt
+            // or notice happens to read as a go-ahead.
             c.author !== identity &&
             // One comment can match both: "stop @igor — continue once I've looked" is a stop
             // by `^stop` and a go-ahead by what follows the address. A stop outranks, here as
@@ -1471,8 +1531,9 @@ export async function dropStopped(
     if (verdict.eligible) {
       kept.push(candidate)
     } else {
-      // A stop nobody can date has no cooldown to run out, so only a go-ahead lifts it — and
-      // that comment moves the item above the mark by itself. The mark waits on the clock.
+      // Held, so the watermark waits for it, only where the stop has a date: its cooldown ends
+      // with the clock, which edits nothing. A stop nobody can date has no cooldown to run out,
+      // so only a go-ahead lifts it, and that comment moves the item above the mark by itself.
       report.skipped.push({
         candidate,
         reason: `stopped: ${verdict.reason}`,
@@ -1486,16 +1547,19 @@ export async function dropStopped(
 }
 
 /**
- * Items whose holder field a person set to this Igor, read from the tracker each cycle.
+ * Items whose holder field a person set to this Igor, read from the tracker each cycle in every
+ * repository the role's sources name, whatever their queries match. An item counts only where a
+ * person, not this Igor, last set the field, so an Igor's own leftover label is not mistaken for
+ * a hand-over. Each such open item goes in at most one list:
  *
- * `directed` is what this Igor should claim now, without the settle interval. An item counts
- * only where a person, not this Igor, last set the field, and this Igor has said nothing on it
- * since apart from a waiting notice: so a person's hand-over is answered once, an Igor's own
- * leftover label is not mistaken for one, and a hand-over after a stop is a go-ahead that skips
- * the cooldown. A stop posted after the hand-over still holds it.
- *
- * `waiting` is what a person handed to this Igor while another Igor holds it, where no notice
- * about those holders has been posted since.
+ * - `directed`: what this Igor should claim now, without the settle interval or triage. This
+ *   Igor has not claimed it since the hand-over, so a hand-over is answered once. A hand-over
+ *   after a stop is a go-ahead that skips the cooldown.
+ * - `stopped`: somebody said stop after the hand-over, and this Igor has not answered that stop
+ *   with a receipt. The stop cancels the hand-over; the caller removes the label and posts the
+ *   receipt (`honourIdleStop`).
+ * - `waiting`: another Igor holds the item, or work is already in flight on it, and this Igor
+ *   has not posted the notice saying so since the hand-over.
  *
  * A read that fails leaves its item to the next cycle and is reported; it never ends the cycle.
  */
@@ -1524,12 +1588,14 @@ export async function findDirected(
       try {
         const setting = await tracker.holderSetBy(candidate)
         if (setting === undefined || setting.self) continue
-        // Created since the hand-over, not merely edited since it, which is all `since` asks
-        // of a surface that filters on the edit time.
+        // Comments created since the hand-over. On a surface whose `since` filters by edit time,
+        // `commentsSince` also returns older comments edited since, and an old stop edited later
+        // would cancel the hand-over it predates.
         const spoken = notBefore(await tracker.commentsSince(candidate, setting.at), setting.at)
-        // A stop since the hand-over cancels it, and a label on an item always means it is handed
-        // over, so a stop no run of this Igor answered takes the label off. Only a receipt at or
-        // after the stop answers it: a notice or a claim after a stop is not its answer.
+        // A stop since the hand-over cancels it. A label on an item always means it is handed
+        // over, so a stop no run of this Igor has answered goes to `stopped`, which takes the
+        // label off. Only this Igor's receipt, at or after the stop, answers it: a notice or a
+        // claim after a stop does not.
         const stop = latestStop(spoken, identity)
         const receipted =
           stop !== undefined &&
@@ -1584,8 +1650,8 @@ export async function findDirected(
 
 /**
  * Answers a stop said on a handed-over item while no run of this Igor was active on it: the
- * label comes off, as any stop takes it off, and the stop gets its receipt. A release that does
- * not take is said so after the receipt, as on every stop path.
+ * label comes off, as on any stop, and the stop gets its receipt. Where the release does not
+ * take, a second comment says so after the receipt, as on every stop path.
  */
 export async function honourIdleStop(
   tracker: Tracker,
@@ -1605,11 +1671,13 @@ const why = (error: unknown): string => (error instanceof Error ? error.message 
 export const DECISIONS_PATH = 'decisions.ndjson'
 
 /**
- * Writes what triage decided, skips included.
+ * Appends one line per cycle to `decisions.ndjson`: the count at each stage, and every item's
+ * decision with its reason, skips included.
  *
  * A skip is the more useful record of the two. Whether a lane is doing its job, and whether
- * the model is earning what it costs, are questions about what was *rejected* — and printing
- * that to a terminal nobody kept means the ratio can only ever be estimated afterwards.
+ * the model is earning what it costs, are questions about what was *rejected*. Printed only to
+ * a terminal nobody kept, the share of items rejected at each stage could only ever be estimated
+ * afterwards.
  *
  * One line per cycle rather than one per candidate: the interesting quantity is the shape of
  * the funnel, and a line per candidate would bury it in a repository people read with `git`.
@@ -1620,10 +1688,12 @@ export async function recordDecisions(
   report: CycleReport,
   write: typeof appendRecord = appendRecord,
 ): Promise<void> {
-  // A cycle whose only decision was a catch-up has no fresh items and no failures, and its
-  // one decision would otherwise go unwritten — which is the cycle most worth a record.
-  // A stopped cycle is recorded whatever it found: the record is where an operator tells a role
-  // stuck on its configuration from one with nothing to do.
+  // A cycle with nothing fresh and no failure writes no line, unless it made one of these
+  // decisions:
+  // - A catch-up. A cycle whose only decision was a catch-up is the cycle most worth a record.
+  // - A condition that stopped the role, recorded whatever the cycle found: the record is where
+  //   an operator tells a role stuck on its configuration from one with nothing to do.
+  // - A directed item, which is claimed whether or not anything was fresh.
   if (
     report.fresh === 0 &&
     report.failures.length === 0 &&
@@ -1665,9 +1735,9 @@ export async function recordDecisions(
       ...(report.triageSeat === undefined ? {} : { seat: report.triageSeat }),
       decisions: [
         ...report.skipped.map((s) => ({ item: s.candidate.id, stage: s.stage, outcome: 'skip', reason: s.reason })),
-        // A catch-up is decided at the universal stage and reaches neither of the other two
-        // lists, so without this it is the one decision a cycle makes and never records —
-        // and the skip ratio the record exists to make determinable would be short by it.
+        // A catch-up passes the universal stage and never reaches `skipped` or `verdicts`. Without
+        // this entry it would be the one decision a cycle makes and never records, and the skip
+        // ratio this record exists to measure would be off by it.
         ...report.toCatchUp.map((c) => ({
           item: c.candidate.id, stage: 'catch-up', outcome: 'proceed', reason: c.reason,
         })),
