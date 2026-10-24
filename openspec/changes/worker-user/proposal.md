@@ -295,10 +295,18 @@
     file affects only the worker user, whose trees are the only repositories it works in.
     *Rejected:* `GIT_CONFIG_*` in the worker's environment, which #156 forbids.
 
-31. **A failed `sudo` spawn of the worker is recorded under a cure key scoped to the whole Igor**
-    (proposed in task 0.3; approved by Adam, 2026-10-19). A cure key is #101's key a recurring
-    failure is recorded under. One scoped to the whole Igor stops it taking new items, where one
-    scoped to an item would fail every item in turn. The Igor does not exit on it (#82).
+31. **A failed `sudo` spawn of the worker is recorded under a cure key scoped to its instance,
+    `igor@<role>-<rank>`, and a condition it opens clears on that instance's next spawn that
+    succeeds** (Adam, 2026-10-24, replacing the key scoped to the whole Igor he approved on
+    2026-10-19). A cure key, in `condition-backoff` (#101, merged), is the key a failure is
+    recorded under; a first occurrence stops nothing, and a recurrence opens a condition on the
+    key's scope. Once the instance stops, #101's cooldown lets one probe item through, and that
+    probe's spawn is the one that can succeed and clear it. A key scoped to an item would fail
+    every item in turn. A key scoped to the whole Igor, which is one role however many ranks and
+    hosts run it, would stop every rank on every host for one host's broken sudoers line; and
+    #101 clears that scope only when an App token is minted again, which fixing sudoers does not
+    do. #101's conditions name a role, a seat or an Igor, so the instance scope and its clearing
+    are this change's to build (task 0.3). The Igor does not exit when the condition opens (#82).
 32. **The Igor may stage more than once, but every staging follows the kill and the checks, and
     both trailers bind the last staging** (Adam, 2026-10-19). Before each staging, every model
     step started so far has exited, the Igor has killed every process the worker user owns, and
@@ -493,8 +501,9 @@ both wait for his approval.
     short-secret rule would fail every run. Instead `igor serve` and `igor run` refuse to start,
     exiting 78, with a message naming the variable that holds the URL and never the value. A
     proxy URL with a user name and no password is not refused, however short the name, because
-    #217 registers the name joined to its host, as `<user>@<host>`, and never alone, so what is
-    registered is long enough. *Rejected:* failing each run, which a short proxy password would
+    #217 registers the name joined to its host, as `<user>@<host>`, never alone. #217 also
+    registers the whole proxy URL, which is long enough to register even where `<user>@<host>`
+    is under 8 characters. *Rejected:* failing each run, which a short proxy password would
     do without end.
 49. **Two refinements of decision 48** (proposed by this change's author on 2026-10-24, for
     Adam's approval). An empty password (`user:@host`, as curl writes it for a Negotiate proxy)
@@ -516,17 +525,24 @@ both wait for his approval.
     failing each run. #217 registers the name bound to its host, as `<user>@<host>`, so the rule
     that fails a run rather than hand over a secret under 8 characters does not apply to it.
     It stands whatever Adam decides on decision 49, whose scenario covers this case too.
-52. **Before each `sudo` that passes the worker a secret, the Igor runs
+52. **Before each `sudo` that passes the worker user a secret, the Igor runs
     `sudo -n -u <worker user> true`** (Adam, 2026-10-24). Sudo writes a command it refuses to
     the journal with the variables it would have passed, so a refused spawn would log the seat
-    token. Where a sudoers line was removed or edited after the start check, the check is
-    refused instead, carrying no secret, and the Igor fails the run without spawning. A line
-    broken in the milliseconds between the check and the spawn would still log the token; that
-    window is accepted. The `sudo` calls that pass a secret are the worker's spawn and each
-    later `claude -p` in the worker's tree. A refused check counts as a failed `sudo` spawn
-    under decision 31, recorded under its key scoped to the whole Igor, so the Igor stops taking
-    items rather than fail each in turn; that is this change's reading of decision 31, which
-    Adam can change with it (*Where a failed `sudo` spawn's condition stops*, below).
+    token or the proxy password. Where a sudoers line was removed or edited after the start
+    check, the check is refused instead, carrying no secret, and the Igor fails the run without
+    spawning. A line broken in the milliseconds between the check and the spawn would still log
+    the secret; that window is accepted. The `sudo` calls that pass a secret, and so get the
+    check, are four: the worker's spawn, each later `claude -p` in the worker's tree, each of
+    #189's checks, and the start check's probe of the metadata endpoint through a proxy, the
+    last two getting the proxy password. A refused check counts as a failed `sudo` spawn under
+    decision 31: its cure key opens a condition on the instance when the refusal recurs, and a
+    later spawn that succeeds clears it.
+53. **Every kill under `igor serve` runs the same check first, though a kill passes no secret**
+    (this change's addition on 2026-10-24, for Adam to confirm). The kill is `sudo ... pkill`,
+    and a refused `sudo` and a `pkill` that found no process both exit with status 1, so
+    without the check a refused kill would read as a clean one and the Igor would read and stage
+    the tree while worker processes still run. A refused check fails the run and is recorded as
+    decision 31 records a failed spawn.
 
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
@@ -537,6 +553,15 @@ or on another change.
   proxy password is not refused, and the refusal for a metadata endpoint names the variable,
   not the URL. If he turns it down, those two passages go, with the scenario *A proxy user name
   with no password is registered with its host*.
+- **Decision 53 waits for Adam's approval.**
+- **From a third consistency read on 2026-10-24.** Decision 52 rests on sudo logging a refused
+  command with the variables it would have passed, which task 6.12 measures; if it does not,
+  the check before a spawn guards nothing, though decision 53's check before a kill still
+  tells a refusal from an empty kill. The instance scope of decision 31 needs a
+  `stuck-conditions` delta stating it, which this change's authors are to write before Adam
+  approves the change. And decision 35 claims Adam's leave to cite, ahead of #204's archive
+  order, requirements of seven changes that archive later, where issue #204 records that leave
+  for #189 alone; Adam is to confirm which is right.
 - **Other findings of the 2026-10-24 consistency read, for this change's authors:**
   - From a second consistency read on 2026-10-24, after the first one listed above: no release
     removes the `<tree>-prompt` directory, so a long-running `igor serve` leaves one per run
@@ -690,14 +715,6 @@ or on another change.
   Igor defines no filter, so that output is the file as it stands, the pointer. That conflicts
   only if #137 means the real content; the question is #137's to answer, with whether its rule
   waits for the later change that defines trusted filters.
-
-- **Where a failed `sudo` spawn's condition stops, for Adam.** Decision 31 records it under a
-  cure key scoped to the whole Igor. Under #101 that scope is the Igor's App identity, which is
-  its role's name, so under #179 one host's broken sudoers line stops every rank of the role on
-  every host. #101's Igor-scoped condition opens on its first occurrence and clears only when an
-  App token is minted again, which fixing sudoers does not do. *Recommendation:* scope it to the
-  instance, `igor@<role>-<rank>`, and clear it on the next spawn that succeeds, which #101 would
-  need to allow.
 
 - **Findings of the 2026-10-19 consistency read left for the next pass.** The signing order is
   still stated here and in #153; this change should keep only what it owns (when a staging may

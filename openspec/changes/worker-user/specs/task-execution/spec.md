@@ -11,12 +11,16 @@ gone rank of its role left SHALL build that rank's worker user the same way, as
 `igor-worker-<role>-<rank>` from its own role and the number of the gone rank that #179's sweep
 finds. The unit's `User=` and `Group=` SHALL name the service user and its group. The name SHALL NOT be read from `igor.config.yaml` or any other lore file. Under `igor serve`, execution
 SHALL run the worker as that user, and every process the worker starts SHALL run as that user
-too. Before each `sudo` that passes the worker a secret, which is the worker's spawn and each
-later `claude -p` started in the worker's tree, the Igor SHALL run
+too. Before each `sudo` that passes the worker user a secret, the Igor SHALL run
 `sudo -n -u <worker user> true`, which passes none, and where that is refused SHALL fail the run
-without the spawn, so a refusal sudo logs never holds the seat token. A refused check SHALL be
-recorded as a failed spawn of the worker is, under the condition key decision 31 of this
-change's proposal scopes to the whole Igor. Every other `claude -p` the Igor starts with the
+without the spawn, so that no refusal sudo logs holds the seat token or a proxy password. These
+four `sudo` calls pass a secret: the worker's spawn, each later `claude -p` started in the
+worker's tree, each of #189's checks, and the start check's probe of the metadata endpoint
+through a proxy. A failed spawn of the worker, and a refused check, SHALL be recorded under a
+`condition-backoff` (#101) cure key scoped to the instance, `igor@<role>-<rank>`. As with any
+cure key there, a first occurrence stops nothing, and a recurrence opens a condition that stops
+that instance taking new items. The probe item #101's cooldown then lets through spawns the
+worker, and that spawn, when it succeeds, clears the condition. Every other `claude -p` the Igor starts with the
 worker's tree as its working directory SHALL run as that user as well, such as #153's bug hunt
 and prose pass. No prose or bug-hunter script SHALL run as that user: the Igor runs them as the
 service user (*The Igor stages only after its checks, and #153's trailers bind the last staging*). No
@@ -53,6 +57,15 @@ system's file permissions are the barrier that holds whatever the worker runs.
   is about to spawn a worker
 - **THEN** its `sudo -n -u igor-worker-<role>-<rank> true`, which carries no secret, is refused,
   and the Igor fails the run without spawning, so no journal line holds the seat token
+- **AND** where the refusal recurs, that instance takes no new item, while the role's other
+  ranks go on, until the probe item #101's cooldown lets through spawns its worker successfully
+
+#### Scenario: A check before one of #189's checks is refused
+
+- **WHEN** a sudoers line is removed after the start, and the Igor is about to run one of #189's
+  checks as the worker user
+- **THEN** its `sudo -n -u igor-worker-<role>-<rank> true` is refused, the run fails without the
+  check, and no journal line holds the proxy password
 
 #### Scenario: The seat token is not on a command line
 
@@ -100,7 +113,7 @@ Under `igor serve`, the worker user SHALL be able to create, edit and remove fil
 working tree, write its outbox, and run the role's allowed commands, including `git rm` and
 `git mv`. It SHALL NOT be able to write the tree's git directory, the lore checkout and every worktree of it an Igor
 process reads its configuration from (#208, `lore-pull`), the Igor's installation,
-`skills_dir` (#174), the Igor user's home directory, or the Igor's credential
+`skills_dir` (#174's root-owned directory of pinned skills), the service user's home directory, or the Igor's credential
 files. The Igor SHALL write its records, such as `executions.ndjson` on the `igor-state`
 branch, only through the code host with its own credential, never in a local file the worker
 could write.
@@ -767,18 +780,11 @@ credentials. The notice keeps the trade visible.
 - **THEN** it runs the worker as the same user, and its first line says workers run as its own
   user, can read its credentials, and can use whatever the person's own user can
 
-#### Scenario: run leaves a live run's tree
+#### Scenario: run removes its trees as its own user
 
-- **WHEN** an `igor run` for the role `generalist` releases its tree on a host that also holds a
-  rank-0 tree of another run whose lock is held, and the tree `generalist-1-b2`
-- **THEN** it removes its own tree, as its own user and without `sudo`
-- **AND** it leaves the other run's tree and `generalist-1-b2`
-
-#### Scenario: run removes a gone run's tree, home and plugin directory at its start
-
-- **WHEN** an `igor run` for the role `generalist` starts on a host that holds a rank-0 tree, a
-  worker home and a plugin directory of an earlier run whose lock it can take
-- **THEN** before its first cycle it removes all three, as its own user and without `sudo`
+- **WHEN** an `igor run` removes a tree, a worker home or a plugin directory of an earlier run
+  that #179's sweep has it remove
+- **THEN** it removes it as its own user and without `sudo`
 
 #### Scenario: run ignores a worker user on the host
 
@@ -1119,13 +1125,24 @@ Execution SHALL run the worker in its own process group. Under `igor run` it SHA
 group, so that the subprocesses the worker spawned in that group die with it. Under `igor serve`
 it SHALL instead kill every process the worker user owns (*A kill, a release and a sweep reach
 what the worker owns*). A group or a worker user with no process left SHALL NOT make cleanup
-fail.
+fail. Under `igor serve` the kill SHALL first run `sudo -n -u <worker user> true`: a refused
+`sudo` and a `pkill` that found no process both exit with status 1, so without the check a
+refused kill would read as a clean one. A refused check SHALL fail the run before the Igor reads
+or stages anything from the worker's tree or outbox, and SHALL be recorded under the instance's
+cure key, as a refused check before a spawn is.
 
 A kill that reaches only the worker leaves a build, a test run or a script writing to a working
 tree that is about to be released and swept. The tool window exists because such a subprocess
 may legitimately run long, so a kill lands while one is running by construction rather than by
 chance. Claude Code starts each command a worker runs in a session of its own, outside the
 worker's process group, so under `igor run` such a command can outlive the kill.
+
+#### Scenario: A refused check before a kill fails the run
+
+- **WHEN** under `igor serve` a sudoers line is removed after the worker starts, and the Igor is
+  about to kill the worker user's processes
+- **THEN** its `sudo -n -u igor-worker-<role>-<rank> true` is refused, and the run fails before
+  the Igor reads or stages anything from the tree
 
 #### Scenario: A killed worker takes its subprocesses with it
 
