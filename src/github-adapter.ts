@@ -29,6 +29,7 @@ import {
   openPullRequest,
   requestReviewers,
 } from './github.js'
+import { escapeRegExp } from './text.js'
 
 /**
  * One request returns issues with their labels, assignees and linked pull requests, at a
@@ -610,7 +611,7 @@ export class GitHubTracker implements Tracker {
    */
   async findLinking(repo: string, url: string): Promise<string | undefined> {
     const found = await this.search({ tracker: this.name, repo, query: `is:issue in:body "${url}"` })
-    const whole = new RegExp(`${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w/-])`)
+    const whole = new RegExp(`${escapeRegExp(url)}(?![\\w/-])`)
     return found.find((c) => whole.test(c.body))?.url
   }
 

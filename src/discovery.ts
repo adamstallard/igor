@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Candidate, Source, Tracker } from './adapter.js'
 import { readState, writeState } from './state.js'
+import { instant } from './time.js'
 
 /**
  * Stage one of triage, plus the watermark that bounds how often stage three runs.
@@ -48,19 +49,10 @@ export const COLD_START_DAYS = 7
 const DAY = 24 * 60 * 60 * 1000
 
 /**
- * Timestamps are compared as instants, never as strings. GitHub returns `...T00:00:00Z` while
- * anything generated here carries milliseconds, and lexicographically `.000Z` sorts before `Z` —
- * so string comparison would call an item fresh purely because of how its timestamp was
- * spelled. An unparseable timestamp sorts oldest, which re-examines rather than skips.
- */
-function instant(iso: string): number {
-  const t = Date.parse(iso)
-  return Number.isNaN(t) ? -Infinity : t
-}
-
-/**
  * Pure, so the watermark's behaviour is testable without a tracker: given what a search
- * returned and what was seen last time, what still deserves triage?
+ * returned and what was seen last time, what still deserves triage? An unparsable timestamp is the
+ * earliest instant: an unparsable watermark re-examines every datable candidate, and a candidate
+ * whose own time is unparsable is never fresh.
  */
 export function freshCandidates(
   candidates: readonly Candidate[],
