@@ -4,7 +4,8 @@
 
 Where a condition's probe is due, an Igor SHALL take the probe item only when the execution log,
 read again after its own probe row has landed, shows that row deciding. Every other Igor in the
-scope SHALL take no item for that probe, and a due probe SHALL eventually be taken by one Igor
+scope SHALL take no item for that probe, except in the midnight case below, which this
+requirement does not cover, and a due probe SHALL eventually be taken by one Igor
 while any Igor in the scope keeps running.
 
 The terms, as this requirement uses them:
@@ -15,14 +16,23 @@ The terms, as this requirement uses them:
 - A probe row **ends** with a run row for its item written after it, with a void row naming it, or
   when it **lapses**: when the log shows its Igor can no longer be working it. Whatever rule decides
   a lapse SHALL be one every Igor in the scope judges alike from the log, such as a row's age
-  against a bound every Igor shares. This requirement does not choose that rule. The rule in
-  force lapses a row older than a fixed bound; #179 (`concurrent-instances`) replaces it with a
-  keepalive in its own requirement, which binds through that change: the Igor working a probe
-  item appends a keepalive row every poll interval of its own role, a row that does not end the
-  probe row, and the probe lapses once 90 minutes pass after the latest of them, or after the
-  probe row where there is none. The probe's outcome, which
+  against a bound every Igor shares. Where the rule compares a timestamp in the log with a
+  reader's own clock, its bound SHALL exceed the longest a live Igor's row can go without
+  whatever keeps it from lapsing, such as a run that has not ended, by at least an assumed
+  maximum clock skew between the Igors' hosts of 5 minutes, so that no Igor reads a live
+  Igor's row as lapsed; hosts whose clocks
+  differ by more are outside what this requirement covers. This requirement does not choose that
+  rule. The probe's outcome, which
   *A condition's scope is its cure's scope* and *A condition clears by not recurring, and a probe
   is what observes that* wait for, is whichever of these ends its row.
+- A probe row **holds the scope** from when it decides until it ends. While one does, no other
+  probe row for that key decides, so no other Igor in the scope takes an item for the probe.
+- **Storage order** is the order a fresh read of the log returns its rows: each day's partition in
+  line order, earlier days first. Within a day it is the order the store accepted the rows. At
+  midnight it can differ, since a row stamped just before midnight goes to the earlier day's
+  partition even when the store accepts it after a row in the later day's. Timestamps never
+  order rows.
+- A row has **landed** once the store has accepted it.
 - The **append deadline** is how long an Igor waits for an append, retries included, before it
   treats the append as failed.
 - The **probe settle interval** is longer than the append deadline. It is not the claim settle
@@ -36,8 +46,8 @@ The rules:
   SHALL show every row the store had accepted by then, with no part of the log served from an
   earlier read.
 - **The probe row that decides is the oldest that has not ended**, among the probe rows for the key
-  that are newer than the condition's last occurrence, in storage order: the order in which the
-  store accepted the rows, never their timestamps. The Igor whose row that is SHALL take the item.
+  that are newer than the condition's last occurrence, in storage order. The Igor whose row that
+  is SHALL take the item, unless one of the rules below stops it.
 - **An Igor that probes several conditions with one item SHALL take it only where its row decides for
   every one of them.**
 - **An Igor that appended a probe row and takes no item SHALL append a void row naming it.** That
@@ -48,16 +58,18 @@ The rules:
 - **A void row SHALL end no probe row but the one it names.**
 
 Two Igors in one scope can each read the log as due before either one's probe row lands. Once the
-settle interval has passed, no row can land ahead of an Igor's own: rows still to come land after
-it. So the oldest unended row is the same for every Igor that reads the log after its own settle
-interval. The wait is needed because two appends in flight together can land in either order, and
+settle interval has passed, every row that can land ahead of an Igor's own in storage order has
+landed, with one exception: at midnight, a write the store accepts after its Igor gave up on it,
+past the append deadline, can still land ahead, and then two Igors can each read their own row
+as deciding. Outside that exception, the oldest unended row is the same for every Igor that
+reads the log after its own settle interval. The wait is needed because two appends in flight together can land in either order, and
 a read made before both have landed may not show the older one. A void names a row and not an item
 because two processes of one role can pick the same item.
 
 #### Scenario: Two Igors find the probe due together
 
 - **WHEN** two Igors in one scope read the probe as due, and each appends a probe row
-- **THEN** only the Igor whose row the store accepted first takes an item
+- **THEN** only the Igor whose row comes first in storage order takes an item
 - **AND** the other takes no item and appends a void row naming its own row
 
 #### Scenario: An append in flight is waited for
@@ -66,6 +78,19 @@ because two processes of one role can pick the same item.
   lands ahead of it within the append deadline
 - **THEN** the first Igor's read, made after the probe settle interval, shows the other row, and only
   the Igor whose row is older takes an item
+
+#### Scenario: A reader's clock within the skew does not lapse a live row
+
+- **WHEN** a probe row's Igor is still working its item, and another Igor's clock runs 5 minutes
+  ahead of the first Igor's host
+- **THEN** that other Igor does not read the row as lapsed
+
+#### Scenario: A row accepted late into yesterday's partition is read
+
+- **WHEN** an Igor has read yesterday's partition before another Igor's probe row, stamped just
+  before midnight, is accepted into it within the append deadline
+- **THEN** the first Igor's read that decides reads that partition again rather than reuse its
+  earlier read, and shows the late row
 
 #### Scenario: A row that lands later does not change who decides
 

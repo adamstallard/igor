@@ -7,8 +7,11 @@
 2. **The first probe row the log accepted decides, read again after a settle interval.** An Igor
    that finds the probe due appends its probe row, waits until any append that could land ahead
    of it has landed, reads the log again, and takes the item only when its own row is the oldest
-   probe row that has not ended. This is #226's suggested fix with two corrections, and it is the
-   rule #179 adopts for claims. *Rejected:* a conditional append from the read that decided,
+   probe row that has not ended. This is #226's suggested fix with two corrections: a void names
+   its row rather than its item (decision 3), and the read waits a settle interval rather than
+   come at once (decision 2). It orders by
+   the store's sequence and uses no conditional write, as `work-claiming` already requires of
+   claims, and lets the earliest row decide, as #179 does among one role's processes. *Rejected:* a conditional append from the read that decided,
    because every write to the state branch, by any role, would refuse a pending probe append; a lock
    file per condition, because it is condition state stored apart from the log; a designated
    prober, because seat scopes span roles whose processes cannot see each other's heartbeats; the
@@ -34,6 +37,11 @@
    heartbeat files.
 7. **A TLA+ model, `model/ProbeClaim.tla`, proves the requirement**, with one negative
    configuration per rule, run by `.github/workflows/tla-probe-claim.yml`.
+8. **A lapse that compares a log timestamp with a reader's clock allows 5 minutes of clock
+   skew** (2026-10-24, at Adam's request to bound the skew; the figure is this change's choice).
+   Every lapse rule's bound must cover it, so no Igor reads a live Igor's row as lapsed while
+   the hosts' clocks agree within 5 minutes, as NTP keeps them. Hosts further apart are outside
+   what the requirement covers; the model holds no clocks.
 
 **Still open:**
 
@@ -46,6 +54,27 @@
   than configure them, with the deadline set from the measurement of `tasks.md`'s task 4.1 and
   the settle interval twice the deadline. Any interval longer than the deadline meets the
   requirement; twice is a margin chosen because a probe is rare, so the wait costs little.
+- **Found by a consistency read on 2026-10-24.** For Adam, each with a recommendation:
+  - Fixing the append deadline and settle interval in code, as recommended above, needs an
+    exception to `role-config`'s rule that every interval is configurable. *Recommended:* add
+    that exception to this change.
+  - The append deadline on every `appendRecord` call puts a deadline on every writer of the
+    log, a choice the decisions do not list, and collides with #179's rule that a conflicted
+    state write is retried until it succeeds. *Recommended:* put the deadline on probe-row
+    appends only.
+  - This change's place in #204's archive order, second, is the authoring agent's choice, which
+    #204 says Adam may move. *Recommended:* keep it.
+  For this change's authors, none blocking review of the rules:
+  - The in-force scenario *A probe is taken once* speaks of "a row saying it is taking the
+    probe", which this change's terms make a bid; the wording should say so.
+  - The requirement states liveness from "due", which `design.md` calls vacuous, while the
+    model proves it from the cooldown, and "due" is defined nowhere.
+  - The rejection of the conditional append cites a compare-and-set that `appendRecord`'s own
+    write already relies on.
+  - A failed partition read returns a shorter log that looks whole, so the deciding read never
+    learns that it failed, and decides on a log missing rows instead of voiding its row.
+  - Nobody has measured that GitHub's contents API returns every write another client had
+    landed; the settle interval assumes it.
 
 ## Why
 

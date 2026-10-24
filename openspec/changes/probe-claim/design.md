@@ -32,7 +32,9 @@ whose append failed takes the item anyway. #179's *A conflicted state write disc
 Within a day's partition, a file's line order is the order the store accepted its rows. Across
 partitions, `readLog` puts the earlier day first, and that can disagree with acceptance order at
 midnight. A row stamped just before midnight goes to the earlier day's file, and can be accepted
-after a row already in the later day's file. A second hazard sits beside it: `readLog` caches a
+after a row already in the later day's file. This change's one requirement, *Exactly one Igor takes a due probe, decided by the log after it
+writes*, defines storage order as this read order, the order every Igor sees, rather than the
+store's acceptance order, which no Igor can read. A second hazard sits beside it: `readLog` caches a
 past day's partition for the life of the process, so a row accepted late into yesterday's file is
 never read by a process that cached the file first.
 
@@ -44,10 +46,12 @@ has not ended. Rows that do not decide are voided by the Igors that wrote them. 
 row by an identifier, not by item. This is #226's suggested fix, plus two corrections the model
 found necessary (below).
 
-It is the rule #179 already adopts for claims among processes of one role: the claim message
-earliest in storage order holds the item, counted after a settle interval, and storage order is
-the surface's own sequence, never a timestamp (#179's *Assignment expresses a claim; ordering
-resolves it*). A reader who knows how claims are decided then already knows how probes are.
+This decision has three parts. Two are already in force for claims, in `work-claiming`'s
+*Assignment expresses a claim; ordering resolves it*: it orders by the store's order of writes,
+never a timestamp, and it uses no conditional write. The third, that the earliest row decides
+after a settle interval, is not in force for claims, where the later write wins; it is the rule
+#179 brings in for claims among processes of one role, so a reader who knows #179's claims
+already knows how probes are decided.
 
 What each part buys, and the model's negative that shows it is needed:
 
@@ -91,8 +95,9 @@ cost is a delay, not an extra item.
   two reasons. Every write to the state branch moves that commit, run rows and discovery marks of
   every role included, so on a busy fleet a probe append is refused for reasons unrelated to it
   and retried, each retry re-reading whether the probe is still due. And correctness would rest
-  on one store's compare-and-set. #179's *No dependence on conditional writes* rules that out for
-  claims, and a later change may move the log to a store that has no compare-and-set. It is the alternative to revisit if the
+  on one store's compare-and-set. `work-claiming`'s scenario *No dependence on conditional writes*,
+  in force on `main`, rules that out for claims, and the log should stay movable to a store
+  that has no compare-and-set, though no change plans such a move. It is the alternative to revisit if the
   midnight gap turns out to matter.
 - **A lock file per condition**, created only if absent. It is condition state stored apart from
   the log, which the in-force *A condition's scope is its cure's scope* forbids ("No condition
@@ -138,8 +143,14 @@ rule off and must fail. `NoVoidLoserLiveness.cfg` also shows that `DueProbed` is
 vacuously.
 
 **What the model does not cover.** A lapse is modelled as possible only for a row whose Igor
-crashed or whose end was lost, because the lapse is longer than any run; a live run outlasting
-it is out of scope here, as it is in #101. A clean run of an item that was already running when
+crashed or whose end was lost: under `SWEEP_AFTER_MS` because the lapse is longer than any
+run, and under #179's keepalive because a live Igor's keepalives keep its row from lapsing. Each
+bound leaves more than the assumed 5 minutes of clock skew between hosts (the proposal's
+decision 8) beyond what a live Igor needs: `SWEEP_AFTER_MS` an hour beyond the run ceiling, and
+the keepalive's 90 minutes, three times #179's 30-minute maximum poll interval, 60 minutes
+beyond the longest gap between two keepalives. The model holds no clocks. A live run outlasting
+`SWEEP_AFTER_MS`, which no run does while the run ceiling stands, is out of scope here, as it is
+in #101. A clean run of an item that was already running when
 the scope stopped also ends the condition; the model starts with nothing running, so it leaves
 that out. The model has one condition, so the
 rule for an item probing several is argued above, not checked. A stale read is modelled as a
