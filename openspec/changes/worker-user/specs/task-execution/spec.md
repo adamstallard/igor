@@ -729,14 +729,12 @@ the Igor's own user. `igor run`, the one-shot command for development, SHALL alw
 worker as the Igor's own user, and SHALL say so when it starts, naming what the worker can then
 read. Nothing else SHALL tell the Igor whether it has a worker user. Under #179 `igor run` is
 rank 0, and each run's trees carry its own run id (#179's *The sweep removes trees by rank, never
-by age*). `igor run` SHALL remove trees as the Igor's own user and without `sudo`: its own trees,
-and, at its start, the trees and the worker home #174 gives each run, of an earlier run of its
-role whose process is gone, as #179's requirement says. A run is gone where its lock on
-`<role>-0-<run id>.lock` can be taken. Under `igor run` the
-trees and their lock files sit in `<state dir>/trees`, where `<state dir>` is the state
-directory #216 (`lore-search`) defines. It SHALL NOT remove a tree
-of a run whose lock it cannot take, nor one another rank or another role left. Two `igor run`s
-of one role can then run at once without either removing the other's tree.
+by age*). That requirement says what `igor run` removes, and when: the trees, the home #174
+gives each run as its worker's `HOME`, and the plugin directory #174 assembles for each run, of
+an earlier run of its role whose process is gone. It also defines the lock file each run holds,
+which a later run can take only once that run's process is gone. `igor run` SHALL remove each
+of these as the Igor's own user and without `sudo`. Trees and their lock files sit in
+`<state dir>/trees`, where `<state dir>` is the state directory #216 (`lore-search`) defines.
 
 The notice SHALL also say that the worker can use whatever the person's own user can, since
 nothing keeps it from their SSH agent, their Docker or credentials in their home (*A worker gets
@@ -764,12 +762,11 @@ credentials. The notice keeps the trade visible.
 - **THEN** it removes its own tree, as its own user and without `sudo`
 - **AND** it leaves the other run's tree and `generalist-1-b2`
 
-#### Scenario: run removes a gone run's tree and home at its start
+#### Scenario: run removes a gone run's tree, home and plugin directory at its start
 
-- **WHEN** an `igor run` for the role `generalist` starts on a host that holds a rank-0 tree and a
-  worker home of an earlier run whose lock it can take
-- **THEN** before its first cycle it removes that tree and that home, as its own user and
-  without `sudo`
+- **WHEN** an `igor run` for the role `generalist` starts on a host that holds a rank-0 tree, a
+  worker home and a plugin directory of an earlier run whose lock it can take
+- **THEN** before its first cycle it removes all three, as its own user and without `sudo`
 
 #### Scenario: run ignores a worker user on the host
 

@@ -502,12 +502,51 @@ both wait for his approval.
     proxy. And the start check's refusal for a metadata endpoint reached through the proxy
     names the variable that holds the proxy URL, never the URL, whose user info is a secret,
     since the refusal is written to the journal.
+50. **This change cites #179's sweep of a crashed `igor run` instead of restating it** (Adam,
+    2026-10-24). #179's requirement *The sweep removes trees by rank, never by age* says what an
+    `igor run` removes at its start, and when: the trees, the home and the plugin directory of
+    each earlier run of its role whose process is gone. The home is the one #174 gives each run
+    as its worker's `HOME`. Every run is rank 0, so each run's trees carry its own run id, and a
+    lock file per run tells a later run that the earlier one's process is gone. This change says
+    only that `igor run` removes them as the Igor's own user and without `sudo`. This change's
+    spec had stated the rule itself, and had left out the plugin directory.
 
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
 
 - **Decision 42 waits for Adam's approval.** If he turns it down, the uid firewall rule it
   rejects is the alternative.
+- **Decision 49 waits for Adam's approval too,** though the spec already states it: an empty
+  proxy password is not refused, and the refusal for a metadata endpoint names the variable,
+  not the URL. If he turns it down, those two passages go, with the scenario *A proxy user name
+  with no password is registered with its host*.
+- **For Adam, from the 2026-10-24 consistency read: does a proxy user name with no password
+  count as a secret handed over?** The spec hands the worker the user info of a proxy URL, and
+  fails each run, though not the start, that would hand over a secret under 8 characters. So
+  with a URL such as `alice@proxy`, every run fails, the endless failure decision 48 rejected,
+  while the spec's passage on short passwords says such a URL does not refuse the start.
+  `<user>@<host>` can also be under 8 characters, and #217 registers nothing that short, so
+  such a name would go unredacted. *Recommendation:* a user name with no password is not a
+  secret, neither for the 8-character rule nor for redaction, so nothing changes in #217.
+- **For Adam, from the same read: whether a refused `sudo` logs the seat token.** Sudo logs
+  every preserved variable with its value (measurement 6.5); whether a refused spawn's journal
+  line carries `ENV=` with the seat token is unmeasured (task 6.12). A spawn would be refused
+  if someone removed or edited a sudoers line after the start check passed. *Recommendation:*
+  before each spawn, Igor runs `sudo -n -u <worker> true`, which carries no token, and where
+  that is refused, it fails the run without spawning, so a refusal it causes carries no token.
+  A line broken between the two calls, milliseconds apart, would still log it.
+- **Other findings of the 2026-10-24 consistency read, for this change's authors:**
+  - The start check proves the worker can execute `claude` but not that it cannot write
+    `claude`, `git` or `gh`, or the directories they resolve from, which the Igor runs as its own
+    user; a writable `claude` would run the worker's code as the Igor the next time the Igor
+    calls `claude` as its own user, such as for triage.
+  - The native addon that marks the Igor's process not dumpable ships prebuilds that name no C
+    library; a glibc-only build fails to load on a musl
+    host such as Alpine, which under `igor serve` refuses every start.
+  - No scenario tests the deployment guide's warning against a credential in the worker user's
+    home, nor that `igor serve` marks itself not dumpable before it reads any credential.
+  - This change (task 8.3), #179 (task 6.8) and #216 (task 3.10) all edit `deploy/docker-compose.yml`'s
+    `STATE_DIRECTORY` and trees volume; one change should own those lines and the others cite it.
 
 - **Findings of the 2026-10-21 consistency read left for the next pass.** None of them comes
   from decision 41, 43, 45 or 46. A missing-path refusal would refuse
@@ -547,9 +586,10 @@ or on another change.
   run's trees, found these, left for the next pass:
   - Under the shipped unit, `SupplementaryGroups=` and `ReadWritePaths=` fail the unit before
     Igor runs where the worker user's group or home is missing, so the start check's refusal and
-    its status 78 never happen there; unmeasured.
-  - #192's container sets no `STATE_DIRECTORY`, so under #179 and #216 its trees would go to
-    `~/.local/state/igor/trees`, not the `/var/lib/igor/trees` volume task 8.3 mounts.
+    its status 78 never happen there; nobody has yet confirmed that the unit fails there.
+  - #192's container sets no `STATE_DIRECTORY`; #179's task 6.8 and #216's task 3.10 set it
+    in the compose file that runs that container, which the 2026-10-24 entry above asks one
+    change to own.
   - #174 relies on *The Igor reads no file on the worker's behalf through a link* for session
     logs in the worker's home, which the requirement does not cover.
   - Task 0.1 says no seat token file is left to probe, while task 5.1 keeps a refusal for one.
