@@ -1,10 +1,10 @@
 ## Decisions
 
-Adam decided 1 to 44 on 2026-10-13, 2026-10-17, 2026-10-18, 2026-10-19 and 2026-10-21.
-`design.md` gives the reasoning for each. Decisions 39 to 44 are his latest answers, of
-2026-10-21. Decisions 45 to 48 this change made on 2026-10-21 from what other changes reported to
-it, and they wait for his confirmation. Where a decision replaces an earlier one, the earlier one
-is rewritten to match.
+Adam decided 1 to 52 on 2026-10-13, 2026-10-17, 2026-10-18, 2026-10-19 and 2026-10-21.
+`design.md` gives the reasoning for each. Decisions 39 to 52 are his answers of 2026-10-21.
+This change drew up 45 to 48 from what other changes reported to it, and Adam confirmed them that
+day. This change drew up 53 and 54 from a consistency read on 2026-10-24; they wait for his
+confirmation. Where a decision replaces an earlier one, the earlier one is rewritten to match.
 
 **The claim**
 
@@ -93,7 +93,7 @@ is rewritten to match.
     Working trees are named `<role>-<rank>-<id>`, kept where #175 puts them, which every rank
     on the host sees, and swept by rank, never by age. A sibling removes the trees of a gone
     rank the roster no longer declares, as #175's release removes them. No serving rank removes rank
-    0's trees; each `igor run` removes only its own (decision 38).
+    0's trees; each `igor run` removes its own, and those a gone run left (decisions 38 and 39).
 
 **Discovery and state**
 
@@ -141,13 +141,13 @@ is rewritten to match.
 
 29. **`igor run` runs as rank 0, outside the roster, with its own heartbeat file.** It contends
     for items like any rank, so `NoTwoWorkers` covers it, never takes over another rank's claims,
-    and sweeps only its own trees. Fencing by start id, the requirement that stopped a process
+    and sweeps its own trees and those a gone run left (decision 39). Fencing by start id, the requirement that stopped a process
     for good on a foreign id, and `igor run`'s wait are removed. *Rejected:* `igor run` as rank 1
     with a fence, which TLC showed still let both processes work one item.
 30. **The edited or deleted claim message risk is accepted.** An edit or deletion of the
     holder's message while it works lets a sibling take the item (`model/findings/EditedMessage.cfg`).
     Adam's reason: only a person with maintain or admin access can edit or delete the bot's
-    comment. Task 2.19 measures that; if less access is enough, this comes back to him.
+    comment. The risk stays accepted whatever task 2.19 measures (decision 40).
 31. **Ranks choose items by a hash-assigned owner, and the claim stays.** It replaces a start
     place per rank (decision 9). A stale heartbeat read can only cause contention, which the
     claim settles; `negative/NoVerifyClaims.cfg` shows the claim is still needed.
@@ -156,12 +156,12 @@ is rewritten to match.
     stays down. Compose restarts every exit under #82, so there a rank is retired by removing its
     service, as #82 says. Status 79 and `SuccessExitStatus=79` are gone.
 33. **A heartbeat says whether its rank is available:** free, and with a seat it can spend, as
-    #143's *A role has a seat it can spend when the gate would choose one now* defines: some seat
-    the role may draw on is below its reserve line and not held back by pacing. Only available ranks go first
+    #143's *A role has a seat it can spend when the gate would choose one now* defines. Only available ranks go first
     for an item.
 34. **A review to act on means resume.** On a held pull request that still merges, a review to
     act on counts as something changed, and the holder runs a worker over it, as #150 says. A
-    catch-up with no such review stays worker-free.
+    catch-up with no such review stays worker-free. This applies only on the Igor's own two-gate
+    pull request (decision 51).
 35. **The settle interval must be shorter than the poll interval;** a configuration that sets it
     otherwise is refused, naming both values.
 36. **#101's watermark rule names a stand-down, through a `MODIFIED` block this change carries**
@@ -175,8 +175,8 @@ is rewritten to match.
     proposal records it.
 38. **Two `igor run`s of one role at once share no tree and no home** (Adam, 2026-10-19). Each run
     picks a run id at its start, every tree id it gives starts with that run id, and it removes
-    only its own trees. Each run also gets a home of its own, the `HOME` its worker runs in;
-    #174 (`pinned-skills`) is to specify it, and #174 as last pushed keeps one home per role.
+    no live run's trees (decision 39 adds those of a gone run). Each run also gets a home of its own, the `HOME` its worker runs in;
+    #174 (`pinned-skills`) specifies it.
 
 **Decided on 2026-10-21, Adam's latest answers**
 
@@ -185,8 +185,8 @@ is rewritten to match.
     run id where the rank is 0. Each run writes a heartbeat file of its own,
     `heartbeats/<role>-0-<run id>.json`, so a crashed run's claim is taken over once its own file
     stops changing, while another run goes on. At its start a run removes the trees and the home
-    that an earlier run of its role left, where that run's process is gone; #175 and #174 are to
-    record it. `ConcurrentInstancesTwoRuns.cfg`, the former finding, now passes, and
+    that an earlier run of its role left, where that run's process is gone, with the plugin
+    directory #174 assembles for that run; #174 and #175 record it. `ConcurrentInstancesTwoRuns.cfg`, the former finding, now passes, and
     `negative/NoRunIds.cfg` shows the run id is needed.
 40. **Decision 30's accepted risk stands whatever task 2.19 measures:** "accept either way".
     Task 2.19 is for information only.
@@ -206,12 +206,12 @@ is rewritten to match.
     read at their own cycle starts; safety rests on the claim, not on agreement; and
     coordinating adds failure modes. The model gives each process its own roster and poll
     interval. With different rosters every invariant holds; with different poll intervals TLC
-    finds two workers (*For Adam*, below).
+    found two workers until decision 49.
 44. **Readings approved:** a run id is eight lowercase letters and digits, and a run tells its
     own trees by that fixed-length prefix; rank 0 owns no item and comes last in each item's
     order; a rank waits one settle interval per available rank ahead of it.
 
-**Decided by this change on 2026-10-21, from other changes' reports, for Adam to confirm**
+**Drawn up by this change on 2026-10-21 from other changes' reports, and confirmed by Adam the same day**
 
 45. **How a withdrawal releases only claims from before its test** (#173's decision 29 left the
     mechanism here). The withdrawal removes the label only where the withdrawing process's own
@@ -232,9 +232,10 @@ is rewritten to match.
     held, leaving the label, unless decision 42 applies, when it posts #173's refusal, the post
     a refused run makes when it gives the claim back to be tried again next cycle. The read
     failing too: nothing now, and a reread at its next cycle's start, or before `igor run`
-    exits, which decides the same way and, failing again, posts that the item is still held and
-    removes nothing. A verification later than one poll interval works nothing and gives the claim back
-    the same way. Only a process that stood down stays silent.
+    exits, which decides the same way. A reread failing again follows #173's decision 41
+    (decision 52). A verification later than one poll interval works nothing and gives the claim back
+    the same way. Apart from a process whose test found another process's message counting, only a
+    process that stood down stays silent.
 47. **The refused configuration follows #208** (`lore-pull`, its decisions 13, 30, 36 and 37).
     The condition is #208's `lore:config:<role>`, shared by the role. Only a passing read of the
     refused commit or one descending from it clears it, or one of a branch head that no longer
@@ -242,10 +243,49 @@ is rewritten to match.
     the process's own rank is no failed check: the read passes and the rank retires.
 48. **The sweep takes `<tree>-prompt` with each tree** (#175 reported it). Prompts go on stdin
     under #175, but the system prompt still goes in a file in `<tree>-prompt`, beside the tree,
-    which a crash leaves. The same decision reads decision 39's "whose process is gone", and
-    asks Adam to confirm that reading with the rest of it: a run is gone when another run can
-    take the lock it held on `<role>-0-<run id>.lock` while it ran, which the system releases
-    when its process ends.
+    which a crash leaves. Decision 48 also reads decision 39's "where that run's process is
+    gone", a reading Adam confirmed with the rest of decision 48: a run is gone when another run can take the lock
+    it held on `<role>-0-<run id>.lock` while it ran, which the system releases when its process
+    ends.
+
+**Decided on 2026-10-21, Adam's answers to this change's questions**
+
+49. **Each heartbeat declares its process's poll interval, and each process counts in the safer
+    one.** A process counts a sibling gone after three of the longest of its own current
+    interval and those the sibling's file has declared to it since it started, and stands down
+    after two of the shortest interval it has applied since it started. No coordination is
+    added: each process still applies its own commit (decision 43). Without it, a rank on a
+    doubled interval stands down only after four of a sibling's shorter intervals, and the
+    sibling counts it gone after three and takes over an item it still works.
+    `ConcurrentInstancesPollSkew.cfg`, the former finding, now passes, and
+    `negative/NoDeclaredInterval.cfg` shows the rule is needed. *Rejected:* refusing a cycle
+    read that changes the poll interval, which still leaves skew between restarts.
+50. **Citing #208 (`lore-pull`) before it archives is accepted,** as decision 41 accepts it for
+    #82 and #173. Decision 47 cites #208's condition and its requirements *Processes apply new
+    commits independently*, *A lore read at each cycle start applies what passes and refuses
+    what fails* and *`igor serve` starts on the newest commit that passes*, and #204 archives #208 after this change.
+51. **Decision 34 applies only on the Igor's own two-gate pull request,** the one that carries a
+    specification first and its implementation after, because #150 defines a review to act on
+    only there. Any other held pull request keeps the catch-up's rule.
+52. **A reread that fails again follows #173's decision 41** (Adam, 2026-10-21). After a
+    failed post or verification, a failed test and a failed reread, the claim is #173's
+    *unreadable claim*: it counts as one `tracker` failure toward the item's breaker, and the
+    process gives the claim back with the post a refused run makes, or, at the third in a row,
+    sets the item down with the set-down post. Either way it leaves the label: it cannot tell who holds the item. TLC shows the label must
+    stay: with it removed (`negative/NoRereadKeepsLabel.cfg`), a sibling that holds the item
+    loses its label while it works (`LabelWhileWorked`).
+
+**Drawn up by this change on 2026-10-24, for Adam to confirm**
+
+53. **No post of the bot but a claim message carries a trailer line.** Before posting text a
+    worker or a model composed, the bot indents by one space each line of it that begins with
+    `Igor-`, and trailers are read only from lines that begin with `Igor-` at their first
+    character. Without it, a person could ask a mention reply to end in `Igor-Rank: 1` and
+    `Igor-Supersedes: 2`, and the reply would read as a claim message. *Rejected:* a fixed first
+    line marking claim messages, which composed text could copy too.
+54. **A run's heartbeat file goes when the run does.** A run removes its own file as it exits,
+    and a serving process removes a crashed run's file once it counts the run gone, so the state
+    branch does not gain a file per run for good.
 
 **Still open:**
 
@@ -264,36 +304,6 @@ is rewritten to match.
 - **What an adapter must supply.** The claim rules need each surface's sequence key, the time of
   an item's latest release and the times of its label events, and whether a comment was edited
   (GraphQL `lastEditedAt`), but no `surface-adapter` requirement obliges an adapter to supply them.
-- **For Adam, from TLC: ranks on different poll intervals can both work one item.** Decision
-  43 lets one rank apply a commit that doubles the poll interval while another still runs on
-  the old one. A rank on the longer interval stands down only after two of its own intervals
-  without a heartbeat, four of the shorter, while a rank on the shorter one counts it gone after
-  three of its own; with three heartbeats missed in a row, the second takes the item over while
-  the first still works it (`model/findings/PollSkew.cfg`). A rank that had stood down on the
-  shorter interval also stops being stood down when it applies the longer one, so it claims
-  again while a sibling may already count it gone; the recommended rule closes that too. The roster's
-  skew is safe; the poll interval's is not, because the gone verdict compares two processes'
-  durations. *Recommendation:* each heartbeat declares its process's poll interval; a process
-  counts a sibling gone after three of the longest of its own interval and those the sibling's
-  file has declared to it since it started; and a process stands down after two of the shortest
-  interval it has applied since it started. No coordination is added: each process still
-  applies its own commit. With that rule on (`DeclaredInterval`), TLC finds no violation in the
-  same configuration (5,350,517 distinct states). The alternative is to refuse a cycle read
-  that changes the poll interval, so it changes only when every rank restarts, which still
-  leaves skew between restarts.
-- **For Adam, a reading not yet answered:** #150 defines a review to act on only for the
-  Igor's own two-gate pull request, the one that carries a specification first and its
-  implementation after. So decision 34 applies to those, and any other held pull request keeps
-  the catch-up's rule. Confirm the reading, or extend decision 34 to every held pull request.
-- **For Adam: this change now cites #208 (`lore-pull`) before #208 archives.** Decision 47
-  cites #208's condition and its requirements *Processes apply new commits independently* and
-  *A lore read at each cycle start applies what passes and refuses what fails*, and #204
-  archives #208 after this change, which needs
-  your leave, as for #82 and #173 (decision 41). *Recommendation:* accept it.
-- **For Adam, decisions 45 to 48,** which this change made from other changes' reports: the
-  withdrawal's fresh read before its removal, the give-back after a failed read, #208's
-  condition rules, the `<tree>-prompt` sweep, and the lock that tells a starting run another
-  run's process is gone.
 - **Conflicts with other open changes, recorded and not resolved:**
   - #101: decision 22 has a probe lapse when its rank is gone, but a condition on a seat or on
     the whole Igor is shared by every role, and a process watches only its own role's heartbeat
@@ -305,15 +315,6 @@ is rewritten to match.
   - #106 says a role served by one process runs it as rank 1, but a role served only by `igor
     run` saves its marks as rank 0. The marks still combine by this change's rule; only #106's
     sentence is wrong for that case, and #106 can say "rank 0 under `igor run`".
-  - **#175 and #174 leave a crashed run's tree and home to the person** (#175's *Still open*,
-    #174's *Still open*), where decision 39 has the next run remove them. Both are to record
-    decision 39's sweep; #174's plugin directory of a crashed run is not yet in it.
-  - #208's decision 21 is stale: it says this change's model holds the roster and poll interval
-    the same for every process, which it no longer does, and it does not yet carry the
-    poll-interval finding below.
-  - #173's set-down after a claim message that never landed removes the label with no time
-    bound, where decision 42 bounds it by the settle interval; `negative/NoSettleWithdraw.cfg`
-    shows the unbounded removal puts two workers on one item.
   - #216 (`lore-search`) replaces `surface-adapter`'s *An Igor that cannot act as its App does
     not start* whole, as this change does, so whichever archives second carries the other's
     text. It cites *A killed worker's failure names the limit it breached*, which this change
@@ -321,12 +322,69 @@ is rewritten to match.
     run` process. Its hold records are keyed state that several ranks write, which task 5.1's
     list does not name, nor #138's store. And its authority checks spend the App's rate limit
     that heartbeats share.
+  - #174 and this change each state, as a SHALL of their own, that `igor run` removes a crashed
+    run's home and plugin directory, though #174's proposal says it only cites this change's
+    sweep. #174's proposal also still says a run removes only its own trees.
   - #141 defers an item whose Igor pull request closed unmerged, where `design.md` has a
     person's label hand the item back to a rank; #141 and #150 are not in #204's order.
   - #99 clears its carried candidates once a cycle decides, where task 5.12's union of each
     rank's latest line keeps a gone rank's carried ids.
   - #173 names the claim-window test against claim messages "of another rank"; under decision
     39 two runs are both rank 0, so the test compares run ids too, as #173's decision 22 expects.
+- **For Adam, from the 2026-10-24 consistency read:**
+  - **Decision 49 can miss a declaration that a lost branch erased.** A watcher counts in the
+    intervals a sibling's file declared since the watcher started, so one that restarts after
+    the state branch was lost or rolled back may have read none, or only an older one. Example:
+    the lore head moves to 20 minutes and back to 10. Rank 2 started while it was 20 and has
+    applied no commit since, so it stands down after 40 minutes without writing a heartbeat. It
+    then cannot reach the state branch and stops writing one. Rank 1 restarts on 10 after the branch was lost,
+    reads no declaration from rank 2, and counts it gone after 30 minutes, while rank 2 still
+    works its item. The model lets the head change only once and
+    `ConcurrentInstancesPollSkew.cfg` has no crash or lost branch, so TLC has not checked this.
+    *Recommendation:* a process also stands down after two of the shortest interval any
+    sibling's file has declared to it since it started. Rank 2 would then read rank 1's 10
+    minutes and stand down after 20.
+- **For Adam, from the 2026-10-21 consistency read:**
+  - **A set-down that keeps the label.** Under decision 52 a third unreadable claim sets the
+    item down but leaves the label, and every cycle considers each item its role's label holds,
+    whatever the mark. Whether the deferral or the label wins at the next cycle is unsaid.
+    *Recommendation:* a deferred item is passed over before claiming even while labelled, until
+    its deferral ends or a person adds the label again.
+  - **#173's refusal and set-down posts have no time bound, but the label's removal does.** Where
+    no claim message counts, #173 posts its refusal or set-down whenever it falls, while decision
+    42 lets the process remove the label only within half a settle interval. Past that bound the
+    post says the claim is given back while the label stays, and whether the post should still
+    go out then is unsaid. *Recommendation:* the post goes out whenever it falls, and the label
+    stays outside decision 42's bound.
+  - **`lore:config:<role>` is not of #171's read-cleared kind.** #171's kind clears on any
+    later passing read and lets a citing rule add no clearing rules; #208's decisions 13, 36 and
+    37 have passing reads that clear nothing. *Recommendation:* #171's definition makes room for
+    clearing rules, as #208 asked.
+  - **A mention answered twice may act twice.** Under #140 an answer can open an issue or act on
+    a chosen option, so decision 37's harmless duplicate reply can become two issues.
+    *Recommendation:* a mention that opens an issue or acts goes through a claim.
+  - **A mention while no rank is available waits,** where `docs/architecture.md` says an Igor
+    out of budget says so with the reset time. *Recommendation:* the hash owner answers with the
+    reset time when no rank has a seat to spend.
+  - **One serving process per rank is an operator invariant nothing detects** (task 4.24). Two
+    hosts running one rank each re-work the other's claims. *Recommendation:* accept it as a
+    decision, with the docs saying so.
+  - **A run id can read as a rank.** `heartbeats/web-0-12345678.json` is both role `web`'s run
+    and role `web-0`'s rank 12345678. *Recommendation:* a run id starts with a letter, amending
+    decision 44's reading.
+- **For the next revision, from the same read:** whether a rank whose message stopped counting,
+  or that stood down after its worker ended, may still publish, which #153's post-worker steps
+  also meet; #150's actionable approval past gate one, which decision 34 would have start a
+  worker, and #150 archiving after this change with no leave to cite it ahead; #173's exception to the holder rule in the claim window, beside decision 42's "one
+  listed exception"; #175's and this change's circular credit for where trees live and who
+  removes them; decision 37's rule, in two proposals and no spec; the rewording of #101's
+  watermark sentence in this change's copy; a test for removing a gone run's lock file; which run's mark counts where two `igor run`s share rank 0; the `--poll` flag,
+  which overrides the role's poll interval and escapes the settle check; rationale, task numbers
+  and PR numbers inside requirement text; the unmeasured claim that only maintain or admin access
+  edits a bot's comment, stated as fact in a requirement; `igor run`'s per-user state directory,
+  under which two people's runs never share trees; #216's test of the roster where this change
+  tests "gone"; #217's redaction of `deferred.json` as a file rewritten whole, which this change
+  makes a log; and a retired rank's lore worktree under #208, which nothing removes.
 - **The in-force "one comment" rules meet several ranks.** On an item with work in flight, or
   held by another Igor, each rank reaching it would post the one comment the in-force rules
   allow; nothing yet restricts the comment to one rank.
@@ -402,8 +460,10 @@ bound only if it dies first, as are those of a rank left declared that no longer
 process writes a heartbeat to its own file on the state branch every half poll interval, from a
 timer of its own that keeps running while a worker runs, and its first one before its first
 cycle: a counter it increments on each write, beside an id picked at each start. A process counts a sibling gone only after it has itself watched the sibling's counter
-fail to change for three of its own poll intervals, 30 minutes at the default poll; any process
-may then take the sibling's claims. No time in the file is compared, so neither a clock stepped
+fail to change for three poll intervals, 30 minutes at the default poll; any process
+may then take the sibling's claims. Each heartbeat declares its process's poll interval, so ranks
+on different intervals still agree: a watcher counts in the longest it has seen, and a writer
+stands down in the shortest it has applied. No time in the file is compared, so neither a clock stepped
 back nor a lost, reset or rolled-back state branch makes a live rank look gone. A process that
 cannot write its heartbeat for two intervals stands down: it starts no claim, and the heartbeat
 timer stops its worker. A process taking over an item from a gone rank first removes the
@@ -503,7 +563,8 @@ Explicitly out of scope:
 - `work-claiming`: A claim is held by the process that took it, not by the role's identity.
   Verification distinguishes a sibling process from the Igor itself, each item's hash owner
   goes first for it, a hand-over goes through the same contest, the
-  claims of a rank whose heartbeat stops changing for three poll intervals become adoptable, and a claim left on the Igor's
+  claims of a rank whose heartbeat stops changing for three poll intervals become adoptable,
+  each heartbeat declares its process's poll interval, and a claim left on the Igor's
   open pull request is caught up whoever left it. `igor run` runs as rank 0, beside any serving
   rank. A retired rank exits with status 0, and an edited claim message counts for nothing.
 - `work-triage`: An item a live sibling holds is passed over before triage, a claim this
@@ -514,7 +575,8 @@ Explicitly out of scope:
   processes saving one source keep the lower watermark, and #101's watermark rule names a
   stand-down.
 - `task-execution`: The worker's absolute ceiling is removed, and the sweep removes working
-  trees by rank rather than by age; each `igor run` removes only its own trees.
+  trees by rank rather than by age; each `igor run` removes its own trees and those a gone run
+  left.
 - `role-config`: A role's processes share one identity and differ only by rank, the roster
   declares the ranks each role may run, a process is named `<role>-<rank>`, a role's name fits
   its worker users, and `igor serve` reads the role's environment file itself, which holds

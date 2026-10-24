@@ -115,9 +115,13 @@
 (* commit of the lore repository's branch, may drop a rank (`Retire`) or  *)
 (* double the poll interval (`ChangePoll`); a process applies the head,   *)
 (* or keeps what it had, at each cycle start. With the poll interval able *)
-(* to change, time is counted in the shorter interval, and each process   *)
-(* counts its three derived timings, gone after three intervals, a        *)
-(* heartbeat every half and a stand-down after two, in its own interval.  *)
+(* to change, time is counted in the shorter interval. Each heartbeat     *)
+(* declares its process's interval (`decl`). A process counts a sibling   *)
+(* gone after three of the longest of its own interval and those the      *)
+(* sibling has declared to it since it started (`seenDecl`), stands down  *)
+(* after two of the shortest it has applied since it started (`minLen`),  *)
+(* and writes a heartbeat every half of its own; one write lands per      *)
+(* shorter interval either way (`WriteHeartbeat`).                         *)
 (*                                                                         *)
 (* A person may edit a claim message (`EditMsg`), and an edited message   *)
 (* counts for nothing, so an edit removes it from the messages that       *)
@@ -212,8 +216,9 @@ CONSTANTS
                        \* message failed to post, and half a settle interval
                        \* has not passed; FALSE: whenever no claim message
                        \* counts
-    \* A rule proposed for Adam, not in the change: FALSE in every
-    \* configuration CI runs, which keep the poll interval fixed.
+    RereadKeepsLabel,  \* a reread that fails again, an unreadable claim,
+                       \* gives the claim back or sets the item down and
+                       \* leaves the label; FALSE: it removes the label
     DeclaredInterval   \* a heartbeat declares its process's poll interval; a
                        \* process counts a sibling gone after three of the
                        \* longest of its own interval and those the
@@ -348,7 +353,8 @@ ReadNow(r) == IF WatchAdvance THEN watch[r]
 View(r) == IF ReReadHeartbeats THEN ReadNow(r) ELSE seen[r]
 
 \* Process q's heartbeat file has gone unchanged, as r watched it, for
-\* three of r's own poll intervals.
+\* three poll intervals: the longest of r's own and those q's file has
+\* declared to r, or under ~DeclaredInterval r's own.
 HbGone(r, q) ==
     LET len == IF DeclaredInterval
                  THEN Max({plen[r], decl[q], seenDecl[r][q]}) ELSE plen[r]
@@ -364,7 +370,8 @@ Gone(r, q) ==
        \/ IF q = 0 THEN \A p \in Runs : HbGone(r, p) ELSE HbGone(r, q)
 
 \* A process stands down when it has failed to write its heartbeat for
-\* StandDownAt of its own intervals, whether or not its rank is still in
+\* StandDownAt poll intervals, the shortest it has applied since it started,
+\* or under ~DeclaredInterval its own, whether or not its rank is still in
 \* the roster.
 StandLen(r) == IF DeclaredInterval THEN minLen[r] ELSE plen[r]
 StoodDown(r) == StandDownOnMisses /\ missed[r] >= StandDownAt * StandLen(r)
@@ -782,13 +789,20 @@ FailClaim(r) ==
 
 \* The reread at the next cycle's start, or before `igor run` exits, more
 \* than one poll interval after the claim message: the process never works
-\* the item from it. A read that fails again removes nothing; otherwise it
-\* decides as at the test.
+\* the item from it. A read that fails again is an unreadable claim: the
+\* process gives the claim back, or at the third in a row sets the item
+\* down, and since it cannot tell who holds the item it leaves the label.
+\* The model tracks neither the posts nor the deferral, so that step
+\* changes nothing here but the reread. Otherwise it decides as at the
+\* test.
 Reread(r) ==
     /\ up[r] /\ reread[r] # 0 /\ pc[r] = AfterReread(r)
     /\ LET i == reread[r] IN
        \/ /\ reread' = [reread EXCEPT ![r] = 0]
-          /\ UNCHANGED <<cur, pc, spanned, trackerVars>>
+          /\ UNCHANGED <<cur, pc, spanned>>
+          /\ IF ~RereadKeepsLabel /\ label[i]
+               THEN Release(i) /\ UNCHANGED <<stop, done, pr>>
+               ELSE UNCHANGED trackerVars
        \/ /\ GiveBackAfterTest(r, i, AfterReread(r), FALSE)
           /\ reread' = IF pc'[r] = "withdraw" THEN reread
                        ELSE [reread EXCEPT ![r] = 0]

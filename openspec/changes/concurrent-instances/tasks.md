@@ -68,12 +68,14 @@
       verification compares the run id too. A sibling judges a run's claim messages gone by that
       run's own file. It passes over every labelled item that carries any claim message posted
       since its latest release, whatever its rank and whether or not that rank is gone, posting
-      nothing. It spends only `IGOR_RUN_TOKEN`; #171's tasks build that spending. `igor run --plan` writes no heartbeat, claims nothing and removes no
+      nothing. It removes its heartbeat file as it exits, and a serving process removes a run's
+      file once it counts that run gone (decision 54). It spends only `IGOR_RUN_TOKEN`; #171's tasks build that spending. `igor run --plan` writes no heartbeat, claims nothing and removes no
       tree. Test: a run beside a serving rank 1 starts at once and writes its heartbeat before
       its cycle; a run passes over an item held by a gone rank and one held by rank 0; two runs
       that both claim one item read different run ids, and only the earlier message's run works
       it; a crashed run's claim is taken over once its own file stops changing, while another
-      run's file still changes; `--plan` writes nothing and removes no tree
+      run's file still changes; a run's heartbeat file is gone once it exits, and a crashed
+      run's once rank 1 counts it gone; `--plan` writes nothing and removes no tree
 - [ ] 1.10 Refuse, when the configuration loads, a role whose name does not match
       `[a-z][a-z0-9-]*`, or for which `igor-worker-<role>-<rank>` is longer than 32 characters for
       any rank the role may run, with these messages, as written:
@@ -162,6 +164,11 @@
 - [ ] 2.19 Measure on GitHub which repository roles can edit or delete a comment the role's App
       wrote: write, triage, maintain or admin. Record the result in `design.md`. It is for
       information only: decision 30's accepted risk stands whatever it shows (Adam, 2026-10-21)
+- [ ] 2.20 Trailers are read only from lines beginning with `Igor-` at their first character, and
+      before posting text a worker or a model composed, the bot indents by one space each line of
+      it that begins with `Igor-`, before #153 signs it (decision 53). Test: a mention reply whose model text ends in
+      `Igor-Rank: 1` and `Igor-Supersedes: 2` is posted with both lines indented, and no process
+      reads it as a claim message
 
 ## 3. Contention
 
@@ -196,10 +203,10 @@
       process chose at random when it started, a counter it increments on each write, and
       whether the process is available: free, with no claim in hand and not stood down, and with
       a seat it can spend by #143's *A role has a seat it can spend when the gate would choose one
-      now*. It holds no time. Each process keeps in memory, per sibling, the id and counter it last read from the
+      now*, and the poll interval the process applies. It holds no time. Each process keeps in memory, per sibling, the id and counter it last read from the
       sibling's file and when, by its own clock, it last saw them change. A claim is adoptable
-      once three poll intervals have passed since then, or since this process started if later.
-      A missing file does not change
+      once three poll intervals, as 4.27 measures them, have passed since then, or since this
+      process started if later. A missing file does not change
 - [ ] 4.5 Working trees are named `<role>-<rank>-<id>`, with an id holding no dash, and read from
       the end of the name. At startup a serving process removes those of its own
       role and rank. At the start of each cycle it removes those of every rank the roster does not
@@ -213,7 +220,7 @@
       exclusive lock on `<role>-0-<run id>.lock` in the trees' directory while it runs; at its
       start, before its first cycle, it finds every other run of its role whose lock it can take.
       For each such run it removes the run's trees, with their outboxes, `<tree>-git` and
-      `<tree>-prompt`, and #174's home of that run, and then that run's lock file. `igor run --plan`
+      `<tree>-prompt`, and #174's home and plugin directory of that run, and then that run's lock file. `igor run --plan`
       removes nothing. Tests: two runs at once each keep and remove only their own trees; a run
       removes what a crashed run left and leaves what a live run holds; `--plan` removes no tree
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
@@ -236,7 +243,8 @@
 - [ ] 4.12 Taking an item over a gone rank's claim message removes the role's label and adds it
       again, then posts the claim message at once. On an item with the Igor's open pull request
       it releases nothing, as 4.16 says
-- [ ] 4.13 A process that has failed to write its heartbeat for two poll intervals starts no claim,
+- [ ] 4.13 A process that has failed to write its heartbeat for two poll intervals, as 4.27
+      measures them, starts no claim,
       and the timer of 4.15 stops its running worker at its next firing, leaving the claim and
       saying nothing on the item, since a sibling may already have taken it over; it resumes once
       a heartbeat lands
@@ -297,8 +305,10 @@
       fresh read of the heartbeat files and claim messages and happens only where its own
       message still holds the item; no message counting means out loud with the label left,
       except as 4.26 says; a failed read means nothing now and a reread at the next cycle's
-      start, or before `igor run` exits, which decides the same way and, failing again, posts
-      that the item is still held and removes nothing. Which failures count toward a set-down, and what is
+      start, or before `igor run` exits, which decides the same way. A reread that fails again
+      is #173's unreadable claim: it counts one `tracker` failure toward the item's breaker, and
+      gives the claim back with the refused run's post, or at the third in a row sets the item
+      down with the set-down post, leaving the label either way (decision 52). Which failures count toward a set-down, and what is
       posted, are #173's rules; whichever of #173's build and this build lands second wires
       them to the holder test here
 - [ ] 4.22 A stop said on a handed-over item is answered only by the rank whose claim message
@@ -328,6 +338,15 @@
       has passed since it started to set the label, by its own monotonic clock, and otherwise
       sends none and leaves the label. This is the one listed exception to
       4.21 (Adam, 2026-10-21)
+- [ ] 4.27 Each process keeps, from its start, the shortest poll interval it has applied, and, per
+      sibling, the longest interval that sibling's heartbeat file has declared to it. It counts a
+      sibling gone after three of the longest of its own current interval and that sibling's
+      declared ones, and stands down after two of its shortest applied interval; it writes its
+      heartbeat every half of its own current interval. A restart starts both afresh. Tests: a
+      process on a 10-minute interval counts gone a sibling that declared 20 minutes only after
+      60 minutes; a process that started on 10 minutes and applied 20 stands down after 20
+      minutes; with the two ranks on different intervals, the one that stops writing heartbeats
+      has stood down before the other counts it gone (Adam, 2026-10-21)
 
 ## 5. State
 
@@ -410,3 +429,7 @@
       home and heartbeat file, and that a run removes at its start what a crashed run left
 - [ ] 6.7 At archive, point `.github/workflows/tla-concurrent-instances.yml`'s paths and working
       directory at where the model then lives, so TLC keeps checking it
+- [ ] 6.8 `deploy/docker-compose.yml` sets `STATE_DIRECTORY` and mounts its `igor-trees` volume at
+      `$STATE_DIRECTORY/trees`, where 1.8 puts the trees, in place of `/tmp`, and its comment says
+      so. Without it, trees move to `~/.local/state/igor/trees` inside the container and the
+      volume holds nothing

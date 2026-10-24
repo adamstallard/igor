@@ -12,13 +12,14 @@ second set settling what those answers left open. A decision from the second set
 what round three left open, marked *round four*. His latest answers, given after round four on
 2026-10-18 and, for decision 38, on 2026-10-19, are marked *in his latest answers* or dated; the
 proposal numbers them 29 to 38. His answers of 2026-10-21 are dated, and the proposal numbers them
-39 to 44. Decisions 45 to 48 are not Adam's: this change's author made them on 2026-10-21 from
-what other changes reported, and they wait for his confirmation.
+39 to 52. Decisions 45 to 48 this change's author drew up from what other changes reported, and
+Adam confirmed them on 2026-10-21.
 
-Where this file says *decision n*, it means the proposal's decision n. The rules numbered 1 to 21
+Where this file says *decision n*, it means the proposal's decision n. The rules numbered 1 to 23
 under *Each decision, and what breaks without it* are the model's, and are named there by
-constant. Adam's rounds, above, are rounds of answers; the model is named by the commit it was
-checked at, `5dc5273` for the one before this revision.
+constant. Adam's rounds, above, are rounds of answers. A run of the model is named by the
+commit it was checked at: `5dc5273` and `7a96c14` are this branch's two commits before this
+revision, `7a96c14` the later.
 
 ### The marker rides in the claim message
 
@@ -41,7 +42,8 @@ winner's claim, and the winner reads the removal, made by its own bot account, a
 release and carries on.
 
 **Verification comes within one poll interval of the claim message** (Adam, 2026-10-17). A
-process that reaches it later stands down. Verification is the re-read a settle interval after claiming. In a longer
+process that reaches it later works nothing and gives the claim back, as for any failed
+verification. Verification is the re-read a settle interval after claiming. In a longer
 wait, a rank with an earlier message can pass the abandonment bound, three poll intervals without its heartbeat changing,
 under *Retirement is recorded, not detected*. The verifier then leaves that rank's message out
 and holds the item, and the rank returns and recovers it.
@@ -63,8 +65,8 @@ reword.
 edit the bot's comment could otherwise fake or erase `Igor-Supersedes:` or
 `Igor-Handed-Over-By:`. Adam accepted the remaining risk, an edit or deletion of the holder's
 message while it works, on the understanding that only maintain or admin access can edit a bot's
-comment (decision 30). Task 2.19 measures which access GitHub requires; if less is enough, the
-decision goes back to him. A bot comment GitHub reports as edited is
+comment (decision 30). Task 2.19 measures which access GitHub requires, for information only:
+the risk stays accepted whatever it shows (decision 40). A bot comment GitHub reports as edited is
 therefore no claim message, and none of its trailers is read. Igor never edits a claim message
 itself.
 
@@ -84,6 +86,16 @@ model did not have before: the holding message disappears from what its siblings
 holder works. The model now lets a person edit any message at any time (`EditMsg`), and TLC finds that a
 sibling then sees a labelled item with no claim message that counts, claims it and works it
 beside the holder (`model/findings/EditedMessage.cfg`). Adam accepted that risk (decision 30).
+
+**No other post of the bot carries a trailer line** (decision 53, drawn up by this change on
+2026-10-24, for Adam to confirm). Reading claim messages only from the bot's own unedited
+comments does not stop the bot itself from posting one by mistake. An Igor answers mentions with
+text a model composed, and a person can ask it to end a reply with `Igor-Rank: 1` and
+`Igor-Supersedes: 2`. Read as a claim message, such a reply could supersede the holder's message
+and put two workers on one item. So before posting composed text the bot indents by one space
+each line beginning with `Igor-`, and trailers are read only from lines beginning with `Igor-`
+at their first character. In Markdown the indent is invisible. *Rejected:* a fixed first line
+marking claim messages, which composed text could copy as easily as a trailer.
 
 ### Ordering is the surface's sequence key, never a timestamp
 
@@ -223,7 +235,7 @@ and stop a live rank, no longer stops anyone, since no process reads its own fil
 
 **Two `igor run`s of one role at once share no tree and no home** (Adam, 2026-10-19). Each run
 picks a run id at its start and makes that id the start of every tree id it gives, so a run
-removes only its own trees. Each run also gets a home of its own, the `HOME` its worker's
+removes no live run's trees. Each run also gets a home of its own, the `HOME` its worker's
 `claude -p` calls run in, which #174 (`pinned-skills`) specifies.
 
 **Two runs at once tell their claims apart by run id** (Adam, 2026-10-21). Both run at rank 0,
@@ -240,12 +252,18 @@ two workers.
 
 **A run removes what a crashed run left** (Adam, 2026-10-21). At its start a run removes the
 rank-0 trees of its role whose run's process is gone, with each tree's outbox, `<tree>-git` and
-`<tree>-prompt`, and the home #174 gives that run; #175 and #174 are to record it. A run tells
+`<tree>-prompt`, and the home and plugin directory #174 gives that run; #174 and #175 record it. A run tells
 another run's process is gone by a lock. The lock is the author's reading of Adam's "whose
-process is gone", which waits for his confirmation with decision 48: each run holds an exclusive lock on `<role>-0-<run id>.lock` in the
+process is gone", which Adam confirmed on 2026-10-21 with decision 48: each run holds an exclusive lock on `<role>-0-<run id>.lock` in the
 trees' directory while it runs, which the system releases when its process ends, so a run whose
 lock another can take is gone. A heartbeat file could not say this at a run's start: it takes
 three poll intervals of watching, and a run runs one cycle.
+
+**A run's heartbeat file goes when the run does** (decision 54, drawn up by this change on
+2026-10-24, for Adam to confirm). Every run writes a file of its own, so without a removal the
+state branch would gain a file per run for good. A run removes its file as it exits; a serving
+process removes a crashed run's file once it counts that run gone, which is when the file stops
+mattering to the claim rules.
 
 `igor run` spends the token in `IGOR_RUN_TOKEN`, an implicit local seat, as #171 records.
 
@@ -260,8 +278,7 @@ rank in that order that its heartbeat shows available goes first.
 
 **Available means free and with a seat to spend.** A rank's heartbeat says whether it is
 available: holding no claim, not stood down, and with a seat it can spend, as #143's *A role has
-a seat it can spend when the gate would choose one now* defines: some seat the role may draw on
-is below its reserve line and not held back by pacing. A rank with no seat to spend would only claim
+a seat it can spend when the gate would choose one now* defines. A rank with no seat to spend would only claim
 and give back, so the item falls to the next available rank.
 
 **Ownership orders the attempts; the claim decides who works.** A heartbeat read can be half an
@@ -378,7 +395,9 @@ merges. The last triage time is kept in memory, so a restarted holder triages th
 **A review to act on means resume** (Adam, 2026-10-18, in his latest answers). On the Igor's own
 pull request for an item the holder holds, where it still merges, a review to act on, #150's actionable review, counts as
 something changed: the holder triages the item and resumes it with a worker, as #150 says. A
-catch-up over a pull request with no such review still runs no worker.
+catch-up over a pull request with no such review still runs no worker. #150 defines a review to
+act on only for the Igor's own two-gate pull request, so this rule applies only there, a reading
+Adam confirmed on 2026-10-21 (decision 51); any other held pull request keeps the catch-up's rule.
 
 ### Retirement is recorded, not detected
 
@@ -580,18 +599,23 @@ the poll interval. A rank that has not fetched the head yet keeps what it had.
 - **Different rosters are safe.** The roster orders attempts and retires ranks, and a retired
   rank's claims are taken only once it is gone, so the claim keeps one worker per item. Every
   configuration with a rank removed passes.
-- **Different poll intervals are not.** The gone verdict compares durations kept by two
-  processes: a writer stands down after two of its own intervals without a heartbeat, and a
-  watcher counts it gone after three of its own. Where the writer applied a doubled interval
-  and the watcher did not, the writer stands down only after four of the watcher's intervals, so
-  three missed heartbeats let the watcher take the item over while the writer still works it
-  (`findings/PollSkew.cfg`). A writer that had stood down on the shorter interval also stops
-  being stood down once it applies the longer one, so it starts claiming again while a watcher
-  on the shorter interval may already count it gone. The proposal puts this to Adam, with a rule
-  that keeps each process deciding alone: a heartbeat declares its process's interval, a watcher
-  counts in the longest of its own and those declared to it since it started, and a writer stands
-  down after two of the shortest it has applied since it started. With that rule
-  (`DeclaredInterval`) the same configuration passes.
+- **Different poll intervals are safe only because each heartbeat declares its interval**
+  (Adam, 2026-10-21, decision 49). The gone verdict compares durations kept by two processes: a
+  writer stands down after two intervals without a heartbeat, and a watcher counts it gone after
+  three. Each counting in its own current interval, a writer that applied a doubled interval
+  while the watcher did not stands down only after four of the watcher's intervals, so three
+  missed heartbeats let the watcher take the item over while the writer still works it. A writer
+  that had stood down on the shorter interval also stopped being stood down once it applied the
+  longer one, and claimed again while the watcher could already count it gone. So each heartbeat
+  declares its process's interval; a watcher counts in the longest of its own and those the
+  sibling has declared to it since it started, and a writer stands down after two of the
+  shortest it has applied since it started. Each process still decides alone, by what it has
+  read and applied. `ConcurrentInstancesPollSkew.cfg` passes with the rule, and
+  `negative/NoDeclaredInterval.cfg` finds two workers without it. A watcher that restarts after
+  the state branch was lost may have read no declaration from a sibling, a case the model does
+  not reach and the proposal's *Still open* puts to Adam. *Rejected:* refusing a cycle
+  read that changes the poll interval, so that it changes only when every rank restarts, which
+  still leaves skew between restarts.
 
 ### Only the rank holding a claim gives it back
 
@@ -603,23 +627,28 @@ removes the label; any other rank drops out silently, removing and posting nothi
 loses to a sibling already kept the label (*A process that loses to its own role keeps the label
 on the item*, above); this extends that to every give-back.
 
-**After a failed read, the claim still goes back out loud** (decision 46, this change's of
-2026-10-21, reconciling #173's decisions 22 and 35 with the silent late verification of decision
+**After a failed read, the claim still goes back out loud** (decision 46, drawn up by this change
+and confirmed by Adam on 2026-10-21, reconciling #173's decisions 22 and 35 with the silent late verification of decision
 28). #173's *claim window* is the time from posting a claim message to verifying it. When a
 claim fails there, #173 has the rank read the item's claim messages, its *test*. Where no other
 rank's claim message counts, the rank posts the *refusal*, the post a refused run makes when it
 gives the claim back to be tried again next cycle, or, at a third identical failure, the
 *set-down*, which defers the item. Where the test's read fails, the rank reads again at its next
-cycle and gives the claim back out loud unless another rank's claim counts. Before this
+cycle and gives the claim back out loud unless another rank's claim counts. Where that reread
+fails too, the claim is #173's *unreadable claim* (Adam, 2026-10-21, decision 52): it counts as
+one `tracker` failure toward the item's breaker, and the rank posts the refusal, or the set-down
+at the third in a row. It leaves the label, because it cannot tell whether a sibling holds the
+item: where a process removes the label after its reread fails again, TLC finds a sibling working an item whose label is gone
+(`LabelWhileWorked`, `negative/NoRereadKeepsLabel.cfg`). Before this
 revision, this change had a process whose verification failed count as not holding the item,
 and a verification later than one poll interval stand down in silence, so neither could post.
 Both now follow #173: after a failed post or verification the process makes the test, and its own
 message holding means it holds the item. A late verification works nothing, which is what the
-proposal's decision 5 needs, and gives the claim back the same way. Only a process that stood down for missed
-heartbeats stays silent, since a sibling may already have taken the item over.
+proposal's decision 5 needs, and gives the claim back the same way. Apart from a process whose test found another process's claim message counting, which drops
+out silently, only a process that stood down for missed heartbeats stays silent, since a sibling may already have taken the item over.
 
-**A withdrawal reads again before it removes the label** (decision 45, this change's, from #173's
-decision 29). #173's test and its removal of the label are two tracker calls, and a claim posted
+**A withdrawal reads again before it removes the label** (decision 45, drawn up by this change from
+#173's decision 29 and confirmed by Adam on 2026-10-21). #173's test and its removal of the label are two tracker calls, and a claim posted
 between them must not be released while its process works. Removing the label releases every
 claim message posted before the removal, since a release is ordered against a message by time,
 so the timing of the removal cannot protect a claim posted between the two calls. What protects
@@ -832,7 +861,7 @@ coordinator.
 CI runs TLC, the TLA+ model checker, on it (`.github/workflows/tla-concurrent-instances.yml`).
 
 **TLC finds no violation in the change as specified.** Each rule the model checks is a constant,
-TRUE in the change as specified. The fourteen configurations beside the model set every rule TRUE,
+TRUE in the change as specified. The fifteen configurations beside the model set every rule TRUE,
 and each passes every invariant it checks. Each file in `model/negative/` turns one rule off and checks only the property that
 breaks without it; TLC finds that violation, which shows the rule is needed. CI checks both: the
 configurations beside the model must pass, and every negative file must fail.
@@ -861,8 +890,7 @@ rank-0 configuration with a crash, a lost branch, a hand-over and two missed hea
 together, which finished at 145,557,318 states in 21 minutes. The model also
 lets a person edit a claim message; the rule that an edited message counts for nothing is no
 constant, since the model simply removes the edited message from those that count, so it has no
-negative file. Allowing edits shows a hole, and so do ranks on different poll intervals, under
-*Findings*, below.
+negative file. Allowing edits shows a hole, under *Findings*, below.
 
 Adam's answers of 2026-10-21 changed the model in four ways. A claim message names its process,
 and each `igor run` has a heartbeat file of its own, so two runs at once no longer read each
@@ -870,9 +898,10 @@ other's claims as their own (`RunIds`, 20 below). A claim given back before its 
 follows #173: after a failed post or verification the process reads the claim messages, its
 test; holding the item, it withdraws, removing the label in a later step after a fresh read;
 where the test read fails, it reads again at its next cycle's start. A process whose claim
-message failed to post removes the label it set within one settle interval
+message failed to post removes the label it set within half a settle interval
 (`SettleWithdraw`, 21 below). And each process applies its own roster and poll interval at its
-own cycle start. A new invariant, `LabelWhileWorked`, checks that no give-back removes the label
+own cycle start, with each heartbeat declaring its process's interval (`DeclaredInterval`, 22
+below). A new invariant, `LabelWhileWorked`, checks that no give-back removes the label
 from an item a worker runs on. Before the withdrawal's fresh read was added, TLC found it
 violated in `ConcurrentInstancesGiveBacks.cfg` and in a two-run configuration with a crash and
 a claim given back together: a process
@@ -1042,10 +1071,19 @@ Each line gives the constant, its file in `model/negative/`, and what TLC finds 
 20. **An `igor run`'s claim message carries its run id** (`RunIds`, `NoRunIds.cfg`). With rank 0
     alone, two runs of one role each read the earliest rank-0 message as their own claim. TLC:
     `NoTwoWorkers` violated.
-21. **A failed post's label is removed only within one settle interval** (`SettleWithdraw`,
+21. **A failed post's label is removed only within half a settle interval** (`SettleWithdraw`,
     `NoSettleWithdraw.cfg`). Removed whenever the test finds no message that counts, it releases
     a sibling that posted after the test and verified first, and the process claims the item
     again while the sibling works it. TLC: `NoTwoWorkers` violated.
+22. **Each heartbeat declares its process's poll interval** (`DeclaredInterval`,
+    `NoDeclaredInterval.cfg`). Counting in its own current interval instead, a rank on a
+    doubled interval stands down only after four of its sibling's intervals, while the sibling
+    counts it gone after three and takes over the item it still works. TLC: `NoTwoWorkers`
+    violated.
+23. **A reread that fails again leaves the label** (`RereadKeepsLabel`,
+    `NoRereadKeepsLabel.cfg`). Removing it, the process releases a sibling that holds the item
+    and works it, though it cannot have told that from its failed reads. TLC: `LabelWhileWorked`
+    violated.
 
 ### Findings
 
@@ -1056,15 +1094,10 @@ does not run them; they are for Adam.
   message stops counting, and a sibling claims and works the item. `NoTwoWorkers` violated. Adam
   accepted this risk on 2026-10-18 (proposal decision 30), since only a person with maintain or
   admin access can edit or delete the bot's comment, so the file stays as a record.
-- `PollSkew.cfg`: the lore head doubles the poll interval, one rank applies it and the other has
-  not. The rank on the longer interval stands down only after four of the shorter intervals
-  without a heartbeat, the other counts it gone after three, and both work the item.
-  `NoTwoWorkers` violated. The proposal lists it for Adam, with a rule, `DeclaredInterval`, that
-  this file sets FALSE; set TRUE, TLC finds no violation of any safety invariant (5,350,517
-  distinct states).
-
 `5dc5273`'s `findings/TwoRuns.cfg`, two `igor run`s at once reading each other's claims as their own, now
-passes with the run id and is `ConcurrentInstancesTwoRuns.cfg`.
+passes with the run id and is `ConcurrentInstancesTwoRuns.cfg`. `7a96c14`'s `findings/PollSkew.cfg`,
+ranks on different poll intervals both working one item, now passes with `DeclaredInterval` and
+is `ConcurrentInstancesPollSkew.cfg`.
 
 Two findings of the fourth round's model, `RunBesideWorker.cfg` and `RestartBesideRun.cfg`, found
 two workers where `igor run` shared rank 1 with a serving process. Run again with `igor run` at
@@ -1078,8 +1111,8 @@ v1.7.4. The runs without `igor run` use two serving ranks, both declared at the 
 rank-0 runs use rank 1 alone beside one `igor run`, and the two-run ones rank 1 beside two. Time
 is unbounded: the model holds two counts capped at the bound, the polls since each sibling's
 heartbeat changed and the intervals since each process's own last heartbeat. A lost branch in
-these runs may also be a rollback to an old commit. No configuration CI runs changes the poll
-interval.
+these runs may also be a rollback to an old commit. Only `ConcurrentInstancesPollSkew.cfg`
+changes the poll interval.
 
 In CI, each must pass. *With the view* is the run CI makes, on this revision's model. *Without the
 view* is one run with no `VIEW`, on 4 workers, stopped after 40 minutes where it had not finished,
@@ -1087,24 +1120,28 @@ made on the model at `5dc5273` and not repeated since.
 
 | Configuration | Items | Environment | Checks | Distinct states, with the view | Time | Without the view (`5dc5273`) |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ConcurrentInstances.cfg` | 2 | 1 crash, 1 lost or rolled-back branch, 1 hand-over | invariants | 48,487,914 | 9 min 36 s | stopped at 185,732,188, no violation |
-| `ConcurrentInstancesMisses.cfg` | 2 | 3 missed heartbeats | invariants | 22,290,265 | 3 min 19 s | stopped at 83,756,607, no violation |
-| `ConcurrentInstancesLongGaps.cfg` | 1 | 3 missed heartbeats; worker events 2 intervals apart, the timer stopping a stood-down worker | invariants | 582,427 | 5 s | passes, 22,856,832 |
-| `ConcurrentInstancesRoster.cfg` | 2 | 1 crash, 1 hand-over, 1 rank removed from the roster, applied by each process at its own cycle start | invariants | 50,196,866 | 6 min 53 s | stopped at 86,425,142, no violation |
-| `ConcurrentInstancesCatchUp.cfg` | 2 | 1 run that opens its pull request, 1 crash, 1 hand-over | invariants | 29,707,815 | 4 min 1 s | stopped at 82,220,005, no violation |
-| `ConcurrentInstancesGiveBacks.cfg` | 1 | 1 crash, 1 hand-over, 1 claim given back before its worker, 1 stop | invariants | 3,600,115 | 31 s | stopped at 113,383,292, no violation |
-| `ConcurrentInstancesRunRankZero.cfg` | 2 | rank 1 and 1 `igor run`; 1 crash, 1 lost or rolled-back branch, 1 hand-over | invariants | 8,410,136 | 1 min 30 s | stopped at 64,919,964, no violation |
-| `ConcurrentInstancesRunRankZeroMisses.cfg` | 2 | rank 1 and 1 `igor run`; 2 missed heartbeats | invariants | 2,136,707 | 18 s | passes, 20,216,806 |
-| `ConcurrentInstancesTwoRuns.cfg` | 1 | rank 1 and 2 `igor run`s; 1 crash | invariants | 14,368,406 | 1 min 59 s | not run |
-| `ConcurrentInstancesTwoRunsGiveBacks.cfg` | 1 | rank 1 and 2 `igor run`s; 1 claim given back before its worker | invariants | 13,779,513 | 2 min 11 s | not run |
-| `ConcurrentInstancesLiveness.cfg` | 1 | 1 crash, 1 stop | invariants and liveness | 336,418 | 53 s | stopped at 5,186,995, no violation |
-| `ConcurrentInstancesLivenessRoster.cfg` | 1 | 1 hand-over, 1 stop, 1 rank removed from the roster | invariants and liveness | 481,693 | 1 min 19 s | passes, 3,231,478 |
-| `ConcurrentInstancesLivenessCatchUp.cfg` | 1 | 1 run that opens its pull request, 1 crash, 1 hand-over, 1 stop | invariants and liveness | 1,295,519 | 3 min 33 s | stopped at 3,984,894, no violation |
-| `ConcurrentInstancesLivenessRankZero.cfg` | 1 | rank 1 and 1 `igor run`; 1 crash, 1 stop | invariants and liveness | 91,700 | 11 s | passes, 465,757 |
+| `ConcurrentInstances.cfg` | 2 | 1 crash, 1 lost or rolled-back branch, 1 hand-over | invariants | 48,487,914 | 11 min 37 s | stopped at 185,732,188, no violation |
+| `ConcurrentInstancesMisses.cfg` | 2 | 3 missed heartbeats | invariants | 22,290,265 | 3 min 33 s | stopped at 83,756,607, no violation |
+| `ConcurrentInstancesLongGaps.cfg` | 1 | 3 missed heartbeats; worker events 2 intervals apart, the timer stopping a stood-down worker | invariants | 582,427 | 7 s | passes, 22,856,832 |
+| `ConcurrentInstancesRoster.cfg` | 2 | 1 crash, 1 hand-over, 1 rank removed from the roster, applied by each process at its own cycle start | invariants | 50,196,866 | 16 min 19 s | stopped at 86,425,142, no violation |
+| `ConcurrentInstancesCatchUp.cfg` | 2 | 1 run that opens its pull request, 1 crash, 1 hand-over | invariants | 29,707,815 | 11 min 41 s | stopped at 82,220,005, no violation |
+| `ConcurrentInstancesGiveBacks.cfg` | 1 | 1 crash, 1 hand-over, 1 claim given back before its worker, 1 stop | invariants | 3,600,115 | 46 s | stopped at 113,383,292, no violation |
+| `ConcurrentInstancesRunRankZero.cfg` | 2 | rank 1 and 1 `igor run`; 1 crash, 1 lost or rolled-back branch, 1 hand-over | invariants | 8,410,136 | 2 min 27 s | stopped at 64,919,964, no violation |
+| `ConcurrentInstancesRunRankZeroMisses.cfg` | 2 | rank 1 and 1 `igor run`; 2 missed heartbeats | invariants | 2,136,707 | 31 s | passes, 20,216,806 |
+| `ConcurrentInstancesTwoRuns.cfg` | 1 | rank 1 and 2 `igor run`s; 1 crash | invariants | 14,368,406 | 4 min 15 s | not run |
+| `ConcurrentInstancesTwoRunsGiveBacks.cfg` | 1 | rank 1 and 2 `igor run`s; 1 claim given back before its worker | invariants | 13,779,513 | 3 min 15 s | not run |
+| `ConcurrentInstancesLiveness.cfg` | 1 | 1 crash, 1 stop | invariants and liveness | 336,418 | 1 min 30 s | stopped at 5,186,995, no violation |
+| `ConcurrentInstancesLivenessRoster.cfg` | 1 | 1 hand-over, 1 stop, 1 rank removed from the roster | invariants and liveness | 481,693 | 1 min 57 s | passes, 3,231,478 |
+| `ConcurrentInstancesLivenessCatchUp.cfg` | 1 | 1 run that opens its pull request, 1 crash, 1 hand-over, 1 stop | invariants and liveness | 1,295,519 | 6 min 30 s | stopped at 3,984,894, no violation |
+| `ConcurrentInstancesLivenessRankZero.cfg` | 1 | rank 1 and 1 `igor run`; 1 crash, 1 stop | invariants and liveness | 91,700 | 19 s | passes, 465,757 |
+| `ConcurrentInstancesPollSkew.cfg` | 1 | 3 missed heartbeats; the lore head doubles the poll interval, and each process applies it, or keeps its own, at its own cycle start | invariants | 5,350,517 | 1 min 15 s | not run |
 
-All pass with the view. Times are on 8 TLC workers of a 10-core Mac. The view's counts repeat
+All pass with the view. Times are on 8 TLC workers of a 10-core Mac that another TLC run, on 2
+workers, was sharing. The view's counts repeat
 exactly: `ConcurrentInstances.cfg` gives 48,487,914 and `ConcurrentInstancesLongGaps.cfg`
-582,427 on this revision's model as at `5dc5273`, where they repeated on three and four runs.
+582,427 on this revision's model, the same as at `5dc5273`, where they repeated on three runs
+and four runs respectively,
+and `ConcurrentInstancesPollSkew.cfg` gave 5,350,517 on both of two runs.
 Every configuration whose environment this revision did not widen gives the count it gave at `5dc5273`, which
 shows the new rules add no state where they cannot act. `ConcurrentInstancesRoster.cfg` and
 `ConcurrentInstancesLivenessRoster.cfg` grow because each process now applies the roster at its
@@ -1117,12 +1154,10 @@ CI job too: with `OwnerFirst` FALSE it took 21 minutes on 8 workers here, and wi
 passed 47 million states in 6 minutes when stopped. So CI runs it split into the two
 `RunRankZero` files above.
 
-Each of the twenty-one files in `model/negative/` finds its violation on one worker, which is how
-CI runs them, the slowest, `NoLabelSweep.cfg`, in 8 min 21 s, and all of them in about 12
-minutes together. CI runs them in two jobs, by the first letter after `No`, to keep each well
-within its hour. Each file in `model/findings/` finds its violation within a few seconds.
-`findings/PollSkew.cfg` with `DeclaredInterval` TRUE and every safety invariant checked passes,
-at 5,350,517 distinct states.
+Each of the twenty-three files in `model/negative/` finds its violation on one worker, which is how
+CI runs them, the slowest, `NoLabelSweep.cfg`, in 4 min 13 s, and all of them in 17 min 25 s
+added together, or 4 min 18 s run eight at a time. CI runs them in two jobs, by the first letter after `No`, to keep each well
+within its hour. `model/findings/EditedMessage.cfg` finds its violation within a few seconds.
 
 To reproduce a run, download `tla2tools.jar` from the TLA+ release v1.7.4
 (`https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar`) into `model/`, and
@@ -1161,16 +1196,20 @@ The model also assumes:
   verification, and the test that follows may itself fail. The model removes a failed post's
   label only in the same step as the failed post and its test, which stands for decision 42's
   bound; a process that does not remove it then leaves the label. The withdrawal's fresh read and its removal are one step,
-  as a takeover's read and release are. A reread decides nothing about the worker: whatever it
+  as a takeover's read and release are. A reread that fails again changes nothing the model
+  holds: the refusal and set-down posts and the deferral are not modelled, and the label stays.
+  A reread decides nothing about the worker: whatever it
   finds, the process works nothing from it.
 - **A process whose rank leaves the roster keeps writing heartbeats until it exits.** It sees
   the change at a cycle start of its own, when it applies the lore head or keeps the commit it
   had. Nothing obliges a fetch to bring the head, so a process may run on the old roster for
   good, which the liveness properties allow.
 - **Time is counted in the shorter poll interval where the interval may change.** A process on
-  the doubled interval writes a heartbeat once per shorter interval, may let one shorter interval
-  end between setting its label and verifying, and counts its three derived timings (gone after
-  three intervals, a heartbeat every half, a stand-down after two) in its own interval. Its cycles may
+  the doubled interval writes a heartbeat every half of its own interval, which is once per
+  shorter interval, and may let one shorter
+  interval end between setting its label and verifying. It counts a sibling gone after three of
+  the longest of its own interval and those declared to it, and stands down after two of the
+  shortest it has applied. Its cycles may
   start as often as one on the shorter interval, which only adds behaviours.
 - **A pull request is opened only by a run, before it finishes,** at most once per behaviour
   (`MaxPRs`), and a catch-up then finishes the item. What a person's label does after the pull

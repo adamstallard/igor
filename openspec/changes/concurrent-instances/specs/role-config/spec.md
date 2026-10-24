@@ -99,7 +99,7 @@ that identity's credentials, naming any variable that is missing.
 Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
 value someone guesses differently each time: a **settle interval** of 10 seconds before a claim
 is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
-interval** SHALL be configurable too.
+interval** SHALL be configurable too, with a default of 10 minutes.
 
 The settle interval SHALL be shorter than the poll interval. A configuration that sets it as long
 or longer is refused, naming both values.
@@ -110,13 +110,20 @@ recorded as such rather than presented as considered.
 Three timings are the exception: each SHALL follow the role's poll interval, with no setting of
 its own: the *abandonment bound*, three intervals; the heartbeat period, half an interval; and
 the stand-down threshold, two intervals. `work-claiming` states the rule each belongs to.
-Changing the poll interval scales all three together.
+Changing the poll interval scales all three together. Where a process's poll interval has changed
+since it started, `work-claiming`'s *A heartbeat declares its process's poll interval* says which
+interval each counts in.
 
 #### Scenario: Default applied when unset
 
 - **WHEN** a role does not set the settle interval
 - **THEN** the inherited or default value is used
 - **AND** the effective value is visible via `role explain`
+
+#### Scenario: The poll interval defaults to 10 minutes
+
+- **WHEN** neither a role nor any role it extends sets the poll interval
+- **THEN** the role polls every 10 minutes
 
 #### Scenario: The derived timings follow the poll interval
 
@@ -148,9 +155,9 @@ roster:
   reviewer: [1]
 ```
 
-A role the roster does not name SHALL run rank 1 only. The configuration SHALL be refused, naming
+A role the roster does not name SHALL run rank 1 only, as though the roster declared `[1]` for it. The configuration SHALL be refused, naming
 the entry, when the roster names a role with no role file, lists a rank that is not a whole
-number from 1, or lists one rank twice. A process whose rank the roster does not declare for its
+number from 1, or lists one rank twice. An `igor serve` process whose rank the roster does not declare for its
 role SHALL refuse to start, naming the ranks the roster declares.
 
 #### Scenario: A declared rank starts
@@ -160,7 +167,7 @@ role SHALL refuse to start, naming the ranks the roster declares.
 
 #### Scenario: A rank outside the declared roster fails validation
 
-- **WHEN** a process starts with a rank the configuration does not declare
+- **WHEN** an `igor serve` process starts with a rank the configuration does not declare
 - **THEN** it refuses to start, naming the ranks the roster declares for its role
 
 #### Scenario: A role the roster does not name runs rank 1

@@ -316,6 +316,86 @@ caller that must tell them apart cannot do it from a thrown error alone.
   item cannot go on with its claim
 - **THEN** it removes nothing and posts nothing on the item
 
+### Requirement: An item handed to an Igor waits for work already in flight
+
+Where a person hands an item to an Igor through its holder field, and the item already has work
+in flight, such as an open pull request, the Igor SHALL NOT claim it. On the next cycle that
+finds the item, it SHALL post one comment naming the work in flight and saying it takes the item
+up once that work closes, and SHALL NOT post it again while that work is open. Once the work
+closes, the hand-over directs the Igor as in *A person can direct an Igor through the holder
+field*. Claiming would duplicate work already in review, which no hand-over overrides, and
+saying nothing would leave the person who asked with no sign the Igor saw the request.
+
+Where the work in flight is the Igor's own pull request and it no longer merges, bringing it up
+to date is the Igor's own work on its own artifact, not a claim of the hand-over, and the item
+gets no such comment while that runs.
+
+Where a handed-over item's run published work and then could not finish, its handoff post, the
+comment it leaves as it stops (`graceful-handoff`), SHALL say
+that what it published stands and that, once that work closes, handing the item over again has
+the Igor try again. Handing it over while the work is still open changes nothing, so the
+handoff SHALL NOT suggest it.
+
+#### Scenario: Handed over while a pull request is open
+
+- **WHEN** a person adds `igor:frontend` to a GitHub issue that an open pull request references
+- **THEN** the `frontend` Igor does not claim it
+- **AND** it posts one comment naming that pull request and saying it takes the issue up once
+  the pull request closes
+
+#### Scenario: The pull request closes
+
+- **WHEN** the pull request closes and the `igor:frontend` label is still on the issue
+- **THEN** on its next cycle the `frontend` Igor posts the claim comment and starts work
+- **AND** where one process runs the role, it does not wait the settle interval; where several
+  do, they decide which works the issue as *A hand-over among one role's ranks is contested like
+  found work* says
+
+#### Scenario: A handed-over run published, then failed
+
+- **WHEN** an Igor working a handed-over item opens a pull request and then cannot finish
+- **THEN** its handoff says what it published stands, and that handing the item over again once
+  that pull request closes has it try again
+
+### Requirement: A person reassigns an issue by removing the holding Igor's label first
+
+Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that carries another
+Igor's `igor:` label, the newly labelled Igor SHALL NOT claim it. On the next cycle that finds
+the issue, it SHALL post one comment saying which Igor holds the issue and that removing that
+Igor's label hands the issue over. It SHALL NOT post the comment again while the issue's labels
+are unchanged. Once the other Igor's label is gone, the person's label directs this Igor, by *A
+person can direct an Igor through the holder field*. This matches Linear, where a person
+replaces a delegate rather than adding a second. Work that needs two roles is split into two
+issues, one per role.
+
+A label a person added SHALL NOT make the Igor holding the issue lose its claim, even during
+its settle interval. A label another Igor added while claiming is resolved by the settle
+interval, as in *A claim is verified after a settle interval*. The adapter SHALL tell the two
+apart by who added the label, read from the issue's events.
+
+#### Scenario: Person labels a second Igor
+
+- **WHEN** a person adds `igor:frontend` to a GitHub issue the `backend` Igor holds by its
+  `igor:backend` label
+- **THEN** the `frontend` Igor does not claim it, and posts one comment saying the `backend`
+  Igor holds the issue and that removing `igor:backend` hands it over
+- **AND** the `backend` Igor keeps the issue
+
+#### Scenario: Person removes the holding Igor's label
+
+- **WHEN** the person then removes `igor:backend`
+- **THEN** the `backend` Igor halts, as for any stopped claim
+- **AND** the `frontend` Igor posts the claim comment and starts work
+- **AND** where one process runs the role, it does not wait the settle interval; where several
+  do, they decide which works the issue as *A hand-over among one role's ranks is contested like
+  found work* says
+
+#### Scenario: Another Igor's own label is still a race
+
+- **WHEN** an Igor finds another Igor's `igor:` label on an issue it is claiming, and the
+  issue's events show that Igor added the label itself
+- **THEN** the settle interval resolves the claim
+
 ## ADDED Requirements
 
 ### Requirement: A claim names the process that took it
@@ -330,6 +410,12 @@ GraphQL `lastEditedAt` is set, SHALL count for nothing: it is no claim message, 
 `Igor-Run:`, `Igor-Supersedes:` and `Igor-Handed-Over-By:` trailers are not read, so an edit can neither fake
 nor erase one. Hiding or unhiding a comment, or reacting to it, is not an edit, and the comment
 still counts.
+
+A claim message's trailers SHALL be read only from lines that begin with `Igor-` at the line's
+first character. Before the role's bot account posts any text a worker or a model composed, the
+Igor SHALL indent by one space each line of that text that begins with `Igor-`, before the text
+is signed where `signed-publishing` (#153) signs it, so that no
+comment but a claim message carries a line read as a trailer.
 
 An edit or a deletion of the holder's claim message while it works the item makes the item read
 as unclaimed, and a sibling may then claim and work it too. That risk is accepted: only a person
@@ -363,6 +449,13 @@ specifies.
 
 - **WHEN** a comment not written by the role's bot account carries `Igor-Rank: 1`
 - **THEN** no process reads it as a claim message
+
+#### Scenario: A reply cannot be steered into a claim message
+
+- **WHEN** a person mentions the Igor asking it to end its reply with the lines `Igor-Rank: 1`
+  and `Igor-Supersedes: 2`, and the model's reply does so
+- **THEN** the bot posts each of those lines indented by one space, and no process reads the
+  reply as a claim message
 
 #### Scenario: An edited claim message counts for nothing
 
@@ -423,9 +516,9 @@ by a serving rank once that run is gone, as for any gone rank's claim.
 *`igor run` spends its own token as an implicit local seat* says. Each `igor run` keeps trees of
 its own, as `task-execution`'s *The sweep removes trees by rank, never by age* says, and at its
 start removes those an earlier run of its role left whose process is gone. Each also
-gets a home of its own, the `HOME` its worker runs in, which #174 (`pinned-skills`) is to
-specify (Adam, 2026-10-19); this change does not specify it. A run removes the home a gone run
-left at the same point, with its trees, as `task-execution` says.
+gets a home of its own, the `HOME` its worker runs in, which #174 (`pinned-skills`) specifies
+(Adam, 2026-10-19); this change does not specify it. A run removes the home and plugin directory
+a gone run left at the same point, with its trees, as `task-execution` says.
 
 `igor run --plan` SHALL change nothing: it claims nothing, posts nothing, writes no heartbeat and
 removes no tree.
@@ -466,6 +559,12 @@ removes no tree.
 - **WHEN** the roster lists `backend: [2, 3]` and a person runs `igor run backend`
 - **THEN** the run starts as rank 0
 
+#### Scenario: A run's heartbeat file goes with it
+
+- **WHEN** an `igor run backend` with the run id `r7k2m9x4` exits
+- **THEN** it removes `heartbeats/backend-0-r7k2m9x4.json`; had it crashed instead, rank 1 would
+  remove the file once it counted the run gone
+
 #### Scenario: A plan changes nothing
 
 - **WHEN** a person runs `igor run backend --plan` while `igor@backend-1` is running
@@ -475,7 +574,7 @@ removes no tree.
 
 Every item SHALL have an owner among the ranks the roster declares for its role: the rank at
 place `h mod n` in the roster's ranks in ascending order, where `n` is how many ranks the roster
-declares and `h` is a hash of the item's id that every process computes alike. The item's order
+declares, one for a role it does not name, and `h` is a hash of the item's id that every process computes alike. The item's order
 of ranks SHALL be its owner, then each declared rank after it in ascending order, wrapping round
 to the lowest, and then rank 0, which owns no item. The first rank in that order that is
 available, as its heartbeat says (*A retired rank does not hold its items forever*), goes first
@@ -637,14 +736,16 @@ count, for any process, even once that rank returns.
 
 A claim held by a rank past the abandonment bound SHALL be adoptable by any process of the role.
 A rank is past the bound once the deciding process has itself watched that rank's heartbeat fail
-to change for three of its role's poll intervals. Removing a rank from the roster SHALL NOT by
+to change for three poll intervals, each as long as *A heartbeat declares its process's poll
+interval* says. Removing a rank from the roster SHALL NOT by
 itself make the rank's claims adoptable: a rank missing from the roster is adoptable only once
 it is past the bound.
 
 Every process SHALL run a timer of its own, apart from its cycle and from any worker, that fires
 every half poll interval. At each firing it SHALL write a heartbeat: it overwrites a file of its
 own on the state branch, named by its role and rank, and for `igor run` its run id, holding an id the process chose when it
-started, a counter it increments on each write, and whether the process is available. Its first
+started, a counter it increments on each write, whether the process is available, and the poll
+interval the process applies. Its first
 heartbeat SHALL land before its first cycle. A heartbeat file SHALL hold no time that any process
 compares.
 
@@ -674,8 +775,8 @@ claim back: the process adds the label, removes it and adds it again. An item wh
 request the Igor opened is the exception, taken over without a release, as *A claim left on the
 Igor's open pull request is caught up* says.
 
-A process SHALL stand down once it has failed to write its heartbeat for two poll intervals.
-Standing down, it starts no claim, and leaves its claims in place. The same timer SHALL check, at
+A process SHALL stand down once it has failed to write its heartbeat for two poll intervals, each
+as long as *A heartbeat declares its process's poll interval* says. Standing down, it starts no claim, and leaves its claims in place. The same timer SHALL check, at
 each firing, whether the process has stood down, and where it has, SHALL stop the running worker
 itself, without waiting for an event from the worker. The process resumes once a heartbeat lands.
 
@@ -696,7 +797,8 @@ first.
 Where the configuration a process reads at the start of a cycle fails any check a starting
 process makes on it, the process SHALL refuse it: it SHALL go on under the last configuration
 that passed, roster included, and SHALL raise a condition naming the failing file and the check.
-Whether the roster declares the process's own rank is not one of those checks: a read whose
+A check that fails because GitHub did not answer, or refused the App's credential, refuses
+nothing, as `lore-pull`'s *`igor serve` starts on the newest commit that passes* (#208) says. Whether the roster declares the process's own rank is not one of those checks: a read whose
 roster drops the rank passes, and the rank retires as above (#208, `lore-pull`, decision 30).
 Where that configuration includes seat files, as under #171, a seat file the read finds removed
 is the one exception, and takes effect all the same, as `seat-budget`'s *A removed seat file
@@ -872,6 +974,45 @@ make the process exit.
 - **THEN** the rejected one is retried, it overwrites only its own file, and both heartbeats are
   present afterwards
 
+### Requirement: A heartbeat declares its process's poll interval
+
+Ranks apply lore commits independently, so two ranks of one role can run on different poll
+intervals at once. The gone verdict and the stand-down are counted by two different processes,
+and must agree whatever interval each applies: a process SHALL have stood down and stopped its
+worker before any sibling counts it gone. So each heartbeat SHALL declare the poll interval its
+process applies when it writes it, and each process SHALL count in the safer interval, by what it
+has itself read and applied:
+
+- **Gone:** a process SHALL measure each of the three poll intervals after which it counts a
+  sibling gone as the longest of its own current poll interval and every interval that sibling's
+  file has declared to it since this process started.
+- **Stand-down:** a process SHALL measure each of the two poll intervals after which it stands
+  down as the shortest poll interval it has applied since it started.
+
+A process SHALL write its heartbeat every half of its own current poll interval. No process
+SHALL wait on, ask or signal another to settle which interval applies.
+
+#### Scenario: A sibling that declared a longer interval is waited for
+
+- **WHEN** rank 1 runs on a poll interval of 10 minutes, and since rank 1 started rank 2's
+  heartbeat file has declared 20 minutes
+- **THEN** rank 1 counts rank 2 gone only once 60 minutes have passed without rank 2's heartbeat
+  changing
+
+#### Scenario: A process that moved to a longer interval stands down by the shorter
+
+- **WHEN** a process started on a poll interval of 10 minutes and has since applied a commit that
+  sets 20 minutes
+- **THEN** it writes its heartbeat every 10 minutes, and stands down after 20 minutes without
+  writing one, not 40
+
+#### Scenario: Ranks on different poll intervals keep one worker per item
+
+- **WHEN** rank 1 applies a commit that doubles the poll interval while rank 2 still runs on the
+  commit before it, and rank 1 then fails to write its heartbeat
+- **THEN** rank 1 stands down and its timer stops its worker before rank 2 counts it gone, so
+  only one process works each item
+
 ### Requirement: Only the rank holding a claim gives it back
 
 Where several processes run one role, a process SHALL remove the role's label from an item only
@@ -901,8 +1042,12 @@ for `igor run`, as #173 has it. A process with a reread pending makes it before 
 chooses any candidate. Otherwise, finding its own rank's message holding the item, it would
 take the claim for its predecessor's and re-work the item (*A process recovers the claims of
 its own predecessor*). That reread
-decides as the test does, and where it fails again the process gives the claim back with the
-post that names the item as still held and removes nothing, so the claim never ends in silence. A process that has stood down for missed heartbeats does none of
+decides as the test does. Where it fails again, the claim is what `pre-worker-breaker` (#173)
+calls an *unreadable claim*, and the process SHALL follow #173's rule for one: it gives the claim
+back with the post a refused run makes, or, where that is the item's third unreadable claim in a
+row, sets the item down with the set-down post, so the claim never ends in silence. Either way it
+SHALL leave the role's label on the item, since it cannot tell whether a sibling holds the item
+and works it. A process that has stood down for missed heartbeats does none of
 this, and keeps its claim in silence.
 
 Because only a process whose own message holds the item withdraws, and its fresh read keeps
@@ -953,7 +1098,14 @@ claimed it yet or its holder is gone, the process that reaches the item answers 
 #### Scenario: A reread that fails again still speaks
 
 - **WHEN** a process's test failed, and its reread at the next cycle's start fails too
-- **THEN** it posts that the item is still held and removes nothing
+- **THEN** it gives the claim back with the post a refused run makes, and leaves the label
+
+#### Scenario: A third unreadable claim sets the item down and keeps the label
+
+- **WHEN** a process's test and reread of an item's claim messages both fail, and two earlier
+  claims on the item ended the same way, with no read of its claim messages succeeding between
+- **THEN** it sets the item down with #173's set-down post, and leaves the role's label on the
+  item
 
 #### Scenario: `igor run` rereads before it exits
 

@@ -72,8 +72,8 @@ runs of one role at once never share a tree and a run tells its own trees by the
 characters of their id. A run SHALL remove each of its own trees as it releases it when the
 task ends, under its own user, since `igor run` has no worker user. At its start, before its
 first cycle, it SHALL also remove the rank-0 trees of its role whose run's process is gone (Adam,
-2026-10-21), each with its outbox, `<tree>-git` and `<tree>-prompt`, and the home #174 gives
-that run. A run tells that
+2026-10-21), each with its outbox, `<tree>-git` and `<tree>-prompt`, and the home and the plugin
+directory #174 gives that run. A run tells that
 another run's process is gone by a lock: each run holds an exclusive lock on a file in the trees'
 directory named `<role>-0-<run id>.lock` for as long as it runs, which the system releases when
 its process ends, and a run whose lock another run can take is gone. A run SHALL remove no tree
@@ -138,7 +138,13 @@ which owns them under #175.
   id `q2b4n8c6`, crashed, so the lock on `backend-0-q2b4n8c6.lock` is free, beside `backend-0-m5t8w1y3b2` of a run still
   holding its lock
 - **THEN** before its first cycle it removes `backend-0-q2b4n8c6z3`, its outbox, `<tree>-git` and
-  `<tree>-prompt`, and that run's home, and leaves `backend-0-m5t8w1y3b2`
+  `<tree>-prompt`, and that run's home and plugin directory, and leaves `backend-0-m5t8w1y3b2`
+
+#### Scenario: A run leaves what another person's crashed run left
+
+- **WHEN** an `igor run backend` starts and finds a tree of a gone run that another person
+  started, which its own user cannot remove
+- **THEN** it leaves the tree and logs its path, and goes on to its first cycle
 
 #### Scenario: Every rank on the host sees the trees
 

@@ -16,7 +16,8 @@ not duplication either: the process that takes it over catches the item up rathe
 re-working it.
 
 The exception above, for a claim this process takes over, covers an item whose holding claim
-message carries this process's rank, whether this process or a predecessor posted it. Where
+message carries this process's rank, whether this process or a predecessor posted it. For
+`igor run`, the message must also carry its own run id, since every run is rank 0. Where
 that item's open pull request, the Igor's own, still merges, as after a catch-up that gave its
 claim back and kept a person's label, triaging it would only decide to carry on with a catch-up
 that changes nothing, so triage SHALL pass the item over with no triage call, unless the item or its pull request has been
@@ -89,7 +90,8 @@ rule is universal and MUST NOT be configurable.
 Where several processes run the Igor's role, an item whose holding claim message, the earliest
 that counts, carries the rank of another process of the role that is not gone, is held by that
 process. Such an item SHALL be passed over before triage, with no triage call. An item the role's
-label holds with no such message, or with this process's own rank, is the running Igor's.
+label holds with no such message, or with this process's own rank, is the running Igor's; for
+`igor run`, at rank 0, a message is its own only where it also carries its own run id.
 
 Acting on work that is visibly someone else's is not an organizational preference. Left to a
 role's lane, its declared limits on what it takes, an org that forgets to write this skip gets an Igor that claims and retracts on a colleague's
