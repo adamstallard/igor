@@ -408,7 +408,12 @@
       As the worker, an HTTP request to port 80 of `169.254.169.254` or `[fd00:ec2::254]`, made
       directly and through the worker's proxy where it has one, that gets an HTTP response
       within 2 seconds (proposal, decision 41). `<through>` is empty for a direct response, and
-      `, through the proxy <proxy>` for one that came through the proxy:
+      `, through the proxy in <variable>` for one that came through the proxy, where
+      `<variable>` is the variable that holds the proxy URL, such as `HTTPS_PROXY`. The message
+      never holds the proxy URL, whose user info is a secret. The probe, a process the start
+      check runs as the worker user, reads the proxy URL from its own environment, never from its
+      command line, where `/proc/<pid>/cmdline` would show the password to any local user. Each
+      address and route that got a response gets its own line:
 
       ```
       the worker user "<worker>" can reach <address>, the cloud metadata endpoint<through>, which hands any caller this host's cloud credentials. Block it: the unit's IPAddressDeny= line does on a host; in a container, block it on the host the container runs on; a proxy must refuse it.
@@ -464,6 +469,22 @@
       `serve` refuses, with status 78, where an injected addon fails to load, or where
       `fs.suid_dumpable` reads 2; `run` on a platform with no binary starts, and `run` on
       Linux x64 or arm64 makes the call and reads back 0.
+- [ ] 5.7 `serve` and `run` refuse to start, exiting 78, where a proxy URL the Igor would pass on
+      from its own environment holds a password of 1 to 7 characters, counted after
+      percent-decoding (proposal, decisions 48 and 49). The message names each variable that holds such
+      a URL. The message, which may be reworded so long as it names the variable and never the
+      password or the URL:
+
+      ```text
+      <variable> holds a proxy URL whose password is shorter than 8 characters. Igor cannot redact a secret that short, so it will not hand it to a worker. Use a password of at least 8 characters, or a proxy that authenticates by network address.
+      ```
+
+      A proxy URL with a user name and no password, or an empty one (`alice:@host`), is not
+      refused: #217 registers the name with its host. Tests: under both `serve` and `run`,
+      `HTTPS_PROXY=http://alice:pw12@proxy.internal:3128` refuses with status 78, and the output
+      holds `HTTPS_PROXY` but neither `pw12` nor the URL; `http://alice@proxy.internal:3128` and
+      `http://alice:@proxy.internal:3128` start, with the name registered with its host and never
+      as `alice` alone
 
 ## 6. Measurements
 

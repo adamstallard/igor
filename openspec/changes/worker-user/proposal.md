@@ -358,11 +358,12 @@
     #171's code just before this change's, that change is this one, so task 1.10 removes it (Adam, 2026-10-21), and task 1.7 has no `runUsage` to
     change.
 
-Decisions 41 and 43 to 47 are Adam's, made on 2026-10-21. So are three extensions, rules a
-consistency read added to his decisions, which he kept: in decision 41, the groups and sockets
+Decisions 41 and 43 to 48 are Adam's, made on 2026-10-21. So are three extensions, rules that an
+agent's consistency read of this change added to his decisions, which he kept: in decision 41, the groups and sockets
 of point 3 and the refusal of a secret under 8 characters; and in decision 43, the
 `fs.suid_dumpable` check.
-Decision 42 is a mechanism proposed for 41's first point, which waits for his approval.
+Decision 42 is a mechanism proposed for 41's first point, and decision 49 refines decision 48;
+both wait for his approval.
 
 41. **A worker gets a secret only through the Igor, which registers every secret it hands
     over** (Adam, 2026-10-21). Registering means calling `rememberSecret`, so that #217's
@@ -487,22 +488,26 @@ Decision 42 is a mechanism proposed for 41's first point, which waits for his ap
     check's environment, and putting a check that needs it under `ci_only`, the CI-only list in
     its repository's entry in the `repos` map (decision 41's fifth point), which would move
     every networked check of such a host to CI.
+48. **A proxy password under 8 characters refuses the start** (Adam, 2026-10-21). Credential
+    redaction registers no secret that short, and the proxy URL reaches every run, so the
+    short-secret rule would fail every run. Instead `igor serve` and `igor run` refuse to start,
+    exiting 78, with a message naming the variable that holds the URL and never the value. A
+    proxy URL with a user name and no password is not refused, however short the name, because
+    #217 registers the name joined to its host, as `<user>@<host>`, and never alone, so what is
+    registered is long enough. *Rejected:* failing each run, which a short proxy password would
+    do without end.
+49. **Two refinements of decision 48** (proposed by this change's author on 2026-10-24, for
+    Adam's approval). An empty password (`user:@host`, as curl writes it for a Negotiate proxy)
+    counts as no password, as #217 treats it, since refusing it would refuse every Negotiate
+    proxy. And the start check's refusal for a metadata endpoint reached through the proxy
+    names the variable that holds the proxy URL, never the URL, whose user info is a secret,
+    since the refusal is written to the journal.
 
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
 
 - **Decision 42 waits for Adam's approval.** If he turns it down, the uid firewall rule it
   rejects is the alternative.
-
-- **The in-force wording that no network setting is a credential.** *The worker is given an
-  explicit environment holding no credential but its seat's* passes the host's network
-  settings, `HTTPS_PROXY` among them, and says none of them is a credential. A proxy URL can
-  hold a password. #217 registers such a URL's user info, password and whole URL for
-  redaction, so decision 41, that every secret a worker gets is registered, holds. The in-force
-  sentence that no network setting is a credential is still wrong for such a URL. #171, which archives after
-  this change, replaces the requirement with *The worker is given an explicit environment
-  holding no credential but its seat's token*, which keeps the same sentence. So the sentence is left as
-  it is here, and #171's text is the one to reword (reported to #171).
 
 - **Findings of the 2026-10-21 consistency read left for the next pass.** None of them comes
   from decision 41, 43, 45 or 46. A missing-path refusal would refuse
@@ -523,14 +528,23 @@ or on another change.
   and "model step" are not defined in the spec. Nothing measures `--append-system-prompt-file`
   under `-p`, or what `sudo -n -l` shows for a worker rule that needs a password.
 
-- **A fourth consistency read on 2026-10-21,** the newest, listed first, made after decision 39 gained the sweep of a gone
-  run's trees, found these, left for the next pass.:
-  - **For Adam: a proxy URL with a user name and no password.** Decision 47 counts the user
-    info as a secret handed over, which must be registered on its own, while #217 registers a
-    user name with no password only together with its host, never on its own, so the two rules
-    cannot both hold for such a URL; and a name under 8 characters, such as
-    `alice`, would fail every run under the short-secret rule. *Recommendation:* count only a
-    proxy URL's password as the secret, and leave a bare user name to #217's rule.
+- **A fifth consistency read on 2026-10-24,** made after decision 48, found 34 items. Those
+  about decision 48 and the metadata refusal are fixed: an empty proxy password counts as none,
+  `igor run`'s refusal has a scenario, #82's exit status is cited only for `igor serve`, which
+  is all #82 covers, while this change sets the same status for `igor run`, the sentence that
+  no network setting is a credential now names the proxy's user info, and the metadata probe
+  takes the proxy URL from its environment, not its command line. Most of the rest repeat items
+  below. These are new, left for the next pass:
+  - `<state dir>` cites #216, which archives after this change, and Adam has not recorded his
+    permission to cite it ahead; and `docs/architecture.md` §6.7.2's sweep by age goes stale
+    with no task to update it.
+  - Reported to #174: #174 allows killing a worker user's processes by that user's systemd
+    slice, but a process `sudo` started stays in the Igor unit's control group, outside that
+    slice, so such a kill would leave it running. And under `igor serve` a worker home that
+    lasts across runs breaks the in-force scenario *No state carries between tasks* until #174
+    rewords it.
+- **A fourth consistency read on 2026-10-21,** made after decision 39 gained the sweep of a gone
+  run's trees, found these, left for the next pass:
   - Under the shipped unit, `SupplementaryGroups=` and `ReadWritePaths=` fail the unit before
     Igor runs where the worker user's group or home is missing, so the start check's refusal and
     its status 78 never happen there; unmeasured.
@@ -544,14 +558,8 @@ or on another change.
     write a filter into its configuration; the rule needs an "under `igor serve`" scope.
   - The metadata probe's mechanism is in no decision; `LimitCORE=0` has no scenario; and #192's
     Dockerfile comment on killing by process group goes stale.
-- **A third consistency read on 2026-10-21 found more, also left for the next pass.** Only the
-  first item below comes from decision 47:
-  - **For Adam: a proxy password shorter than 8 characters.** The rule that the Igor hands over
-    no secret under 8 characters, and fails the run instead, reaches the proxy password the
-    worker and its checks are given, now that decision 47 counts it a secret handed over, so
-    such a proxy would fail every run. *Recommendation:* refuse the start
-    where a forwarded proxy URL holds a password under 8 characters, naming the variable, rather
-    than failing each run.
+- **A third consistency read on 2026-10-21 found more, also left for the next pass.** Its item
+  from decision 47, a proxy password under 8 characters, is settled by decision 48. The rest:
   - #179's decision 48 already removes
     `<tree>-prompt` with each tree, and #153's decision 25 already says Igor runs no `prose
     start`, so the *Reported to #179* item below and the sentence in decision 15 that leaves
@@ -586,7 +594,7 @@ or on another change.
   holds the outbox. Several SHALLs have no scenario, and some carry their reasons inside the
   SHALL sentence, where a reader applying the rule has to skip them.
 
-- **From the third consistency read of 2026-10-21, left for the next pass.** None blocks
+- **More from that third consistency read, on older text, left for the next pass.** None blocks
   approving the rules above; each is a fix to this text or another change's. Task 1.10 removes
   the live `/usage` read, but #143's *A seat's fullness is read from the seat, not supplied by a
   person* still requires it, and #171's *A spend with no seat behind it is not made* names it;
@@ -595,9 +603,9 @@ or on another change.
   over clean filters, which the spec does not, and #137 may not conflict at all. With this
   change built before #179 and #174, as issue #204 builds them, `/etc/igor/%i.env` is neither
   probed nor reported as not checked, and the probes of #174's template and `skills_dir` have
-  nothing to probe and no "not checked" outcome. The refusal for a dumpable Igor points at a
-  deployment-guide section that says nothing about `fs.suid_dumpable`. The refusal naming the
-  metadata endpoint's proxy prints its URL, user info included, to the journal. The spec says a
+  nothing to probe and no "not checked" outcome. The refusal for a dumpable Igor points at the
+  deployment guide's section "A separate user for the worker", which says nothing about
+  `fs.suid_dumpable`; the section needs a paragraph on it. The spec says a
   secret reaching the worker by another route is stored as it stands, though #217 still
   matches GitHub and Anthropic tokens by shape. `ExecStart=` already passes `%i` on `main`.
   What `sudo -n -l` prints for a user with no sudoers entry has no measuring task. #153 has

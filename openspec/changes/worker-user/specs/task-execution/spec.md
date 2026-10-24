@@ -619,8 +619,8 @@ journal on every worker start.
 
 - **WHEN** an HTTP request the worker user makes to port 80 of `169.254.169.254` or
   `fd00:ec2::254`, directly or through the proxy it is given, gets an HTTP response
-- **THEN** the Igor refuses to start, naming that address, and the proxy where the response
-  came through it
+- **THEN** the Igor refuses to start, naming that address and, where the response came
+  through the proxy, the variable that holds the proxy URL, never the URL
 
 #### Scenario: A host with no metadata endpoint passes
 
@@ -794,6 +794,15 @@ in lore, and register it the same way. In both modes, the Igor SHALL NOT hand ov
 which `rememberSecret` does not register; it SHALL fail the run instead, naming the secret's
 source.
 
+A proxy URL's password is the exception to failing the run. Where a proxy URL the Igor would pass
+on from its own environment holds a password of 1 to 7 characters, counted after
+percent-decoding, `igor serve` and `igor run` SHALL refuse to start and exit with status 78. #82's
+*A process that refuses to start exits with status 78* sets that status for `igor serve`, and
+this requirement sets it for `igor run` too. The message SHALL name each variable that holds such
+a URL, and never the password or the URL. A proxy URL that holds a user name and no password, or
+an empty one (`user:@host`), is not refused, however short the name, because #217 registers that
+name joined to its host and never alone.
+
 No other secret SHALL reach the worker user from the Igor. `CLAUDE_CODE_MESSAGING_TOKEN`, which
 Claude Code itself sets for the commands the worker runs, is outside this rule: the Igor never
 holds it. Under `igor serve`:
@@ -856,6 +865,25 @@ the worker user can read that directory.
   and password, and the Igor runs a repository's check as the worker user
 - **THEN** the check's environment holds that `HTTPS_PROXY`, user and password included
 - **AND** the password was registered for redaction before the check started
+
+#### Scenario: A short proxy password refuses the start
+
+- **WHEN** `igor serve` starts with `HTTPS_PROXY` set to `http://alice:pw12@proxy.internal:3128`
+- **THEN** it refuses to start and exits with status 78, naming `HTTPS_PROXY`
+- **AND** the message holds neither `pw12` nor the URL
+
+#### Scenario: igor run refuses a short proxy password too
+
+- **WHEN** `igor run` starts with `HTTPS_PROXY` set to `http://alice:pw12@proxy.internal:3128`
+- **THEN** it refuses to start and exits with status 78, naming `HTTPS_PROXY`
+- **AND** the message holds neither `pw12` nor the URL
+
+#### Scenario: A proxy user name with no password is registered with its host
+
+- **WHEN** `igor serve` starts with `HTTPS_PROXY` set to `http://alice@proxy.internal:3128`, or
+  to `http://alice:@proxy.internal:3128`
+- **THEN** it starts, and the user name is registered for redaction with its host, as #217's rule
+  says, and never as `alice` alone
 
 #### Scenario: A secret too short to register is not handed over
 
@@ -1008,7 +1036,8 @@ flag covers only the Igor's own process: a program the Igor starts does not inhe
 ### Requirement: The worker is given an explicit environment holding no credential but its seat's
 
 Execution SHALL construct the worker's environment rather than inheriting the Igor's, and that
-environment SHALL carry no credential other than the token of the seat the work is charged to.
+environment SHALL carry no credential other than the token of the seat the work is charged to
+and, where a proxy URL in the host's network settings holds user info, that user info (below).
 The tokens of other seats, and the credential the Igor acts on its surfaces with (the code host
 and tracker it claims, comments and publishes on), MUST NOT be present. Where the chosen seat names a token source that cannot be read — an unset variable, an
 unreadable or empty file, a command that fails, prints nothing, or never returns — execution
@@ -1025,8 +1054,10 @@ inherited environment is therefore a set of credentials nothing in the worker ha
 one shell command away from a worker an item's text has steered.
 
 Only what running a toolchain requires is passed: the search path, a home directory, and the
-network settings the host is configured with. None of those is a credential, and a missing one
-shows as a toolchain error, never as the worker authenticating as something else. Under
+network settings the host is configured with. A missing one shows as a toolchain error, never
+as the worker authenticating as something else. The search path and the home directory hold no
+credential. A network setting can: a proxy URL's user info, which the Igor registers as *A
+worker gets a secret only through the Igor, which registers it* says. Under
 `igor serve`, where the worker runs as its worker user, `GIT_INDEX_FILE` is passed too, naming the index copy in the worker's outbox, so that `git rm` and `git mv` work
 without write access to the git directory. It is not a credential.
 
