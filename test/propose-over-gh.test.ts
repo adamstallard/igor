@@ -99,7 +99,7 @@ const checkout = templated((dir) => {
 const store = (): string => checkout('igor-propose-gh-')
 
 function config(destination: string): Config {
-  return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] } }
+  return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] }, conditions: { threshold: 3, cooldownMs: 900_000, maxCooldownMs: 21_600_000 } }
 }
 
 /** The paths one commit put in the tree, read off the request that created it. */

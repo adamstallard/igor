@@ -2106,3 +2106,40 @@ describe('the failure handler keeps what a paid worker reported about denied com
     expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
   })
 })
+
+describe('a role a condition stops claims nothing, whichever path the item came by', () => {
+  it('posts nothing on the item, rather than a claim and then a handoff blaming the budget', async () => {
+    const { d, posts } = deps({ caughtUp: [{ outcome: 'conflict' }] })
+    const stopped: import('../src/budget.js').Gate = {
+      exhausted: () => true,
+      condition: {
+        key: 'role:triage:commands', scope: { kind: 'role', name: 'triage' }, count: 3,
+        first: '2030-01-01T00:00:00.000Z', last: '2030-01-01T00:10:00.000Z', state: 'open',
+      },
+      reason: 'role "triage" is stopped',
+    }
+    await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, budget: stopped })
+    await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, budget: stopped })
+
+    expect(posts).toEqual([])
+  })
+})
+
+describe('iteration 3: a run that threw after its worker met a condition', () => {
+  it('still counts toward the condition its worker met', async () => {
+    const { conditionOf, CONDITION_DEFAULTS } = await import('../src/conditions.js')
+    const { d } = deps({ changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }], produceThrows: true })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => ({
+        result: 'Fixed it.', total_cost_usd: 0.02,
+        permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm ci' } }],
+      }),
+    })
+    const now = Date.now()
+    const at = (minutes: number) => new Date(now - minutes * 60_000).toISOString()
+    const met = (minutes: number) => ({ at: at(minutes), role: 'triage', cures: ['role:triage:commands'] })
+    const rows = [met(60), met(50), met(40), { at: at(1), role: 'triage', ...r.execution }] as never
+    expect(conditionOf(rows, 'role:triage:commands', CONDITION_DEFAULTS, now)).toBeDefined()
+  })
+})
