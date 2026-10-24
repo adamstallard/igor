@@ -13,12 +13,13 @@ occurrence use to close an open one, so an occurrence for one item never closes 
 another. It SHALL stay open while any item it was opened
 for is still affected, and clear only when none is; no probe item and no cooldown SHALL clear
 it. A notice SHALL have no stored record. Like the conditions `condition-backoff` defines, which
-are rebuilt from the execution log, each process rebuilds it each cycle, from the ledger rows
-and hold-record entries that affect it, #179's heartbeat files, and, on its own host, its own
-state directory and log. The Igor's own log on the host
+are rebuilt from the execution log, the ledger, each process rebuilds it each cycle from what
+affects it: the ledger rows and `work-triage`'s flagged-hold record entries, #179's heartbeat
+files, and, on its own host, its own state directory, for absent files, and its own log, for
+refused deletes. The Igor's own log on the host
 SHALL list the items that keep each notice open, each time that list changes. Two conditions
 are notices: the one `graceful-handoff` opens for a question the Igor could not keep, whose
-item is affected while it is held, and the stuck-release one `work-triage` opens, whose item
+item is affected while it is flagged-held, and the stuck-release one `work-triage` opens, whose item
 is affected while its requested release is stuck.
 
 #### Scenario: A notice opens on its first occurrence
@@ -69,8 +70,8 @@ time SHALL be the ones `condition-backoff`'s
 reporting print, read from the same conditions. A notice, as *A notice opens at once, stops
 nothing, and stays open while an item is affected* defines it, has no scope, count or probe:
 the listing SHALL say that it stops nothing and clears when no item is affected, and SHALL name
-no item, which only the Igor's log on the host names. A notice is listed once whatever its
-key, as each process rebuilds it; where the ledger or the hold record it is rebuilt from cannot
+no item, which only the Igor's log on the host names. Each notice is listed once, though every process
+rebuilds it; where the ledger or the flagged-hold record it is rebuilt from cannot
 be read, the listing SHALL say so.
 
 A condition is one cure key in the execution log every Igor appends to, so a condition several

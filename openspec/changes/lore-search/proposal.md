@@ -2,7 +2,7 @@
 
 ## Decisions
 
-The numbered list below records all one hundred and thirty-two decisions, which
+The numbered list below records all one hundred and thirty-nine decisions, which
 [#215](https://github.com/adamstallard/igor/issues/215) tracks too, and all are Adam's. Where the agent that wrote this change fitted
 details Adam had not stated, that decision says so; where Adam has since confirmed them, a
 later decision records it, and where he has not, Still open lists them. A *consistency read*
@@ -94,9 +94,16 @@ request; Adam answered the questions each read raised. He made:
   answering the six questions the reads of those decisions raised, and citing #220's visibility
   rules;
 - decisions 120 to 124 later that day, answering the questions the reads of decisions 113 to
-  119 raised, with a TLA+ model of the hold and its release in this change's `model/` directory;
-- decisions 125 to 132 that day too, answering the model's two findings and the questions the
-  reads of decisions 120 to 124 raised.
+  119 raised; that round added a TLA+ model of the hold a flagged run puts on an item, and its release, in this change's
+  `model/` directory;
+- decisions 125 to 132 that day too, answering the model's first two findings, a release
+  requested while a run was still writing its files and a lost record rebuilt with only a later
+  entry, and the questions the
+  reads of decisions 120 to 124 raised;
+- decisions 133 to 139 that day too, settling the model's next two findings, a copied question
+  file and a crash before an entry is cleared, as accepted limits,
+  answering the questions the reads of decisions 125 to 132 raised, and naming this change's
+  hold the *flagged hold*.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -814,7 +821,7 @@ Terms used here:
 79. **Only someone with write access to the item's repository releases a flagged item.** They
     release it by an edit or a label; the operator releases it the same way and needs that
     access like anyone else; anyone else's
-    edit leaves it held (Adam, 2026-10-21, narrowing decision 76's release by edit). The
+    edit leaves it held, *flagged-held* as decision 82 defines it (Adam, 2026-10-21, narrowing decision 76's release by edit). The
     `work-triage` delta says so, with two new scenarios and one changed. Decision 104 has such
     a release delete the item's session-log copies and question file, as `igor release` does.
 80. **A question that cannot be kept does not block the handoff.** If the Igor cannot write the
@@ -832,31 +839,32 @@ Terms used here:
 81. **Decision 76's fitted details are accepted as written:** the path and modes, release by
     an edit, which decision 79 narrows to someone with write access, and `igor run`'s read
     limit (Adam, 2026-10-21).
-82. **A held item stays held whatever else its handoff carries.** An item a flagged run handed
-    back over a question is *held*. A cure key (`condition-backoff`'s key for a handoff caused by
-    a fact about the Igor that a configuration change would cure), a question not kept, or
-    anything else that exempts another handoff from `work-triage`'s rule against working an item
-    again, such as `condition-backoff`'s cure-key exemption
-    and today's `shouldDefer` (`src/deferred.ts:136`), does not release it (Adam, 2026-10-21).
+82. **A flagged-held item stays flagged-held whatever else its handoff carries.** An item a flagged run handed
+    back over a question is *flagged-held*. Nothing that exempts another handoff from
+    `work-triage`'s rule against working an item again releases it: not a cure key
+    (`condition-backoff`'s key for a handoff caused by a fact about the Igor that a configuration
+    change would cure, through `condition-backoff`'s cure-key exemption and today's `shouldDefer`,
+    `src/deferred.ts:136`), not a question not kept, and nothing else (Adam, 2026-10-21).
     The `work-triage` delta says so, with one new scenario.
-83. **A held item's hold record never expires, and a lost record leaves it held.** Unlike
-    today's handed-back record, which expires after 30 days (`src/deferred.ts:43`), and unlike any other item's missing record, which
-    lets it be worked again (Adam, 2026-10-21). The agent that wrote this change fitted how a
-    held item is known when its record is lost, which Adam confirmed (decision 95): from its file under
+83. **A flagged-held item's flagged-hold record never expires, and a lost record leaves it flagged-held.**
+    The flagged-hold record is the record `work-triage` keeps of an item's flagged holds. It
+    differs from today's handed-back record, which expires after 30 days (`src/deferred.ts:43`),
+    and from any other item's missing record, which lets it be worked again (Adam, 2026-10-21). The agent that wrote this change fitted how a
+    flagged-held item is known when its record is lost, which Adam confirmed (decision 95): from its file under
     `flagged-questions` on the host, or from a ledger row whose `reason` starts
     `needs a person`. It also fitted what decision 84's `igor release <item>` does: its `<item>` is
-    `<tracker>/<repo>/<item>`, and it marks the hold record released, appends a `released` ledger row
+    `<tracker>/<repo>/<item>`, and it marks the flagged-hold record released, appends a `released` ledger row
     and deletes the host file, so no fallback holds the item again; decision 102 has it
     delete first and mark the record released only once every delete succeeds. Two new
     scenarios, and one changed.
-84. **The operator can always release a held item on the host,** with
+84. **The operator can always release a flagged-held item on the host,** with
     `igor release <tracker>/<repo>/<item>`, as Adam confirmed in decision 95,
     whatever #141 or task 4.10 find. An edit by someone with write access releases it too, where
     the edit can be attributed (Adam, 2026-10-21, adding to decision 79). One new scenario.
 85. **Decision 80's condition opens on the first failed write, as a notice only.** A condition
     normally opens only when its key recurs; this is a second exception to that in
     `condition-backoff`, beside #101's refused credential, and stops no work, since
-    the item is already held (Adam, 2026-10-21). With #101 merged, this change states the
+    the item is already flagged-held (Adam, 2026-10-21). With #101 merged, this change states the
     exception itself, in its `stuck-conditions` requirement (decision 118). One new scenario. The agent
     that wrote this change fitted, and Adam confirmed (decision 95), that a later failed write,
     for any item, reuses a condition already open rather than opening another.
@@ -883,7 +891,7 @@ Terms used here:
     worker for a seat naming no token. As first written, this decision gave each run its own
     `CLAUDE_CONFIG_DIR`; decision 91 replaced that with #174's design. `task-execution` gains
     two scenarios.
-88. **A held item's session log is kept beside its question.** A flagged run's collected session
+88. **A flagged-held item's session log is kept beside its question.** A flagged run's collected session
     log moves into the `flagged-questions` directory, beside the question's file, mode 0600, and
     no worker can reach that directory (Adam, 2026-10-21). The log moved is #174's copy,
     redacted with #217's credential redaction. Until workers run as users of their own, another
@@ -985,14 +993,14 @@ Terms used here:
     - *A refused move of a session-log copy is not `question not kept`,* since the question
       was kept. The question file notes that copy as missing, as for a log #174 did not copy.
       The move's source, #174's copy, is also opened without following a link.
-    - *A refused delete under `igor release` keeps the item held.* Release reports the
-      failure and marks nothing released, so the hold record and the files never disagree;
+    - *A refused delete under `igor release` keeps the item flagged-held.* Release reports the
+      failure and marks nothing released, so the flagged-hold record and the files never disagree;
       the operator fixes the path and runs it again.
     The agent that wrote this change fitted, and Adam confirmed (decision 106): the Igor moves the log copies
     before it writes the question file, so the file can name a refused one; the move's source
     is checked from the state directory down, like the destination; `igor release` deletes the
     session logs before the question file, so a refused delete leaves the question file and
-    the item stays known as held; its report says only that it failed and that the path is in
+    the item stays known as flagged-held; its report says only that it failed and that the path is in
     the Igor's log; and a refused delete of an earlier execution's log, when a later one
     replaces it, leaves that log in place.
     He also confirmed the detail the agent that wrote this change fitted to decision 101: a
@@ -1008,7 +1016,7 @@ Terms used here:
     release through an attributable edit by someone with write access deletes the item's
     session-log copies and then its question file under `flagged-questions`, exactly as
     `igor release` does, and a refused
-    delete leaves the item held in the same way. Two new `work-triage` scenarios. The agent that
+    delete leaves the item flagged-held in the same way. Two new `work-triage` scenarios. The agent that
     wrote this change fitted that such a release also appends the `released` ledger row once
     its deletes succeed, which Adam confirmed (decision 109); decision 108 says which rank
     deletes.
@@ -1035,39 +1043,41 @@ Terms used here:
     new name.
 108. **The keeping rank deletes on a release by an edit** (Adam, 2026-10-21). Whichever rank
     sees the attributable write-access edit appends a `release requested` ledger row. The
-    rank named in the hold record, the one that kept the question on its host, does the
+    rank named in the flagged-hold record, the one that kept the question on its host, does the
     deletes on its next poll, in decision 102's order, then appends `released`; other ranks
     learn the release from that row on the state branch. A *rank* is one of the several Igor
     processes #179 runs for one role. A refused delete is retried on every poll and opens,
     once for the item, a notice condition that stops no work, which decision 111 gives a key of
-    its own, reusing an open condition as decision 85 says, and the item stays held until
-    `released` is written. The agent that wrote this change fitted, and Adam confirmed (decision 112), that the hold record names the keeping rank, that a lost hold record leaves an
-    item held when its latest ledger row is `release requested`, and that a rank appends no
+    its own, reusing an open condition as decision 85 says, and the item stays flagged-held until
+    `released` is written. The agent that wrote this change fitted, and Adam confirmed (decision 112), that the flagged-hold record names the keeping rank, that a lost flagged-hold record leaves an
+    item flagged-held even when its latest ledger row is `release requested`, which is not yet a
+    release, and that a rank appends no
     second `release requested` row for an edit that already has one; and, as for decision
     80's own notice, that the notice opens only once `condition-backoff` defines conditions.
     Decision 110 settles what happens when the keeping rank leaves #179's roster, and when no
     rank can finish. Three new `work-triage` scenarios. Decision 120 lets any live
-    process on the state directory a hold's entry names do the deletes. Decision 128 keys holds per hold.
+    process on the state directory named by a flagged hold's entry, its line in the record
+    (decision 110), do the deletes. Decision 128 keys each flagged hold on its own.
 109. **Two details are Adam's** (Adam, 2026-10-21): a release by an edit appends the `released`
     row once its deletes succeed (decision 104), and `lore-firing`'s re-added requirement is
     named *Lore reaches the worker unbidden, beside a search it may run* (decision 107).
-110. **The hold record names the host** (Adam, 2026-10-21). It names the host holding the
+110. **The flagged-hold record names the host** (Adam, 2026-10-21). It names the host holding the
     item's files, with the keeping rank, or `igor run` where no rank kept them. When no rank can
     finish a `release requested` (the keeping rank was retired from #179's roster, an `igor run`
     ended, a question's write failed after log copies existed, or two ranks raced on different
-    hosts), the item stays held, and the notice tells the operator to run `igor release` on the
+    hosts), the item stays flagged-held, and the notice tells the operator to run `igor release` on the
     named host. No rank takes over another's release, and nothing deletes on a host other than
     the one named. For the race, Adam asked that the record name every host that may hold
-    files, or say how the race is resolved. The agent that wrote this change fitted, and Adam confirmed (decision 113): the record holds one entry per host (per state directory since decision 116), which the rank or `igor run` that writes a
+    files, or say how the race is resolved. The agent that wrote this change fitted, and Adam confirmed (decision 113): the record holds one entry per host (per state directory since decision 116, and per flagged hold since decision 128), which the rank or `igor run` that writes a
     file there adds; each entry is cleared when that host's files are deleted, by its keeping
     rank or by `igor release` run on that host; and `released` is appended once every entry is
-    cleared, by whoever, re-reading the record after a clear, finds them all cleared, with `igor release` naming the hosts still to clear.
-    Under those details the ranks finish the race and a not-kept question's log copies
-    themselves, though decision 110 listed both among the cases no rank can finish; decision
-    113 confirms these details. Six new `work-triage` scenarios.
+    cleared, by the process that, re-reading the record after its own clear, finds them all cleared, with `igor release` naming the hosts still to clear.
+    Under those details the ranks can themselves finish both the race and the deletion of a
+    not-kept question's log copies, two of the cases this decision first listed as ones no
+    rank can finish; decision 113 confirms these details. Six new `work-triage` scenarios.
     Decision 116 replaces host names with state-directory ids, and decisions 114 and 115 say
     when `igor run` and a rank count as unable to finish. Decision 120 lets any live
-    process on a directory clear its entry. Decision 128 gives each hold its own entry.
+    process on a directory clear its entry. Decision 128 gives each flagged hold its own entry.
 111. **A stuck release has a condition key of its own** (Adam, 2026-10-21, amending decision
     108). A refused delete, or an entry no rank can clear, opens a notice condition whose key
     is separate from `question not kept`, such as `release stuck`, which gate two names, so the
@@ -1075,11 +1085,11 @@ Terms used here:
     agent that wrote this change fitted, and Adam confirmed (decision 113), that the process that finds a release
     stuck opens the notice, and that its notice names the item and the entries, by id since decision 116, still to clear
     and nothing else of the item.
-112. **Decision 108's fitted details are Adam's** (Adam, 2026-10-21): the hold record names the
-    keeping rank; a lost record stays held when the latest ledger row is `release requested`;
+112. **Decision 108's fitted details are Adam's** (Adam, 2026-10-21): the flagged-hold record names the
+    keeping rank; a lost record stays flagged-held when the latest ledger row is `release requested`;
     one `release requested` row per edit; and the notice waits on `condition-backoff`.
 113. **The details fitted to decisions 110 and 111 are Adam's** (Adam, 2026-10-24): one entry
-    per state directory, with a re-read of the hold record before `released`; any process
+    per state directory, with a re-read of the flagged-hold record before `released`; any process
     that finds a release stuck opens the notice; and the notice names only the item and its
     entries. Decision 123 puts the item's name and ids only
     in the notice text and the host log, never on the state branch.
@@ -1101,11 +1111,11 @@ Terms used here:
     agent that wrote this change fitted that two ranks sharing a state directory share one id and
     so one entry; decision 120 settles who clears it, any live process on the directory, and decision 121 covers a lost or copied
     id.
-117. **A hold record with no entries stays held** (Adam, 2026-10-24), and its notice says the
+117. **An item whose flagged-hold record has no entries stays flagged-held** (Adam, 2026-10-24), and its notice says the
     files' location is unknown. `igor release` refuses such a record unless the operator,
     having checked their state directories, passes a flag gate two names; it then writes
     `released`.
-118. **The two held-item conditions stay open while any item is affected** (Adam, 2026-10-24).
+118. **The two flagged-hold conditions stay open while any item is affected** (Adam, 2026-10-24).
     The `question not kept` and `release stuck` conditions clear only when no item is still
     affected, the Igor's host log lists the items, and `condition-backoff`'s probe, the one item a stopped scope takes after a cooldown to test a
     condition, does not clear them. A new `stuck-conditions` requirement says so, with five scenarios. With decision 111's rule that a recurring refused delete does not count toward
@@ -1122,10 +1132,10 @@ Terms used here:
     decisions 110, 114 and 116). Any rank or `igor run` whose state-directory id matches an
     uncleared entry clears it, at the start of its cycle or at the start of the next `igor run`
     there. Its files are in its own directory, so this never deletes on another host. It replaces
-    decision 108's rule that the rank the hold record names does the deletes, and decision 114's
+    decision 108's rule that the rank the flagged-hold record names does the deletes, and decision 114's
     rule that a live `igor run` finishes its own release, and settles a gone rank's
-    entry while a directory-mate lives. A release is stuck only for an entry no live process
-    answers for. Three new `work-triage` scenarios, and two changed. It also amends decision 108.
+    entry while a directory-mate lives. A release is stuck only for an entry no live process answers for, where no live rank or
+    `igor run` has the state-directory id it names. Three new `work-triage` scenarios, and two changed.
 121. **Lost or copied ids** (Adam, 2026-10-24, amending decision 116). The notice lists the ids
     no live process answers for, and `igor release` drops a named entry only with a flag gate
     two names, which the operator passes after checking that no directory with that id still
@@ -1138,31 +1148,33 @@ Terms used here:
 123. **Item names live in the notice text and the host log only** (Adam, 2026-10-24, amending
     decision 113). A notice's record on the state branch holds only its key. The text the
     operator reads and the Igor's log on the host name the items and their state-directory ids,
-    so nothing item-specific reaches a branch that may be public. Decision 130 replaces the notice's stored record: a
-    notice is rebuilt from ledger rows and hold-record entries.
+    so nothing item-specific reaches a branch that may be public. Decision 130 removes the notice's stored record, so
+    the rule on that record no longer applies: a notice is rebuilt from ledger rows and flagged-hold record entries.
 124. **This change archives after #220** (Adam, 2026-10-24, amending decision 107's place). In
     #204's order this change moves to just after #220, the end of the chain #82 and #220 form,
     so that its citations of #220 point back to a change archived before it. Nothing else
     moves.
 125. **An entry is cleared only after its run has kept its files** (Adam, 2026-10-24). A
-    process clears a hold's entry only once that run's `needs a person` row exists, so its
+    process clears a flagged hold's entry only once that run's `needs a person` row exists, so its
     files are all written, or once the run is gone by #179's heartbeat. No timers. This closes
     the race the TLA+ model found, where a flagged run was still writing its files when a
     release was requested.
-126. **A lost hold record is rebuilt in full from the ledger** (Adam, 2026-10-24). Each `needs
+126. **A lost flagged-hold record is rebuilt in full from the ledger** (Adam, 2026-10-24). Each `needs
     a person` row names its run's state-directory id, opaque so nothing leaks, and a lost record
-    is rebuilt from those rows. This closes the model's finding of a record rebuilt by a later
-    keep with only its own entry.
+    is rebuilt from those rows. This closes the model's finding of a lost record that a later flagged run rebuilt, when it
+    kept its own question, with only its own entry, dropping the earlier flagged hold's.
 127. **A run adds its entry before writing any file** (Adam, 2026-10-24), confirming a detail
     the agent that wrote this change fitted in the round that recorded decision 120.
-128. **Holds are keyed per hold, not per item** (Adam, 2026-10-24, amending decisions 108 and
-    110). Each hold is identified by its own `needs a person` row, `released` names the hold it
-    ends, and a later hold of the same item is independent. The agent that wrote this change
-    fitted that such a later run keeps its question in a file of its own.
+128. **Flagged holds are keyed per flagged hold, not per item** (Adam, 2026-10-24, amending decisions 108 and
+    110). The record has one entry per flagged hold, not per state directory. Each flagged hold
+    is identified by its own `needs a person` row, `released` names the flagged hold it
+    ends, and a later flagged hold of the same item is independent. The agent that wrote this change
+    fitted that such a later run keeps its question in a file of its own, withdrawing decision
+    76's detail that it replaces the earlier question.
 129. **This change adds notices to #82's `igor conditions` listing** (Adam, 2026-10-24), as a
     modified copy of #82's *Every open condition is readable without naming a role*; #82
     archives first, and #82 does not change. Task 5.4 brings the copy up to #82's final text.
-130. **Notices are rebuilt from ledger rows and hold-record entries** (Adam, 2026-10-24,
+130. **Notices are rebuilt from ledger rows and flagged-hold record entries** (Adam, 2026-10-24,
     amending decision 123), with no stored notice record, as `condition-backoff` rebuilds its
     conditions.
 131. **#179's heartbeat records the process's state-directory id** (Adam, 2026-10-24), so any
@@ -1170,8 +1182,54 @@ Terms used here:
 132. **An entry is cleared only by deleting its named file** (Adam, 2026-10-24, amending
     decision 121). Each entry names its question file's random name, and a process clears an
     entry only by deleting that file; if the file is absent, only the operator's flag clears
-    it, so a copied state directory can never release a hold by finding nothing. The detail
-    fitted for a hold whose question was not kept, below, is its one exception.
+    it, so a copied state directory can never release a flagged hold by finding nothing. Two later rules
+    are exceptions: a flagged hold whose question was not kept is cleared by deleting its
+    session-log copies (decision 137), and a run gone part-way is cleaned up with its file
+    absent (decision 135).
+133. **Copying a live state directory is unsupported** (Adam, 2026-10-24, answering the TLA+
+    model's `findings/CopiedQuestion.cfg`). Once a release is requested, a process on a copy taken
+    after a question file was written deletes its copy of the named file, clears the entry and appends `released`, while
+    the original keeps its files. That is the operator's problem: the
+    `graceful-handoff` delta says copying is unsupported, the operator recovers with the
+    stuck-release notice and `igor release`, and the Igor adds no guard. The finding stays in
+    the model as a recorded limit Adam accepts.
+134. **A crash between deleting the named file and clearing the entry is accepted** (Adam,
+    2026-10-24, answering `findings/CrashBeforeClear.cfg`). The entry is left with its file
+    absent, and the stuck-release notice and decision 121's flag are the way out; no process
+    writes a marker of what it is about to delete. The model's liveness configuration, the TLC run that checks a requested
+    release completes, states its assumption, `DeletedSurvivesCrash`, that a process still knows after a crash which named
+    files it deleted, and the finding stays as a
+    recorded limit Adam accepts.
+135. **A run gone part-way through keeping is cleaned up without a request** (Adam, 2026-10-24,
+    applying decision 125). Once a run that added its entry, and perhaps wrote files, is gone by
+    #179's heartbeat without appending its `needs a person` row, any live process on that
+    directory deletes those files and clears the entry, and no flagged hold needs releasing. It adds one new
+    `work-triage` scenario, and the model gains a `CleanOrphans` rule, with a negative TLC
+    configuration, `negative/NoCleanOrphans.cfg`, which turns the rule off and must fail. The
+    agent that wrote this change fitted that such an entry is cleared once its session logs are
+    deleted where the run wrote no question file, and that no `released` row is appended for it.
+136. **A rebuild that reopens a cleared entry is accepted** (Adam, 2026-10-24). Where the flagged hold
+    record is lost after an entry was cleared but before its `released` row, the rebuild reopens
+    it with its file gone; the stuck-release notice and the operator's flag are the way out, and
+    the ledger gets no row for a clear.
+137. **The details fitted for decisions 125 to 132 are confirmed** (Adam, 2026-10-24), but for
+    the interim rule for heartbeats without a state-directory id, which decision 138 drops. The
+    confirmed details are these: a flagged hold whose question was not kept names no question file and is
+    cleared by deleting its session-log copies; a later flagged run keeps its question in a file
+    of its own; a `needs a person` row names the question file's name; a run whose entry a lost
+    record dropped adds it again before its row; a `release requested` row covers only the flagged holds
+    before it; a run with no readable state-directory id writes no file, adds no entry, and its flagged
+    hold is released by the first release that covers it; each
+    process rebuilds a notice each cycle; and a question file name not of the random form is
+    refused.
+138. **No interim rule for heartbeats without a state-directory id** (Adam, 2026-10-24). This change
+    removes the `work-triage` rule that, until #179's heartbeat records the id, no flagged hold is
+    judged stuck by its directory having no live process. This change depends on #179's heartbeat
+    recording each process's state-directory id (decision 131).
+139. **"Flagged hold" and "flagged-held" for this change's own meaning** (Adam, 2026-10-24).
+    This change uses them throughout for the hold a flagged run's question puts on an item;
+    #179's "held", for an item a claim holds, is unchanged. This settles the Still open item on
+    the two meanings of "held".
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -1240,13 +1298,13 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   read-only (`ProtectHome=read-only`, only `/srv/igor` writable), so neither #174's per-run
   home nor the question's file can be written. This change's gate two merges only after #179's
   unit sets `StateDirectory=igor`.
-- **Settled, recorded for the reviewer: this change carries what it once asked of
+- **Not open, recorded for the reviewer: this change carries what it once asked of
   `condition-backoff`.** Adam merged
   [#101](https://github.com/adamstallard/igor/pull/101), the pull request carrying
   `condition-backoff`, on 2026-10-22, and archived its change into `openspec/specs/` on main. The rules Adam decided for it are this change's
-  own, built at gate two against that code: a held item is not released by the cure-key
+  own, built at gate two against that code: a flagged-held item is not released by the cure-key
   exemption (decision 82), in this change's `work-triage` delta, which carries
-  `condition-backoff`'s text of that requirement; and the two held-item notices, the one for a
+  `condition-backoff`'s text of that requirement; and the two flagged-hold notices, the one for a
   question not kept (decision 85) and the stuck release (decision 111), open on their first
   occurrence, stop no scope and do not count toward stopping one, and clear only when no item
   is still affected (decision 118), in a new `stuck-conditions` requirement of this change,
@@ -1254,63 +1312,44 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   added requirement that names the `condition-backoff` requirements that do not apply to a
   notice, rather than modified copies of them: #171 and #82, which archive before this
   change, modify them, so modified copies would have to carry their text.
-- **For Adam: a copied directory that holds the question file** (decision 132, the model's
-  `findings/CopiedQuestion.cfg`). Clearing only by deleting the named file stops a copy that
-  finds nothing, but a copy taken after the question file was written holds that named file
-  too: a process on the copy deletes it, clears the entry, and the hold is released while the
-  original directory still holds its files. The passing configurations assume a copy holds no
-  question file (`CopyBeforeFiles`). Options: each state directory also keeps a second random
-  value, created once and never copied, such as one written where a copy does not reach, and
-  the entry names it; the entry names the inode or creation time of its directory; or a copy
-  is accepted as the operator's to answer for.
-- **For Adam: a crash between deleting the named file and clearing the entry** (decision 132,
-  the model's `findings/CrashBeforeClear.cfg`). A process that deletes a hold's named file and
-  then crashes, retires or exits before clearing the entry leaves the file absent, so no
-  process can clear the entry and only the operator's flag releases the hold. The passing
-  liveness configuration assumes the process's record of what it deleted survives on its
-  directory (`DeletedSurvivesCrash`). Options: a process writes a marker in its state
-  directory naming the file before deleting it, and any process on the directory that finds
-  the marker clears the entry; the entry is cleared before the file is deleted, with the
-  hold's `released` row only after; or the stuck notice, and the operator's flag, are the
-  accepted way out.
-- **The agent that wrote this change fitted, for Adam to check (decisions 128 and 132):**
-  a hold whose `needs a person` row says its question was not kept names no question file, and
-  its entry is cleared by deleting its session-log copies; and a later flagged run of the same
-  item keeps its question in a file of its own under
-  `flagged-questions/<tracker>/<repo>/<item>/<name>.md`, rather than replacing an earlier one.
-- **The agent that wrote this change fitted, for Adam to check (decisions 125 to 132),**
-  details the reads of this round showed the decisions need:
-  - a `needs a person` row names the question file's name as well as the state-directory id,
-    so a rebuilt entry has a file to delete;
-  - a run whose entry a lost record dropped adds it again before appending its row;
-  - a `release requested` row covers only the holds whose rows came before it, so a later
-    hold needs a later edit or `igor release`;
-  - a run with no readable state-directory id writes no file, adds no entry, and its hold is
-    released by the first release that covers it;
-  - each process rebuilds a notice each cycle from the ledger, the hold record, #179's
-    heartbeat files and its own directory and log, since a refused delete and an absent file
-    are seen only on the host;
-  - until #179's heartbeat records state-directory ids, no hold is judged stuck by its
-    directory having no live process;
-  - a question file name that is not one path component of the random form is refused.
-- **For Adam: a run gone part-way through keeping** (decisions 125 and 128). A rank that
-  retires, or an `igor run` that exits, after adding its entry and writing files but before
-  appending its `needs a person` row leaves an entry and files with no row. The ledger does
-  not count it as a hold, so the item can be worked again, and no release request covers it,
-  so nothing deletes the files. Should a process clear such an entry, deleting its files, once
-  the run is gone, without a request?
-- **For Adam: a rebuilt record reopens a cleared entry** (decision 126). Where the record is
-  lost after an entry was cleared but before its `released` row, the rebuild reopens the
-  entry, whose named file is gone, so only the operator's flag releases the hold. Should the
-  rebuild also read which entries were cleared, from a ledger row written at the clear?
-- **For the author or #179: two meanings of "held".** #179's `work-triage` scenario *A held
-  item whose pull request still merges is not triaged again until it changes* uses "held" for
-  an item a claim holds; this change uses it for a flagged item's hold. Both archive into one
-  capability, #179 first.
-- **For [#179](https://github.com/adamstallard/igor/pull/179) (decision 131).** #179's
-  heartbeat file names its process by role and rank, or `igor run`'s run id; it should also
-  record the process's state-directory id, so any rank can tell whether a directory is still
-  answered for.
+- **For Adam: a copy taken after a question file was written** (decision 133). A process on
+  the copy deletes its copy of the named file, clears the entry and appends the flagged hold's
+  `released` row, so no entry is left to name the original's files: no stuck-release notice
+  opens for them and `igor release` has no entry to act on. Should the operator's recovery
+  include deleting such files by hand, or should `igor release` also delete files under
+  `flagged-questions` that no open entry names?
+- **For Adam: a part-way run's entry lost with the record** (decision 135). A lost flagged-hold record
+  is rebuilt only from `needs a person` rows, so an entry whose run was gone part-way, with no
+  row, is not rebuilt, and nothing deletes its files. Should a process also delete files under
+  `flagged-questions` in its own directory that no entry names, or is this accepted like
+  decision 136?
+- **For Adam: the details fitted for decision 135.** A part-way run's entry is cleared once its
+  session logs are deleted where the run wrote no question file, and no `released` row is
+  appended for it. Judging "wrote no question file" by finding it absent means a process on a
+  copy taken before any files were written clears the entry while the original keeps its
+  session logs, the clear-by-finding-nothing decision 132 rules out for flagged holds; decision
+  133 makes such a copy unsupported, but decision 133 settled flagged holds, not these entries.
+  Should these details stand, or should a part-way run's entry, too, be cleared only by
+  deleting its named file?
+- **For Adam: a flagged hold whose question was not kept** (decisions 117 and 137). Two cases. A run whose question was not kept because it had
+  no readable state-directory id adds no entry, so no process clears one and nothing appends its
+  `released` row. Decision 137 confirms that the first release covering such a flagged hold
+  releases it, but nothing says what appends that row, while decision 117 keeps an item whose
+  record has no entries flagged-held until the operator's flag. And a
+  run that added its entry but could not write its question file, or move any log copy, as in a
+  read-only directory, leaves an entry naming a file that is absent, which only the operator's
+  flag clears. Which rule stands, and should these be released some other way, such as a
+  covering release appending `released` directly?
+- **For Adam or #179: a rank that stood down is gone but still running.** #179 counts a rank
+  that stood down for missed heartbeats as gone while its process runs. If it was part-way
+  through keeping and goes on writing its files or its row after a directory-mate cleaned up
+  its entry (decision 135), the result is a flagged hold whose named file is gone, or files no
+  entry names. Should a process that stood down stop keeping, or should cleanup wait for its
+  process to exit?
+- **For [#179](https://github.com/adamstallard/igor/pull/179) (decisions 131 and 138).** #179's
+  heartbeat file names its process by role and rank, or `igor run`'s run id; this change
+  depends on it also recording the process's state-directory id, so any rank can tell whether a
+  directory is still answered for.
 - **For gate two: the condition keys** (decisions 111 and 118). In the merged
   `src/conditions.ts`, a key of a shape it does not know names no scope and is never a
   condition, and a `role:`-shaped key counts toward stopping the role. Gate two gives the two
@@ -1330,11 +1369,11 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   `XDG_STATE_HOME` set, #174's log copy and the question file sit in different state
   directories, and decision 102's check of a move's source, from the state directory down,
   starts from the wrong one.
-- **For gate two: the state-directory id, and how processes update one hold record**
+- **For gate two: the state-directory id, and how processes update one flagged-hold record**
   (decision 116, task 4.13). Gate two picks where the id file lives and how it is created only
   once when two processes sharing the directory start together, and how several processes add
   or clear entries in one record on the state branch without losing a write, which #179's
-  rules for state-branch writes govern; for #179: its task 5.1 does not yet list hold records among
+  rules for state-branch writes govern; for #179: its task 5.1 does not yet list flagged-hold records among
   its keyed state.
 - **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decisions
   87 and 107)** for the rule that every seat names a token, and that an organization declaring no
@@ -1749,19 +1788,20 @@ reading the codebase. Two cases contradict that:
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
   no failure detail or worker's reason and point to the item's transcript path, and has a
   flagged run's handoff ask no question, add no question label and keep its question on the
-  host, with twenty-four new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97, 101 and 102).
+  host, with twenty-five new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97, 101, 102, 128
+  and 133).
 - `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
   from rerunning an item a flagged run handed back, and lets only an edit by someone with
-  write access release it, keeps a held item held whatever its handoff carries and with a
+  write access release it, keeps a flagged-held item flagged-held whatever its handoff carries and with a
   record that never expires, and lets the operator release it with `igor release`, which
-  keeps the item held when a delete is refused; a release by an edit deletes the files the
-  same way, done by any live process on the directory, and also keeps the item held when a
-  delete is refused. Each flagged run's question is a hold of its own, with an entry naming
+  keeps the item flagged-held when a delete is refused; a release by an edit deletes the files the
+  same way, done by any live process on the state directory the entry names, and also keeps the item flagged-held when a
+  delete is refused. Each flagged run's question is a flagged hold of its own, with an entry naming
   its state directory's id and its question file, cleared only by deleting that file once the
   run's `needs a person` row exists, and a lost record is rebuilt from the ledger; a stuck
-  release opens its own notice. It has twenty-seven new scenarios, including those for
+  release opens its own notice. It has twenty-eight new scenarios, including those for
   `igor release`, and four changed (decisions 76, 79, 82, 83, 84, 102, 104, 108, 110, 111, 113
-  to 117, 120, 121 and 125 to 132). It keeps `condition-backoff`'s rule, now in force, that a handoff caused by a fact about
+  to 117, 120, 121, 125 to 132 and 134 to 139). It keeps `condition-backoff`'s rule, now in force, that a handoff caused by a fact about
   the Igor is not suppressed, with that rule's scenario.
 - `stuck-conditions` gains *A notice opens at once, stops nothing, and stays open while an
   item is affected*, a kind of condition of its own with no stored record, with five
@@ -1792,13 +1832,14 @@ None.
   `igor-`.
 - `graceful-handoff`: a flagged run's handoff states why it stopped only in fixed words,
   points to its transcript path, asks no question, and keeps that question on the host, and
-  a failed write does not block it (decisions 71, 73, 75, 76 and 80).
-- `work-triage`: a reply does not rerun an item a flagged run handed back; it stays held, and
+  a failed write does not block it, and copying a live state directory is unsupported
+  (decisions 71, 73, 75, 76, 80 and 133).
+- `work-triage`: a reply does not rerun an item a flagged run handed back; it stays flagged-held, and
   only `igor release` or an edit by someone with write access releases it (decisions 76, 79,
-  82 to 84, 102, 104, 108, 110, 111, 113 to 117, 120, 121 and 125 to 132).
+  82 to 84, 102, 104, 108, 110, 111, 113 to 117, 120, 121, 125 to 132 and 134 to 139).
 - `stuck-conditions`: a notice, a kind of condition of its own, opens on its first
   occurrence, stops no scope, and clears only when no item is still affected; the two
-  held-item conditions are notices, and `igor conditions` lists them (decisions 85, 111, 118,
+  flagged-hold conditions are notices, and `igor conditions` lists them (decisions 85, 111, 118,
   122, 129 and 130).
 - `task-execution`: pushing a run's citations and its question and miss files is exempt from
   the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run

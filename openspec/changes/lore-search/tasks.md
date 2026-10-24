@@ -195,44 +195,50 @@
       a missing copy, and the path of a refused move or delete is recorded only in the Igor's own log;
       the Igor moves #174's
       redacted copy of each step's log beside the file, before writing the file. A later flagged run's
-      question goes in a file of its own, a hold of its own, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
+      question goes in a file of its own and starts a flagged hold of its own, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
       the ledger row's `reason` reads `needs a person, question not kept`, a notice opens on
       the first failure that stops no work and has no stored record, under a key gate two names, and the path goes only to the Igor's own log); and work triage keeps
-      the item held whatever its handoff carries: each flagged run that keeps its question
-      starts a hold of its own, identified by its `needs a person` row, which names its state
-      directory's opaque id; the item is held while any hold has no `released` row naming it,
-      read from the ledger. The hold record never expires and has one entry per hold, naming
+      the item flagged-held whatever its handoff carries: each flagged run that stops on a question
+      starts a flagged hold of its own, whether or not its question was kept, identified by its `needs a person` row, which names its state
+      directory's opaque id; the item is flagged-held while any flagged hold has no `released` row naming it,
+      read from the ledger. The flagged-hold record never expires and has one entry per flagged hold, naming
       its state-directory id, its question file's random name and its process, added before
       any file is written and added again if lost by the time its row is appended; a lost
       record is rebuilt from the `needs a person` rows, which name the id and file name; a
-      file name that is not one path component of the random form is refused. A hold's
+      file name that is not one path component of the random form is refused. A flagged hold's
       entry is cleared only once its `needs a person` row exists or its run is gone, and only
-      by deleting the named file (a hold whose question was not kept, by deleting its session
-      logs); after a clear, the process re-reads and appends `released` naming the hold, and
-      any process appends a missed one. Holds are released in two ways only. One is
+      by deleting the named file (a flagged hold whose question was not kept, by deleting its session
+      logs); after a clear, the process re-reads and appends `released` naming the flagged hold, and
+      any process appends a missed one. Flagged holds are released in two ways only. One is
       `igor release <tracker>/<repo>/<item>` on the host, which prints its state directory's
-      id, acts for each hold whose entry names that id, says where a delete is refused and
-      leaves the hold open, and with gate two's flag clears an entry whose named file is gone.
+      id, acts for each flagged hold whose entry names that id, says where a delete is refused and
+      leaves the flagged hold open, and with gate two's flag clears an entry whose named file is gone.
       The other is an attributable edit by someone with write access, never a reply: a rank or
-      `igor run` that sees it appends one `release requested` row, which covers the holds whose
+      `igor run` that sees it appends one `release requested` row, which covers the flagged holds whose
       rows came before it; any live process on a
       directory with an uncleared entry's id, a rank at the start of its cycle or an `igor run`
-      at its start, acts for that hold, retrying a refused delete every cycle; no process
-      deletes in another's state directory; and a stuck hold (a refused delete, an entry no live
+      at its start, acts for that flagged hold, retrying a refused delete every cycle; no process
+      deletes in another's state directory; and a stuck flagged hold (a refused delete, an entry no live
       process answers for by #179's heartbeat, which records each process's state-directory
-      id, or an entry whose named file is gone) opens a notice under its own key. The two
+      id, or an entry whose named file is gone) opens a notice under its own key. Gate two
+      merges only once #179's heartbeat records that id (decisions 131 and 138), since until
+      then every requested release would be judged stuck. A run gone,
+      by #179's heartbeat, before appending its row has its files deleted and its entry
+      cleared by any live process on its directory, with no request and no `released` row. The two
       notices are a kind of condition of their own, with no stored record, rebuilt from the
-      ledger rows and hold-record entries, built against `condition-backoff`'s code on main
+      ledger rows and flagged-hold record entries, built against `condition-backoff`'s code on main
       (`src/conditions.ts`): each opens on its first occurrence, stops no scope, does not count
       toward stopping one, is not cleared by a probe item, clears only when no item is still
       affected, is listed with its items in the Igor's log, and is listed by `igor conditions`
-      with no scope, count or probe. The TLA+ model of the holds and their release, in this
+      with no scope, count or probe. The TLA+ model of the flagged holds and their release, in this
       change's `model/` directory, which the `tla-lore-search` workflow runs, states these
-      rules as invariants; gate two's tests and code keep to them. Its passing configurations
+      rules as invariants; gate two's tests and code keep to them. The model's configurations that TLC must pass
       assume a copied state directory holds no question file, and its liveness configuration
-      that a process's record of the named files it deleted survives a crash, which the spec
-      does not yet promise; the proposal leaves both open for Adam, so liveness is shown only
-      under that assumption. Once
+      that a process's record of the named files it deleted survives a crash. Neither is
+      promised: copying a live state directory is unsupported, and a crash between deleting a
+      named file and clearing its entry leaves the flagged hold to the stuck notice and the operator's
+      flag. Its `findings/` configurations record both as accepted limits, so liveness is shown
+      only under the crash assumption; gate two builds nothing for either. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -257,11 +263,11 @@
       host, never pushed*, *A later flagged run's question is kept beside the first*, *Outside systemd the question goes
       under the XDG state directory*,
       *A reply does not rerun a flagged item*, *An edit by someone with write access releases a
-      flagged item*, *An edit without write access leaves a flagged item held*, *A question that
+      flagged item*, *An edit without write access leaves an item flagged-held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *A process on the directory deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose directory's ranks are all gone waits for the operator*, *A directory-mate finishes the release of a gone rank*, *The next igor run on a directory finishes its release*, *igor release drops an entry whose named file is gone*, *Two holds of one item are released one at a time*, *Two holds on a shared state directory have an entry each*, *A keep adds its entry before writing a file*, *An entry is not cleared while its run is part-way*, *A copied state directory that finds nothing releases nothing*, *A later hold of the same item is independent*, *igor release names the state directories still to clear*, *A lost hold record is rebuilt from the ledger*, *A stuck-release notice keeps item names off the state branch*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A notice opens on its first occurrence*, *A notice stops no scope however often it recurs*, *Repeated questions not kept do not stop the role*, *A probe does not clear a notice* and *A notice clears when no item is affected*, *A notice says it stops nothing and names no item*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
-      does not release a held item*, *A held item's lost record leaves it held*, *A released item is not held again by its old ledger row*,
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item flagged-held*, *A process on the directory deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose directory's ranks are all gone waits for the operator*, *A directory-mate finishes the release of a gone rank*, *The next igor run on a directory finishes its release*, *igor release drops an entry whose named file is gone*, *Two flagged holds of one item are released one at a time*, *Two flagged holds on a shared state directory have an entry each*, *A keep adds its entry before writing a file*, *A run whose entry a lost record dropped adds it again*, *A missed released row is appended by any process*, *A question file name not of the random form is refused*, *A crash after deleting the named file leaves the entry to the operator*, *An entry is not cleared while its run is part-way*, *A run gone part-way leaves nothing behind*, *A copied state directory that finds nothing releases nothing*, *A later flagged hold of the same item is independent*, *igor release names the state directories still to clear*, *A lost flagged-hold record is rebuilt from the ledger*, *A stuck-release notice keeps item names off the state branch*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A notice opens on its first occurrence*, *A notice stops no scope however often it recurs*, *Repeated questions not kept do not stop the role*, *A probe does not clear a notice*, *A notice clears when no item is affected* and *A notice says it stops nothing and names no item*, and `work-triage`'s *The operator releases a flagged-held item on the host*, *A refused delete keeps the item flagged-held*, *A cure key
+      does not release a flagged-held item*, *A flagged-held item's lost record leaves it flagged-held*, *A released item is not flagged-held again by its old ledger row*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
@@ -305,7 +311,7 @@
       `/var/lib/igor/trees` (#175's task 8.3) mounts inside it without hiding it or changing
       its owner.
 
-- [ ] 3.11 Give the two held-item conditions' keys (decisions 111 and 118) a form that
+- [ ] 3.11 Give the two flagged-hold conditions' keys (decisions 111 and 118) a form that
       `condition-backoff`'s merged `src/conditions.ts` opens as a condition, which neither
       stops a role, as a `role:`-shaped key would, nor is ignored, as a key of an unknown
       shape is by `conditionOf`.
@@ -350,7 +356,7 @@
       reasoning in the proposal.
 - [ ] 4.10 Whether the Igor's App installation can read who made each kind of edit to an item
       (its body, title, labels and assignees), as #141 reads it through GraphQL's
-      `userContentEdits`, and how a non-GitHub tracker reports it. If it cannot, an edit whose author it cannot read leaves a flagged item held
+      `userContentEdits`, and how a non-GitHub tracker reports it. If it cannot, an edit whose author it cannot read leaves an item flagged-held
       (decision 79), and only `igor release` on the host releases it (decision 84).
 - [ ] 4.11 Whether Claude Code keeps any per-user state or session under `HOME` outside
       `~/.claude` and `~/.claude.json`, which #174 resets. If it does, one run could read
@@ -369,7 +375,8 @@
       processes sharing the directory start together (decision 116), such as by an exclusive
       create, and that it survives a recreated Docker container on the named volume
       `deploy/docker-compose.yml` mounts at `/var/lib/igor` (decision 103). If two ids can be
-      minted, one directory's files go unnamed in hold records; fix the creation before relying
+      minted, one directory's files go unnamed in flagged-hold records, since entries name one id
+      while the directory reports the other; fix the creation before relying
       on it.
 ## 5. Before archiving
 

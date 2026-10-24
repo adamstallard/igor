@@ -26,7 +26,8 @@ or any other label that routes the item to an inquisitor role, to such a handoff
 The Igor SHALL instead write a file about that question on its own host:
 `flagged-questions/<tracker>/<repo>/<item>/<name>.md` under its state directory, with the same
 `<tracker>/<repo>/<item>` the item's transcript path has on the state branch and a random
-`<name>` of its own, which the entry for its hold in `work-triage`'s hold record names. The state directory is `$STATE_DIRECTORY`
+`<name>` of its own, which the entry for its flagged hold in `work-triage`'s flagged-hold record names (`work-triage`
+defines the flagged hold, its entry and the flagged-hold record). The state directory is `$STATE_DIRECTORY`
 where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when
 `XDG_STATE_HOME` is unset. A systemd unit that sets `StateDirectory=igor` sets
 `STATE_DIRECTORY` to `/var/lib/igor`, and `deploy/docker-compose.yml` sets the variable to the
@@ -56,8 +57,13 @@ The state directory SHALL also hold a *state-directory id*: a random id the Igor
 the first time it uses the directory, and keeps in a file directly in it, on the same volume,
 mode 0600. The Igor SHALL create and read that file by the same rule against following a link,
 and SHALL treat a link, a hard-linked or non-regular file, or an unreadable one there as no
-id. `work-triage` says how hold records use the id. The source of each move,
-#174's copy of a session log in the state directory, SHALL be checked the same way, every
+id. `work-triage` says how flagged-hold records use the id. Copying a state directory while an Igor
+process uses it, as by restoring a volume snapshot beside the original, is unsupported; the only
+protection, against a copy taken before a question file is written, is `work-triage`'s rule that
+an entry is cleared only by deleting the file it names, and gate two builds no other check. Where a
+copy is made, the operator recovers with the stuck-release notice and `igor release`, where an
+entry remains for them to act on (the proposal's Still open). The source of each move,
+#174's copy of a session log in the state directory, SHALL be checked by the same rule against following a link, every
 component from the state directory down to the copy. The Igor SHALL NOT check the
 directories above the state directory. The Igor SHALL refuse the action when any checked
 component is a link, or when the file, the source of a move included, already exists and
@@ -74,7 +80,7 @@ no worker run SHALL be able to reach the `flagged-questions` directory; #175 bui
 this change. Until then, and always under `igor run`, another worker running as the same user can
 read it, its logs and categories included, and plant or delete a file in it, which Adam
 accepts. A later flagged run of the same item that stops on a question, after a release or
-while another flagged run of it is still running, keeps its question in a file of its own, a hold of its own (`work-triage`),
+while another flagged run of it is still running, keeps its question in a file of its own, a flagged hold of its own (`work-triage`),
 with its own session logs beside it. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read
 `needs a person, question not kept`, as `task-execution` sets, and the Igor SHALL open a
@@ -247,7 +253,7 @@ NOT push, post or publish the file, or its text, anywhere.
 - **WHEN** a flagged run of an item keeps its question on the host
 - **AND** a later flagged run of the same item stops on another question
 - **THEN** the later question is kept in a file of its own, with a random name of its own, and
-  the first file stays until its own hold is released
+  the first file stays until its own flagged hold is released
 
 #### Scenario: Outside systemd the question goes under the XDG state directory
 
