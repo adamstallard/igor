@@ -195,12 +195,13 @@ export function suggest(role: Role, candidate: Candidate, identity: string): str
 /**
  * What to say where no seat could be used and none of them ran out.
  *
- * `undefined` for a pool that really is spent, which keeps the sentence it always had. The
- * others each name a different thing to go and look at: one sends the reader to configuration,
- * one to a reading nobody has taken. Saying "the budget is used up" about either was #49 —
- * true of one way to reach "no seat" and false of the rest.
+ * `undefined` for a pool that really is spent, so the caller says the budget is used up. Every
+ * other verdict names a different thing to go and look at, such as configuration for
+ * `credential`, a reading nobody has taken for `no-figure`, or a replaced credential for
+ * `rejected`. Saying "the budget is used up" about any of them is false, which was #49.
  *
- * No hour is offered, and none exists: nothing here comes back on a clock.
+ * No hour is offered. None of these is capacity returning, so an hour here would be read as one,
+ * including for `rejected`, whose seats do get one item on a clock: a probe, not a return.
  */
 function unspendable(
   blocked: SeatVerdict | undefined,
@@ -219,6 +220,13 @@ function unspendable(
   switch (blocked) {
     case 'credential':
       return `no seat's usage could be read${named}, so nothing was spent and nothing says the budget is`
+    case 'rejected':
+      return (
+        `the provider refused the credential on every seat this role draws on${named}, so they are ` +
+        'held out of rotation rather than spending items on a credential that buys nothing. A ' +
+        'different credential releases a seat at once, and otherwise one item is let through ' +
+        'after a cooldown to find out whether it still holds'
+      )
     case 'no-figure':
       return (
         `no seat has a capacity figure to spend against${named} — a reserve is a fraction of one, ` +
@@ -238,6 +246,8 @@ function clauseFor({ seat, verdict }: { seat: string; verdict: SeatVerdict }): s
   switch (verdict) {
     case 'credential':
       return `${seat}'s usage could not be read`
+    case 'rejected':
+      return `${seat}'s credential was refused by the provider`
     case 'no-figure':
       return `nothing bounds ${seat}`
     case 'spent':

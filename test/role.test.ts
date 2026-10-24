@@ -254,7 +254,7 @@ const BUDGET: OrgBudget = {
 }
 
 function config(dir: string, budget: OrgBudget = BUDGET): Config {
-  return { destination: dir, reviewers: [], experts: [], budget }
+  return { destination: dir, reviewers: [], experts: [], budget, conditions: { threshold: 3, cooldownMs: 900_000, maxCooldownMs: 21_600_000 } }
 }
 
 describe('a seat a role names must be declared', () => {

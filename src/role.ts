@@ -4,6 +4,7 @@ import { parse as parseYaml } from 'yaml'
 import { poolFor, type OrgBudget } from './budget.js'
 import { credentialProblem } from './app.js'
 import { keyCheck } from './keys.js'
+import { COUNTED_NOT_GRADED } from './conditions.js'
 import type { Config } from './config.js'
 
 export const ROLES_DIR = 'roles'
@@ -102,6 +103,14 @@ const ROLE_KEYS = [
   'poll_minutes',
 ]
 
+/**
+ * Keys a role or its org base might use to grade a condition. None is a role key, and each is
+ * refused with why: a condition is counted, never graded. `conditions` is among them because in a
+ * role file it can only be an attempt to set something per role: the threshold and cooldown are
+ * set once for every role, in `igor.config.yaml`.
+ */
+const GRADES = ['conditions', 'condition', 'severity', 'fatal', 'degraded', 'rank', 'grade']
+
 const SOURCE_KEYS = ['tracker', 'repo', 'query']
 
 const LANE_KEYS = ['labels', 'paths', 'age']
@@ -134,6 +143,13 @@ export function readRoleFile(dir: string, name: string): Record<string, unknown>
   // Here rather than where each key is read: every path into a role file comes through this
   // function, so one check covers a role, the org base it inherits, and a parent read only for
   // what it contributes.
+  //
+  // A grade is refused with the reason before the unknown-key refusal runs. That refusal would
+  // only name the key, and the reader would try another spelling instead of learning that no
+  // spelling is accepted.
+  for (const key of Object.keys(raw)) {
+    if (GRADES.includes(key)) throw new RoleError(`${file} declares "${key}", but ${COUNTED_NOT_GRADED}`)
+  }
   refuseUnknownKeys(raw, ROLE_KEYS, file, 'a role key')
   return raw
 }

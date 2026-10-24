@@ -1783,8 +1783,9 @@ triage call. It is the one input that does not depend on the stream.
 
 **A probe opens and clears the credential stop.** A probe that gets a 401 opens
 `seat:<id>:credential`, and a probe that succeeds counts as the clearing check. So a revoked seat
-nobody has read is reported out of rotation, and clearing it spends no item. The stop is held by
-#65's breaker, or by the condition record if #101 lands.
+nobody has read is reported out of rotation, and clearing it claims no tracker item. The stop it
+feeds is built: it is the seat's credential condition, rebuilt from the execution log, which runs
+the provider refuses already open. The seat probe that would also open and clear it is not.
 
 **A handoff for a window the line has shut states the crossing, marked approximate.** The line
 rises as the window runs down, so a reading `u` below 1 is under the line again once

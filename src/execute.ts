@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } from './adapter.js'
-import { resolveToken, type TokenSource, type Window } from './budget.js'
+import {
+  AMBIENT_TOKENS, credentialCure, credentialFingerprint, resolveToken, type TokenSource, type Window,
+} from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import {
@@ -115,6 +117,16 @@ export interface ExecutionResult {
   session?: string
   /** Only on a budget stop or a failure: what `usageLimit` classified the envelope on. */
   apiErrorStatus?: number | string
+  /**
+   * Only where `cures` includes `seat:<id>:credential`: a full hash of the credential the provider
+   * refused. Off every other run, where it would publish a digest nothing reads.
+   */
+  tokenFingerprint?: string
+  /**
+   * Set where no worker started, as on a catch-up whose merge came out clean in the clone. Such a
+   * run is an outcome only of a condition it meets, never evidence that one has cleared.
+   */
+  workerless?: true
   /** Only on a budget stop or a failure. */
   terminalReason?: string
   /**
@@ -812,9 +824,6 @@ const FORWARDED = [
   'SSL_CERT_DIR',
 ] as const
 
-/** Where an ambient login lives, for the configuration in which no seat names a token. */
-const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
-
 /**
  * The worker's whole environment, built from a list rather than inherited: `PATH`, `HOME`, the
  * network settings in `FORWARDED`, and one login.
@@ -1429,7 +1438,23 @@ export async function execute(
    * built, so a key added late in the run is not lost to an earlier copy.
    */
   const minted = new Set<string>()
-  const cured = () => (minted.size === 0 ? {} : { cures: [...minted] })
+  /** Named only where a seat is, since the key is about that seat's credential and no other. */
+  const credentialKey = options.seat === undefined ? undefined : credentialCure(options.seat)
+  /** A hash of the credential the worker ran under, once its environment is built. */
+  let credential: string | undefined
+  /** Whether a worker was started, whatever became of it. */
+  let asked = false
+  /**
+   * What the run says about conditions, spread into every result: the keys it minted and, where
+   * no worker started, that it observed nothing else. A run that presented no credential and ran
+   * no command cannot show that a condition has stopped recurring.
+   */
+  const cured = () => {
+    const unobserved = asked ? {} : { workerless: true as const }
+    if (minted.size === 0) return unobserved
+    const refused = credentialKey !== undefined && minted.has(credentialKey) ? credential : undefined
+    return { cures: [...minted], ...(refused === undefined ? {} : { tokenFingerprint: refused }), ...unobserved }
+  }
   const linkage = tracker.linkage(candidate)
   const artifact = options.catchUp
 
@@ -1501,10 +1526,28 @@ export async function execute(
       }
     }
 
-    /** Kept whatever the outcome: both answer questions asked after a run, not during it. */
-    const trace = (output: WorkerOutput | undefined) => {
+    /**
+     * The denials and the session id, kept whatever the outcome: both answer questions asked after
+     * a run, not during it.
+     *
+     * `finished` is true where the worker exited zero, which the envelope cannot be asked for.
+     */
+    const trace = (output: WorkerOutput | undefined, finished = false) => {
       const denials = denialsFrom(output?.permission_denials, role.name)
       for (const d of denials) if (d.cure !== undefined) minted.add(d.cure)
+      // The 401 check below is deliberately not a `limitSignals` member: a limit and a refused
+      // credential want opposite responses. Read as a limit, an authentication failure would hand
+      // items back to wait for a reset that never comes, and fill `refusals/` with captures.
+      //
+      // "Did not finish" is asked differently on the two paths in, because this decides whether
+      // to stop using a seat rather than what to write down. A non-zero exit has already said the
+      // run did not finish, so an envelope silent about erroring is still a refusal there. A run
+      // that exited zero, and may have published, must state that it errored: minting on silence
+      // would stop a working seat, and every clean probe on it would meet the condition again.
+      const refused = finished ? output?.is_error === true : output?.is_error !== false
+      if (credentialKey !== undefined && output !== undefined && refused && Number(output.api_error_status) === 401) {
+        minted.add(credentialKey)
+      }
       const id = typeof output?.session_id === 'string' && output.session_id !== '' ? output.session_id : session
       return {
         ...(denials.length === 0 ? {} : { denials }),
@@ -1593,6 +1636,8 @@ export async function execute(
     try {
       if (asksAWorker) {
         const env = await workerEnv(options.seatToken, process.env, options.seat)
+        credential = credentialFingerprint(env)
+        asked = true
         worker = await (options.worker ?? headlessClaude)({
           cwd: tree.path,
           outbox: tree.outbox,
@@ -1664,7 +1709,7 @@ export async function execute(
     // to a reader whatever the run went on to do.
     const kept = {
       ...spend(worker),
-      ...trace(worker),
+      ...trace(worker, true),
       // On the same argument, where a provider field named a limit on a run the envelope does
       // not report as a success: a seat that refuses after the worker has already edited files
       // publishes as `produced`, and the evidence would leave with the process.
@@ -2158,6 +2203,10 @@ export async function recordExecution(
       // The worker's own log outlives its disposable clone; this id names the file to open.
       ...(result.session === undefined ? {} : { session: result.session }),
       ...(result.apiErrorStatus === undefined ? {} : { apiErrorStatus: result.apiErrorStatus }),
+      // Which credential was refused, where one was: the seat's credential condition counts only
+      // refusals of the credential resolving now, so a replaced one stops counting at once.
+      ...(result.tokenFingerprint === undefined ? {} : { tokenFingerprint: result.tokenFingerprint }),
+      ...(result.workerless === true ? { workerless: true } : {}),
       ...(result.terminalReason === undefined ? {} : { terminalReason: result.terminalReason }),
       transcript: path,
     },
