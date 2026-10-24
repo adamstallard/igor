@@ -89,9 +89,28 @@ to reply to.
   person asking is a far stronger relevance signal than a query match — which is source
   ordering rather than a priority mechanism: requests are their own source, listed first.
 
-  This composes with rank offsets without anything new. Requests are a separate list, so the
-  highest rank starts at the first request; a process already working an item is not planning
-  a cycle, so "unless they are busy" needs no concept of busy.
+  An Igor is one role, and it can run as several processes, each with a number, its rank; the
+  open change `concurrent-instances` specifies them, and the role's roster in its configuration
+  lists the ranks that run. Requests, the mentions above, go at the head of the one candidate
+  list every process of the role draws from, ahead of found work. Adam decided on 2026-10-18 how
+  the ranks share a request:
+  - A hash of the request's id, the same in every process, picks its owner among the roster's
+    ranks. The ranks are then checked in order from the owner, wrapping round: with ranks 1 to 4
+    and owner 3, that is 3, 4, 1, 2.
+  - The first rank whose heartbeat says it is available answers. Available means free, with no
+    item in hand, and with room left on a seat, the subscription the role spends from.
+  - Each rank works the order out for itself and answers only where it finds itself first; the
+    others leave the request. Where no rank is available, each rank tries the request again at
+    its own next cycle.
+
+  As above, answering a request claims nothing, so nothing on the request shows another rank
+  that it is taken. Usually one rank answers. A rank judges itself by its own state, but its
+  siblings by their heartbeat files, which each rank rewrites every half poll interval, so what it
+  reads can be that old. If the owner has just become free while the next rank still reads it as
+  busy, both judge themselves first, and both answer; nothing limits that to one. Adam chose this
+  over a hard limit, which would need a claim, and the settle interval a claim waits before it is
+  checked, before every answer: a second reply is harmless, and a request kept waiting is the
+  worse failure.
 - **Out-of-lane requests are declined with a route**, not a bare refusal — "not my lane,
   `igor-backend` covers it" — which also makes the fleet legible to people who have no idea
   which Igor does what.
