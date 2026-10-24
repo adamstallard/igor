@@ -33,31 +33,41 @@
 (* decision 121's flag clears an entry whose named file the operator has  *)
 (* found on no directory.                                                  *)
 (*                                                                         *)
-(* Every write is its own step, so any interleaving, and a crash between  *)
-(* any two writes, is a state the model reaches. A crash loses only what  *)
-(* a process holds in memory, and it restarts at once. A crashed keep     *)
-(* resumes. A rank that retires part-way leaves its keep unfinished, and  *)
-(* that keep then holds the item no longer, a question left open for     *)
-(* Adam, the repository's owner. A rank retires and is then gone by       *)
-(* #179's heartbeat rule, which waits three poll intervals and, with      *)
-(* decision 131, names the process's state directory, so its              *)
-(* directory-mates know the directory is still answered for; the model    *)
-(* folds that wait into one step. An `igor run` exits and is              *)
-(* gone. The hold record may be lost, and any process rebuilds it from    *)
-(* the ledger's `needs a person` rows (decision 126). The ledger itself   *)
-(* is not lost: it is what every process reads holds from.                *)
+(* Every write is its own step, so any interleaving, and a crash between   *)
+(* any two writes, is a state the model reaches. A crash loses only what a *)
+(* process holds in memory, and it restarts at once. A crashed keep        *)
+(* resumes.                                                                *)
 (*                                                                         *)
-(* Each rule the model found the change needs is a TRUE/FALSE constant,  *)
-(* TRUE in the change as specified; the configurations under negative/    *)
-(* turn one off and find a violation, and those under findings/ record   *)
-(* violations the rules do not prevent, for the repository's owner to    *)
-(* decide on. Here a rule is one of those constants. Two                  *)
-(* constants are assumptions, not rules: CopyBeforeFiles, that a copied   *)
-(* directory holds no question file, and DeletedSurvivesCrash, that a     *)
-(* process still knows after a crash which named files it deleted. The    *)
-(* findings show what each costs. A rank that retires, or an `igor run`  *)
-(* that exits, between deleting a named file and clearing its entry       *)
-(* forgets what it deleted just as a crash does.                          *)
+(* A rank that retires part-way through a keep leaves it unfinished, and   *)
+(* the keep then holds the item no longer. Once that rank is gone, any     *)
+(* live process on the rank's directory deletes the keep's files and       *)
+(* clears its entry, with no request (decision 135). A rank retires and is *)
+(* then gone by #179's heartbeat rule, which waits three poll intervals;   *)
+(* the model folds that wait into one step. With decision 131 each         *)
+(* heartbeat names its process's state directory, so a process can tell    *)
+(* whether some other live process still uses a directory. An `igor run`   *)
+(* exits, or is killed part-way through keeping, and is gone.              *)
+(*                                                                         *)
+(* The hold record may be lost, and any process rebuilds it from the       *)
+(* ledger's `needs a person` rows (decision 126). The ledger itself is not *)
+(* lost: it is what every process reads holds from.                        *)
+(*                                                                         *)
+(* Each rule the model found the change needs is a TRUE/FALSE constant,    *)
+(* TRUE in the change as specified. The configurations under negative/     *)
+(* each turn one rule off and find a violation, and those under findings/  *)
+(* record violations the rules do not prevent, limits that Adam, the       *)
+(* repository's owner, accepts (decisions 133 and 134).                    *)
+(*                                                                         *)
+(* Two further constants are assumptions, not rules. CopyBeforeFiles says  *)
+(* a copied directory holds no question file, since copying a live state   *)
+(* directory is unsupported; every configuration but                       *)
+(* findings/CopiedQuestion.cfg sets it. DeletedSurvivesCrash says a        *)
+(* process still knows after a crash which named files it deleted; the     *)
+(* liveness configurations set it, and findings/CrashBeforeClear.cfg drops *)
+(* it. Each finding shows what dropping its assumption costs. Without      *)
+(* DeletedSurvivesCrash, a rank that retires, or an `igor run` that exits, *)
+(* between deleting a named file and clearing its entry forgets what it    *)
+(* deleted just as a crash does.                                           *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets
 
@@ -81,6 +91,7 @@ CONSTANTS
     AnyOnDir,       \* any live process on a directory acts for its holds, not only the one that kept them
     WorkOnlyIfReleased, \* a process works the item only when no hold is open
     DeletedSurvivesCrash, \* assumption, not a rule: that a named file was deleted is kept on the directory, past a crash or a retirement
+        CleanOrphans,   \* once the process keeping a hold is gone before its `needs a person` row, a live process on its directory deletes its files and clears its entry, with no request (decision 135)
     OperatorActs    \* the operator may run `igor release`; the liveness configurations leave it out
 
 \* Processes are "r1", "r2", "rc" and "run"; directories are "d1", "d2" and
@@ -148,7 +159,10 @@ Init ==
 
 \* A hold is open while it has its `needs a person` row and no `released`
 \* row, which every process reads from the ledger. NotHeld, below, adds the
-\* claim a live run holds on the item while it is part-way through keeping.
+\* claim a live run holds on the item while it is part-way through keeping,
+\* which keeps the item from being worked though it is no hold. "Hold" here
+\* is the change's *flagged hold* (decision 139), not #179's "held" for an
+\* item a claim holds.
 OpenHold == \E h \in Holds : needs[h] /\ ~released[h]
 AnyHold == \E h \in Holds : needs[h]
 
@@ -188,10 +202,11 @@ WriteQ(p) ==
                    gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* The `needs a person` row, naming the directory's id and the question
-\* file's name: the hold begins. With EntryFirst, a run whose entry a lost
-\* and rebuilt record dropped adds it again first; the model takes the two
-\* writes as one step (decision 126; a detail the agent that wrote the
-\* change fitted, for Adam to check).
+\* file's name: the hold begins. With EntryFirst, where a lost record was
+\* rebuilt without the run's entry, the run adds it again first. The model
+\* takes the two writes as one step (decisions 126 and 137): a crash between
+\* them leaves the entry added and no row, which a retry of this step then
+\* reaches as well.
 AppendNeeds(p) ==
     /\ up[p] /\ keep[p] = 3 /\ (EntryFirst \/ entry[p] = "open") /\ ~lost
     /\ needs' = [needs EXCEPT ![p] = TRUE]
@@ -204,7 +219,7 @@ AppendNeeds(p) ==
 
 \* A rank or an `igor run` sees an attributable edit by someone with write
 \* access; its `release requested` row covers the holds whose `needs a person`
-\* rows came before it (a fitted detail, for Adam to check). A later hold
+\* rows came before it (decision 137). A later hold
 \* needs a later edit.
 SeeEdit(p) ==
     /\ up[p] /\ \E h \in Holds : needs[h] /\ h \notin requested
@@ -212,7 +227,12 @@ SeeEdit(p) ==
     /\ UNCHANGED <<present, lost, entry, needs, released, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
-\* May x act for hold h on its own directory? Its directory must have h's id;
+\* A run gone before appending its `needs a person` row left an entry, and
+\* perhaps files, that the ledger counts as no hold (decision 135).
+Orphan(h) == CleanOrphans /\ gone[h] /\ ~needs[h]
+
+\* May x act for hold h on its own directory, for a requested release or for
+\* an orphan? Its directory must have h's id;
 \* with AnyOnDir any live process there may, without it only the run that
 \* kept h. An `igor run` acts only at its start, before it keeps anything,
 \* so only a run that keeps nothing here, standing for the next `igor run` on
@@ -221,7 +241,7 @@ SeeEdit(p) ==
 \* is gone. Without OwnDirOnly, x also acts on h's home directory when the
 \* run that kept h is gone.
 ActsFor(x, h) ==
-    /\ up[x] /\ h \in requested /\ ~lost /\ entry[h] = "open" /\ ~released[h]
+    /\ up[x] /\ (h \in requested \/ Orphan(h)) /\ ~lost /\ entry[h] = "open" /\ ~released[h]
     /\ keep[x] \in {0, 4, 5}
     /\ (x \in Runs => keep[x] = 5)
     /\ (ClearAfterNeeds => (needs[h] \/ gone[h]))
@@ -255,11 +275,15 @@ Deleted(x) ==
         ELSE mayClear[x]
 
 \* With ClearByDeleting, x clears h's entry only after the named file was
-\* deleted as Deleted says; without it, finding no file is enough.
+\* deleted as Deleted says; without it, finding no file is enough. An
+\* orphan's run may have written no question file, so its entry is cleared
+\* once none of its files is left (decision 135; a detail the agent that
+\* wrote the change fitted, which the proposal's Still open asks Adam to
+\* confirm).
 Clear(x, h) ==
     LET d == Where(x, h) IN
     /\ ActsFor(x, h) /\ <<h, "log", d>> \notin present
-    /\ IF ClearByDeleting THEN h \in Deleted(x) ELSE <<h, "q", d>> \notin present
+    /\ IF ClearByDeleting /\ needs[h] THEN h \in Deleted(x) ELSE <<h, "q", d>> \notin present
     /\ entry' = [entry EXCEPT ![h] = "cleared"]
     /\ mayClear' = [y \in Procs |-> mayClear[y] \ {h}]
     /\ pending' = [pending EXCEPT ![x] = @ \cup {h}]
@@ -270,7 +294,7 @@ Clear(x, h) ==
 ReRead(x, h) ==
     /\ up[x] /\ h \in pending[x]
     /\ pending' = [pending EXCEPT ![x] = @ \ {h}]
-    /\ IF (~ReReadBeforeReleased \/ entry[h] = "cleared") /\ ~released[h]
+    /\ IF (~ReReadBeforeReleased \/ entry[h] = "cleared") /\ needs[h] /\ ~released[h]
           THEN released' = [released EXCEPT ![h] = TRUE]
           ELSE UNCHANGED released
     /\ UNCHANGED <<present, lost, entry, needs, requested, keep, mayClear, up,
@@ -284,7 +308,7 @@ EarlyReleased(x, h) ==
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 Recover(x, h) ==
-    /\ RecoverReleased /\ up[x] /\ ~lost /\ entry[h] = "cleared" /\ ~released[h]
+    /\ RecoverReleased /\ up[x] /\ ~lost /\ entry[h] = "cleared" /\ needs[h] /\ ~released[h]
     /\ released' = [released EXCEPT ![h] = TRUE]
     /\ UNCHANGED <<present, lost, entry, needs, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
@@ -326,7 +350,7 @@ OpDrop(h) ==
                    pending, up, gone, worked, delBy, crashes, losses, retires, copies, opMay>>
 
 OpReRead(h) ==
-    /\ OperatorActs /\ ~lost /\ entry[h] = "cleared" /\ ~released[h]
+    /\ OperatorActs /\ ~lost /\ entry[h] = "cleared" /\ needs[h] /\ ~released[h]
     /\ released' = [released EXCEPT ![h] = TRUE]
     /\ UNCHANGED <<present, lost, entry, needs, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
@@ -359,7 +383,8 @@ Rebuild(x) ==
 
 \* Read from the ledger, so a lost record changes nothing: no open hold, and
 \* no live run part-way, since that run holds the item's claim. A gone run's
-\* part-way keep holds nothing (the proposal's Still open).
+\* part-way keep is no hold, so the item may be worked while its files
+\* remain; with CleanOrphans they are cleaned up later (decision 135).
 NotHeld == ~OpenHold /\ ~(\E p \in Procs : up[p] /\ keep[p] \in 1..3)
 
 Work(p) ==
@@ -393,7 +418,7 @@ Retire(p) ==
                    delBy, clearedBy, opMay, crashes, losses, copies>>
 
 Exit(p) ==
-    /\ up[p] /\ p \in Runs /\ keep[p] \in {4, 5}
+    /\ up[p] /\ p \in Runs
     /\ up' = [up EXCEPT ![p] = FALSE]
     /\ gone' = [gone EXCEPT ![p] = TRUE]
     /\ mayClear' = IF DeletedSurvivesCrash THEN mayClear ELSE [mayClear EXCEPT ![p] = {}]
@@ -459,9 +484,10 @@ DeletesOnOwnDirOnly ==
     \A d \in Dirs : delBy[d] \subseteq ({p \in Procs : DirOf(p) = d} \cup {Op})
 
 \* Requirement: "An item handed back is not re-worked until something answers"
-\* (work-triage): a held item SHALL stay held (decisions 76, 82, 83 and 128).
-\* The model has no expiry, so it shows that nothing but every open hold's
-\* `released` row unholds the item, a lost record included.
+\* (work-triage): a flagged-held item SHALL stay flagged-held (decisions 76, 82, 83 and 128).
+\* The model has no expiry, so nothing else could release the item: the
+\* invariant shows that only every open hold's `released` row does, and that
+\* the item stays held while the hold record is lost.
 HeldUntilReleased ==
     worked => ~OpenHold
 
@@ -485,5 +511,18 @@ ReleaseCompletes ==
        /\ \A h \in requested : ~released[h] =>
               \E p \in Procs : up[p] /\ DirOf(p) = Home(h))
         ~> \A h \in requested : released[h]
+
+\* Requirement: the same, decision 135: once the process keeping a hold is
+\* gone before appending its `needs a person` row, and its home directory
+\* has a live process, its files are deleted and its entry cleared, with no
+\* release requested. The
+\* configurations that check it lose no record: a lost record drops such an
+\* entry, since the rebuild reads only `needs a person` rows (the proposal's
+\* Still open section asks whether that is accepted).
+OrphanCleaned ==
+    \A h \in Holds :
+        (gone[h] /\ ~needs[h] /\ entry[h] = "open" /\ ~lost
+           /\ \E p \in Procs : up[p] /\ DirOf(p) = Home(h))
+            ~> (entry[h] = "cleared" /\ \A k \in Kinds : <<h, k, Home(h)>> \notin present)
 
 =============================================================================

@@ -5,13 +5,16 @@
 # - "TLC <config>": the change as specified. Each configuration the matrix
 #   below lists must pass, so a failure is a regression in the spec or the
 #   model. A configuration added to model/ runs only once it is listed.
-# - "TLC negative configurations": each rule the model showed the change
-#   needs is a constant in the model, and each file in model/negative/,
-#   named No<rule>.cfg, turns one of those rules off. TLC must find a violation there; a file that
-#   passes means the model does not show that rule is needed.
+# - "TLC negative configurations": each rule that the model showed the
+#   change needs is a constant in the model, and each file in
+#   model/negative/, named No<rule>.cfg, turns one of those rules off. TLC
+#   must find a violation there; a file that passes means the model does
+#   not show that rule is needed.
 # - No job runs model/findings/. Each file there finds a violation the rules
-#   do not prevent, recorded for the repository's owner to decide on; it
-#   keeps finding it until the spec's rules change.
+#   do not prevent, a limit the repository's owner has accepted (decisions
+#   133 and 134 in the change's proposal). Those violations are expected and
+#   change nothing a reviewer must act on, so a job would only repeat them;
+#   each file keeps finding its violation until the spec's rules change.
 #
 # To move to another tla2tools.jar release, change TLA_TOOLS_VERSION and
 # TLA_TOOLS_SHA256 together: the checksum step rejects any other file.
