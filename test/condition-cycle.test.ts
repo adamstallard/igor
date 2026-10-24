@@ -4,7 +4,10 @@ import type { Gate } from '../src/budget.js'
 import type { Condition } from '../src/conditions.js'
 import type { Role } from '../src/role.js'
 
-/** The state branch, in memory: the watermark and the deferrals read back, the decision record kept. */
+/**
+ * The state branch, in memory: the discovery watermark and the deferrals one cycle writes are
+ * what the next cycle reads, and each cycle's decision record lands in `recorded`.
+ */
 const stored = new Map<string, unknown>()
 const recorded: Record<string, unknown>[] = []
 vi.mock('../src/state.js', () => ({
@@ -21,7 +24,7 @@ vi.mock('../src/state.js', () => ({
 const { planCycle, UNTRIAGED_CONDITION } = await import('../src/loop.js')
 const { triageBatch } = await import('../src/triage.js')
 
-/** Passed to every cycle, so nothing here reads the real clock. */
+/** The `now` every cycle is given; `ago` dates items and conditions back from it. */
 const NOW = Date.UTC(2030, 0, 1, 12)
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString()
 
@@ -71,7 +74,7 @@ const commandsRefused: Condition = {
   probeAt: ago(-5),
 }
 
-/** A gate that hands over a seat, so the only thing that can stop a cycle is the one under test. */
+/** A budget gate that never runs out, so only the condition given as `stopped` can stop a cycle. */
 const open: Gate = { exhausted: () => false, reason: 'test' }
 
 function reset(): void {
@@ -91,8 +94,10 @@ describe('a role stopped on a condition takes no work', () => {
     expect(report.toClaim).toEqual([])
     expect(report.condition?.key).toBe('role:web:commands')
     expect(report.untriaged.map((u) => u.reason)).toEqual([UNTRIAGED_CONDITION, UNTRIAGED_CONDITION])
-    // An untriaged item holds the discovery watermark below it, so it is read again once the
-    // condition clears.
+    // An untriaged item holds the discovery watermark below it, so once the condition clears the
+    // next cycle finds both items fresh and triages them. This catches a mark moved past them. It
+    // would not catch a stopped cycle that saved no mark at all, because discovery's first read,
+    // with no mark saved, looks back far enough to find items this recent anyway.
     const after = await planCycle(deps([candidate(1), candidate(2)]), role('web'), {
       now: NOW, identity: 'igor-web', triage, budget: open, stopped: async () => undefined,
     })

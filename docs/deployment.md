@@ -334,7 +334,7 @@ which disappears when the manager cleans up. Point at a stable interpreter.
 
 ```bash
 igor budget                 # what each seat has left, and what state each one is in
-igor budget --credentials   # which credential each seat resolves, and any refusals of it
+igor budget --credentials   # each seat's credential as a hash, and refusals of it in the run log
 igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
 

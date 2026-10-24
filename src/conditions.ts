@@ -2,22 +2,31 @@ import type { SpendRecord } from './budget.js'
 import { SWEEP_AFTER_MS } from './sweep.js'
 
 /**
- * Conditions: an Igor stuck on its own configuration, recorded against the key that would cure
- * it, and stopping exactly what that cure governs once it recurs.
+ * Conditions: an Igor stuck on its own configuration. A run that fails on a setting records a
+ * cure key, a string naming the setting a person would change: `role:<name>:<setting>`,
+ * `seat:<id>:<setting>` or `app:<identity>:credential`. A condition is a cure key met by
+ * consecutive outcomes, and it stops exactly what that setting governs: one role, every role
+ * drawing on one seat, or the Igor acting as one GitHub App.
+ *
+ * Once stopped, a role or seat waits out a cooldown and then lets one item through as the probe.
+ * A probe that meets the key again doubles the next cooldown; one that does not clears the
+ * condition.
  *
  * **Nothing here is stored.** Every condition is rebuilt from `executions.ndjson` each time it
- * is asked about: from the run rows that carry its cure key, and from the condition rows the
- * loop appends for what no run shows. A summary kept beside the log could disagree with it, and
- * appends from several Igors cannot overwrite each other the way writes to one record can.
+ * is asked about: from the run rows that carry its cure key, and from the probe and check rows
+ * the loop appends for what no run shows. A summary kept beside the log could disagree with it,
+ * and appends from several Igors cannot overwrite each other the way writes to one record can.
  *
- * **Counted, never graded.** A condition stops its scope on recurrence alone. No configuration
- * may call one fatal or degraded, because how bad a condition's consequence is cannot be known in
- * advance: a refused test command yields pull requests nobody verified, and whether that is worse
- * than yielding nothing depends on the repository, the reviewer and the week. A wrong grade either
- * stops a working fleet or lets the repetition this exists to end go on.
+ * **Counted, never graded.** A condition stops its scope on its count alone: the configured
+ * threshold, or the first occurrence for a refused App credential (see `thresholdFor`). No
+ * configuration may call one fatal or degraded, because how bad a condition's consequence is
+ * cannot be known in advance: a refused test command yields pull requests nobody verified, and
+ * whether that is worse than yielding nothing depends on the repository, the reviewer and the
+ * week. A wrong grade would either stop a working fleet or leave it repeating the failure that
+ * conditions exist to end.
  */
 
-/** How many occurrences stop a scope, and how long it then waits before one item may probe. */
+/** How many occurrences in a row stop a scope, and the first and longest wait before a probe. */
 export interface ConditionSettings {
   threshold: number
   cooldownMs: number
@@ -26,16 +35,17 @@ export interface ConditionSettings {
 
 /**
  * Provisional, all three: no run history has been fitted to them. They start from the reasoning
- * of the credential stop #65 built, which this mechanism absorbed:
+ * behind #65, which stopped a seat whose credential the provider kept refusing:
  *
  * - **A threshold of 3.** The unit of cost is a burned item, so the threshold is the price of
  *   being sure: one occurrence trips on a blip, two can be coincidence, and three items is a
  *   tolerable cost against holding a working scope out.
- * - **A cooldown of 15 minutes, doubling to a ceiling of 6 hours.** A revoked credential can stay
- *   revoked for days: a fixed hour spends twenty-four items a day for as long as it lasts, where
- *   doubling spends about six in total, and a transient outage still clears in fifteen minutes.
- *   The ceiling means a condition fixed overnight is retested within 6 hours, not after a wait
- *   that has kept doubling all night.
+ * - **A cooldown of 15 minutes, doubling to a ceiling of 6 hours.** Each probe that meets the
+ *   condition again doubles the wait. A revoked credential can stay revoked for days: a fixed
+ *   hour would spend twenty-four items a day for as long as it lasts, where doubling spends about
+ *   seven on the first day and four a day after that. A transient outage still clears in fifteen
+ *   minutes. The ceiling means a condition fixed overnight is retested within 6 hours, not after
+ *   a wait that has kept doubling all night.
  *
  * What a wasted repetition costs is not known to within an order of magnitude: the two items
  * whose cost is recorded are $1.19 and $11.18.
@@ -47,9 +57,10 @@ export const CONDITION_DEFAULTS: ConditionSettings = {
 }
 
 /**
- * Why no configuration may grade a condition, said wherever one tries. The refusal gives the
- * reason rather than naming an unknown key, because the reader is about to argue with the rule,
- * not to fix a spelling.
+ * Why no configuration may grade a condition or set anything but the three settings. `role.ts`
+ * and `config.ts` end their refusals with it, which is why it starts in lower case. The refusal
+ * gives the reason rather than naming an unknown key, because the reader is about to argue with
+ * the rule, not to fix a spelling.
  */
 export const COUNTED_NOT_GRADED =
   'conditions are counted, not graded: each one stops its scope on recurrence alone, and none may ' +
@@ -57,7 +68,7 @@ export const COUNTED_NOT_GRADED =
   'another depends on the repository, the reviewer and the week. Only threshold, cooldown_minutes ' +
   'and max_cooldown_minutes may be set, in igor.config.yaml under conditions, for every condition at once'
 
-/** What a condition stops. Derived from the key, never declared beside it. */
+/** What a condition stops. Derived from the key by `scopeOf`, never declared beside it. */
 export interface Scope {
   kind: 'role' | 'seat' | 'igor'
   /** The role, the seat, or the Igor's App identity, which is its role's name. */
@@ -66,8 +77,9 @@ export interface Scope {
 
 /**
  * The scope a cure key names: `role:<name>:<setting>` a role, `seat:<id>:<setting>` every role
- * drawing on that seat, and `app:<identity>:credential` the Igor acting as that App. A key of any
- * other shape names no scope, and nothing stops on it.
+ * drawing on that seat, and `app:<identity>:credential` the Igor acting as that App. The setting
+ * is what follows the last colon, so a name may contain colons. A key of any other shape names no
+ * scope, and nothing stops on it.
  */
 export function scopeOf(key: string): Scope | undefined {
   const match = /^(role|seat|app):(.+):([^:]+)$/.exec(key)
@@ -77,23 +89,25 @@ export function scopeOf(key: string): Scope | undefined {
 }
 
 /**
- * Whether the key leaves out what is stuck. `seat:<id>:credential` names the seat and not the
- * credential, so one seat's two tokens produce the same key, and each occurrence carries a full
- * hash of the credential it was observed against. Every other key already says what is stuck.
+ * Whether the key leaves out which credential is stuck. Where it does, each occurrence has to carry
+ * a full hash of the credential it was observed against: `tokenFingerprint` on a run,
+ * `discriminator` on a check. `seat:<id>:credential` names the seat, so one seat's two tokens
+ * produce the same key, and `app:<identity>:credential` names the App, not its private key. Every
+ * other key already says what is stuck.
  */
 export function carriesDiscriminator(key: string): boolean {
   return key.endsWith(':credential')
 }
 
-/** The key a refused GitHub App credential opens. */
+/** The key a refused GitHub App credential opens. `identity` is the Igor's role name. */
 export function appCredentialKey(identity: string): string {
   return `app:${identity}:credential`
 }
 
 /**
- * Occurrences that stop the scope. A refused App credential stops at its first: `app-identity`
- * requires an Igor whose App is refused to take no new item, and a refused App can do nothing on
- * GitHub, so no item it took could find the cure.
+ * Occurrences that stop the scope. A refused App credential stops at its first: the
+ * `app-identity` spec requires an Igor whose App is refused to take no new item, and a refused
+ * App can do nothing on GitHub, so no item it took could find the cure.
  */
 function thresholdFor(key: string, settings: ConditionSettings): number {
   return scopeOf(key)?.kind === 'igor' ? 1 : settings.threshold
@@ -102,20 +116,26 @@ function thresholdFor(key: string, settings: ConditionSettings): number {
 export interface Condition {
   key: string
   scope: Scope
-  /** What the open occurrence was observed against, where the key does not say. */
+  /** For a credential key: the hash of the credential every counted row was observed against. */
   discriminator?: string
-  /** How many consecutive rows, counted back from the newest, met the key. */
+  /** How many consecutive outcomes for this key, counted back from the newest, met it. */
   count: number
   first: string
   last: string
   /**
    * - `counting`: met, and short of the threshold, so work continues.
-   * - `open`: the scope takes no new item until `probeAt`.
-   * - `due`: the cooldown has passed and no probe is running, so one item may be taken.
-   * - `probing`: an Igor has appended a row saying it took the probe, and its outcome is not in.
+   * - `open`: the scope takes no new item until `probeAt`. With no `probeAt`, it takes none until
+   *   a check no longer meets the key.
+   * - `due`: the cooldown has passed and no probe is running, so the next item the scope takes is
+   *   the probe.
+   * - `probing`: an Igor has appended a probe row saying it took the probe item, and that item's
+   *   outcome is not in. The scope takes no other item meanwhile.
    */
   state: 'counting' | 'open' | 'due' | 'probing'
-  /** When one item may be taken to find out. Absent for a condition a check clears instead. */
+  /**
+   * When the cooldown ends and one item may be taken as the probe. Absent on an App credential
+   * condition, which `serve`'s mint attempt checks again each cycle without spending an item.
+   */
   probeAt?: string
 }
 
@@ -126,9 +146,11 @@ export const stops = (c: Condition): boolean => c.state === 'open' || c.state ==
 const isRun = (row: SpendRecord): boolean => row.kind === undefined
 
 /**
- * Whether a row is an outcome this condition can read. A check speaks only to its own key. A run
- * speaks to every condition on its role and its seat, because a run that did not meet a condition
- * is the observation that clears it. A probe row is a marker, never an outcome.
+ * Whether a row is an outcome for this key: one that either meets it or, by not meeting it,
+ * clears the condition. A check speaks only to its own key. A run speaks to every condition on its
+ * role and its seat, because a run that did not meet a condition is the observation that clears
+ * it. A run never speaks to an App credential condition; only checks do. A probe row is a marker,
+ * never an outcome.
  *
  * A run that exercised nothing speaks only to a condition it meets: see `exercisedNothing`.
  */
@@ -153,8 +175,10 @@ const exercisedNothing = (row: SpendRecord): boolean =>
 
 /**
  * Every key a run met: those in its `cures` and those its worker's denials name. Read from both,
- * because a run whose publish threw records its denials but no `cures` (a handoff carrying a cure
- * key is never deferred, and that item should be), and it met the key all the same.
+ * because a run whose publish threw records its denials but no `cures`, and it met those keys all
+ * the same. It records no `cures` so that its item is deferred, held back until someone replies,
+ * because a handoff carrying a cure key is never deferred. Retrying it would pay for the whole
+ * worker again, with nothing changed that could make the publish succeed.
  */
 const keysOf = (row: SpendRecord): string[] => [
   ...(row.cures ?? []),
@@ -170,10 +194,11 @@ const discriminatorOf = (row: SpendRecord): string | undefined =>
 /**
  * The condition one key names, as the log stands, or nothing where it is not met.
  *
- * Walks back from the newest row: consecutive outcomes meeting the key, observed against one
- * discriminator, are the open occurrence. An outcome of the scope that does not meet it ends the
- * occurrence, which is how a probe that ran clean closes it, and so does one observed against a
- * different discriminator, which starts a new count rather than adding to the old one.
+ * Walks back from the newest row. The current occurrence, whatever its state, is the consecutive
+ * outcomes that meet the key, all observed against one discriminator (the credential hash a
+ * credential key carries). An outcome that does not meet the key ends the occurrence, which is how
+ * a probe that ran clean closes it. So does one observed against a different discriminator: the
+ * newer rows start a new count rather than adding to the old one.
  *
  * `current` is the discriminator resolving now. A condition observed against another one is
  * closed by that alone, with no cooldown and no item. For a key that carries a discriminator, no
@@ -204,8 +229,9 @@ export function conditionOf(
     // A refusal nothing can attribute to a credential neither counts nor clears: a seat whose
     // login lives in a `~/.claude` the environment does not carry has no hash to hold against.
     if (named && seen === undefined) continue
-    // A cooldown measured from a moment nothing can place never ends, so such a row ends the
-    // occurrence rather than extending it.
+    // A row whose time cannot be parsed ends the occurrence rather than extending it. The
+    // cooldown runs from the newest row's time: an unparseable one would make `probeAt` NaN, and
+    // `toISOString` would throw on it.
     if (!Number.isFinite(Date.parse(row.at))) break
     if (count === 0) {
       discriminator = seen
@@ -235,15 +261,20 @@ export function conditionOf(
 }
 
 /**
- * Whether an Igor has taken the probe and its outcome is not yet in. Only a probe row newer than
- * the last occurrence counts.
+ * Whether an Igor has taken the probe and its outcome is not yet in. Only the newest probe row for
+ * the key counts, and only if it is newer than the last occurrence.
  *
- * A probe ends with the run row of the item it named. Where that row met the condition it is the
- * last occurrence, and where it cleared it there is no condition, so a probe still found here
- * ended on a run that observed nothing, and the next item may probe. A row for any other item ends
- * nothing: it was written after the probe row, but its run began earlier. A probe that ended with no run
- * at all says so with a `void` row. A probe row older than the longest a run can hold a tree
- * belongs to a process that died, and holding the scope for it would hold it for good.
+ * A probe ends with the run row of the item it named. If that run met the condition, its row is
+ * the last occurrence and this probe row is older; if it cleared the condition, there is no
+ * condition to ask about. So when this function finds the item's run row after the probe row,
+ * that run neither met nor cleared the key (see `exercisedNothing`). The probe is over, and the
+ * next item may probe.
+ *
+ * A run row for another item ends nothing. While a probe runs its scope takes no new item, so any
+ * other item's run in that scope began before the probe row was written. A probe that ended with no
+ * run at all says so with a probe row marked `void`. A probe row older than `SWEEP_AFTER_MS`, the
+ * longest a run can hold a tree, belongs to a process that died, and holding the scope for it would
+ * hold it for good.
  */
 function probeRunning(rows: readonly SpendRecord[], key: string, after: number, now: number): boolean {
   const ran = new Set<string>()
@@ -260,9 +291,10 @@ function probeRunning(rows: readonly SpendRecord[], key: string, after: number, 
 }
 
 /**
- * Every condition the log holds, open or counting.
+ * Every condition the log holds, in any state: one per key that a check or a run row names.
  *
- * `current` answers, for a key that carries a discriminator, what resolves for its scope now.
+ * `current` answers, for a key that carries a discriminator, what resolves for its scope now. The
+ * default resolves nothing, which leaves out every credential condition.
  */
 export function conditionsFrom(
   rows: readonly SpendRecord[],
@@ -283,12 +315,15 @@ export function conditionsFrom(
   return out
 }
 
-/** The conditions that stop a role on its own: those on the role and on the Igor acting as it. */
+/**
+ * The conditions that stop a role on its own: those on the role and on the Igor acting as it. A
+ * seat condition is left out, because `budgetGate` passes a stopped seat over and picks another.
+ */
 export function roleConditions(conditions: readonly Condition[], role: string): Condition[] {
   return conditions.filter((c) => c.scope.name === role && (c.scope.kind === 'role' || c.scope.kind === 'igor'))
 }
 
-/** What a person would change to cure the key, in words that name where. */
+/** What cures the key, naming where, worded to follow "Cured by" in `describeCondition`. */
 export function cureFor(key: string): string {
   const scope = scopeOf(key)
   const setting = key.slice(key.lastIndexOf(':') + 1)
@@ -311,7 +346,10 @@ export function cureFor(key: string): string {
   return `a change to \`${key}\``
 }
 
-/** The condition in one sentence: what stopped, since when, and what happens next. */
+/**
+ * The condition in one sentence: the key, how many times in a row it was met and when last, what
+ * happens next, and what cures it.
+ */
 export function describeCondition(c: Condition): string {
   const met = `\`${c.key}\` met ${c.count} time${c.count === 1 ? '' : 's'} in a row, the most recent at ${c.last}`
   const next =

@@ -31,9 +31,9 @@ import { sweepAbandonedTrees, type SweepOptions } from './sweep.js'
 
 export interface Wiring {
   /**
-   * The seat this role spends next, or why none. Where a condition stops the role, `exhausted()`
-   * is true and `condition` names it; where the item it admits is a condition's probe, `probes`
-   * says which.
+   * The seat this role spends next, or why none. When a condition stops the role, `exhausted()`
+   * is true and `condition` names it. When the item it admits is the probe for conditions whose
+   * cooldown has passed, `probes` lists their keys.
    */
   gate: () => Promise<Gate>
   /**
@@ -48,10 +48,11 @@ export interface Wiring {
    */
   probe: (keys: readonly string[], outcome: 'taken' | 'void', item: string) => Promise<void>
   /**
-   * `serve`'s check of the App credential. The answer of the mint attempt decides the stop; the
-   * check also records it in the execution log as the Igor-scoped condition
-   * `app:<identity>:credential`, when the state branch can be written. `key` is the App's private
-   * key, which is hashed here and goes no further.
+   * Wraps `serve`'s check of the App credential, an attempt to mint an installation token. The
+   * check's answer alone decides the stop. The wrapper also records the answer in the execution
+   * log under the Igor-scoped condition key `app:<identity>:credential`, when the state branch
+   * can be written. `key` is the App's private key: it is hashed here and goes no further. Until
+   * this is called, `gate` and `stopped` have no hash to match, so no App condition stops them.
    */
   appCredential: (key: string, check: () => Promise<true | string>) => () => Promise<true | string>
   /** Passed to every run, so a pull request can point at the transcript it will write. */
@@ -94,8 +95,9 @@ export async function wire(
 
   const settings = config.conditions
   /**
-   * Run rows not yet written. `serve` records a run without waiting for it, and a gate that read
-   * the log before the row landed would take the next item on a condition the last one opened.
+   * Run rows whose append has not finished. `serve` records a run without waiting for the write,
+   * so every read of the log here waits for these first: a gate that read the log before the row
+   * landed would take the next item on a condition the last run opened.
    */
   const pending = new Set<Promise<void>>()
   const settled = async (): Promise<void> => {
@@ -108,7 +110,7 @@ export async function wire(
   let appKey: string | undefined
   const appKeyFor = (key: string): string | undefined =>
     scopeOf(key)?.kind === 'igor' && key === appCredentialKey(role.name) ? appKey : undefined
-  /** The first condition on the role that keeps it from taking an item, and every one now due. */
+  /** The role's first condition that keeps it from taking an item, and the keys due a probe. */
   const ownStop = (conditions: readonly Condition[]) => {
     const own = roleConditions(conditions, role.name)
     return { stop: own.find(stops), due: own.filter((c) => c.state === 'due').map((c) => c.key) }
@@ -195,7 +197,8 @@ export async function wire(
           const open = conditionOf(await loadLog(read), name, settings, Date.now(), discriminator)
           const met = answer !== true
           const stopped = open !== undefined && open.state !== 'counting'
-          // If the current check doesn't match what's already in the log, append it.
+          // Append a row only when this answer differs from what the log already says, so an
+          // unchanged answer adds no row each cycle.
           if (met !== stopped) {
             await append(
               { kind: 'check', key: name, role: role.name, met, ...(met ? { discriminator } : {}) },
