@@ -1,9 +1,9 @@
 ## 0. Before building
 
-- [ ] 0.1 Build after #171 (`seat-files`), #179 (`concurrent-instances`) and #82
-      (`stopped-scope-visible`) are built: this change uses #171's seat files, read-cleared
-      condition and seat removal, #179's per-cycle reread and heartbeat timer, and modifies #82's
-      requirement
+- [ ] 0.1 Build after #171 (`seat-files`), #179 (`concurrent-instances`), #82
+      (`stopped-scope-visible`) and #220 (`visibility-guard`) are built: this change uses #171's
+      seat files, read-cleared condition and seat removal, #179's per-cycle reread and heartbeat
+      timer, and #220's visibility read, and modifies #82's requirement
 - [ ] 0.2 Read Adam's answers to the proposal's *Still open* questions, which go into the
       proposal's *Decisions* section and this pull request's body, and change the named
       requirements where an answer differs from what they are written to
@@ -168,6 +168,12 @@
       ```
 - [ ] 5.5 Tests: the scenarios of *Igor posts at most one notice for each seat-file change it
       applies*, with three processes applying one commit and exactly one notice posted
+- [ ] 5.6 Where the lore repository is private or `internal` and the store public, as #220's
+      visibility read finds them, or where GitHub does not answer the read of the lore repository
+      or of the store, a condition's report and a seat notice's record name commits and seats by
+      id and checks by name, and hold no path, file content, commit message or git error text.
+      Call #220's visibility read for the lore repository too. Tests: the scenarios of *A lore
+      read writes nothing of a private repository to a public state branch*
 
 ## 6. Removing what called pulling future work
 

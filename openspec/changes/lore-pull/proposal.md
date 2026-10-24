@@ -23,11 +23,12 @@ Terms used here:
   lore repository itself.
 - [#176](https://github.com/adamstallard/igor/issues/176) is the issue this change specifies.
 
-Every decision below is Adam's. Decisions 8 and 9 were this change's proposals, which Adam
+Every decision below is Adam's except decision 40, which this change proposes for his approval. Decisions 8 and 9 were this change's proposals, which Adam
 accepted on 2026-10-18; decisions 11 to 31 were its proposals and open questions, which Adam
 answered on 2026-10-19; and decisions 32 to 35 are Adam's answers, given on 2026-10-20, to the
 open questions this change listed on 2026-10-19. Decisions 36 to 38 are his answers of
-2026-10-21, which amend decisions 13 and 14. Decision 13 replaces the one this change proposed,
+2026-10-21, which amend decisions 13 and 14, and decision 39 is his of the same day, made while
+he reviewed #220 (`visibility-guard`). Decision 13 replaces the one this change proposed,
 and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in issue #204.
 
 1. **A pull whose configuration fails the startup checks is refused** (Adam, 2026-10-18). The
@@ -292,10 +293,34 @@ and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in is
     answering #171's question on a seat file added back with old ciphertext from history). Such a
     file is an added file like any other, so its owner learns that Igor spends from it again. This
     replaces decision 14's rule that an added seat file gets no notice.
+39. **A lore read writes nothing of a private repository to a public state branch** (Adam,
+    2026-10-21). The lore repository, which holds `igor.config.yaml`, can be private while the
+    store, the repository `destination` names, whose state branch holds Igor's records, is
+    public. This change writes records to that state branch, such as a condition's report and a
+    seat notice's record. Where the lore repository is private and the store public, each such
+    record names commits by id, seats by id and checks by name, and holds no path, file content,
+    commit message or text of git's error. A seat's id is also the name of its file under
+    `seats/`, so naming the seat gives away that one path; that is accepted, because a record must
+    say which seat it means. #220 forbids writing a private repository's content to a public
+    state branch, but #220's rule reaches only repositories a role works, and counts as content
+    only text a run produced or read, such as a transcript. The lore repository is not a worked
+    repository, and a path or commit message is not a run's text, so #220's rule does not cover
+    these records, and this change's requirement states the rule itself.
+40. **Two choices this change makes for decision 39**, proposed by its author on 2026-10-24 for
+    Adam's approval, each copying #220's choice for worked repositories: an `internal` lore
+    repository counts as private, and where GitHub does not answer the visibility read of the
+    lore repository or of the store, the records are written as for a private lore repository.
 
 **Still open:** the findings below, for this change's next revision.
 
 Three consistency reads ran on 2026-10-21; their findings are listed newest first.
+
+**A problem in #220 (`visibility-guard`), found on 2026-10-24.** Nothing in this change waits on
+it; #220 is left to fix it. #220 opens a condition when a role meets a private repository, and
+the condition's report on the state branch names that repository. #220's proposal recommends
+accepting that, because "a repository a role's source names is already named in that role's file
+in the public store". Under decision 39 the role files can sit in a private lore repository
+apart from a public store, and there that reason fails.
 
 **Findings of the newest 2026-10-21 consistency read, made once decision 21 cited #179's
 decisions 43 and 49, for this change's next revision.** None is fixed, and none concerns poll
@@ -458,4 +483,5 @@ The lore repository is where an organization directs its Igors. Merging there sh
 - Text in #82, #171 and #179 that calls pulling future work, and #171's scenario that nothing
   comments on a pushed commit, are rewritten (tasks 6.1 to 6.3).
 - Depends on #171 for seat files, the read-cleared condition and the removal, on #179 for the
-  per-cycle reread and its heartbeat timer, and on #82 for the requirement it modifies.
+  per-cycle reread and its heartbeat timer, on #82 for the requirement it modifies, and on #220
+  for its visibility read.

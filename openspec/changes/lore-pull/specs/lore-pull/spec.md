@@ -305,7 +305,8 @@ the condition refused, or is the commit whose read cleared it or one of its ance
 refuses the commit, and runs that cycle on the commit its applied ref names. This exception
 SHALL NOT cover a read the App check refuses (below), nor a read at process start, where the
 condition opens as for any refused read. The condition's report SHALL name the commit, the file that
-failed and the check it failed, and SHALL quote no value from the file.
+failed and the check it failed, except as *A lore read writes nothing of a private repository to a
+public state branch* forbids, and SHALL quote no value from the file.
 
 A lore read *fails for a local reason* where a git or filesystem operation that puts the commit in
 the process's working tree, or reads a file from it, fails, rather than a check on what the
@@ -724,3 +725,52 @@ checkout's working tree as it finds it, uncommitted edits included.
 
 - **WHEN** a developer edits `roles/backend.yaml` without committing and runs `igor run backend`
 - **THEN** the run uses the edited file, and nothing is fetched
+
+### Requirement: A lore read writes nothing of a private repository to a public state branch
+
+The *store* is the repository `igor.config.yaml` names as `destination`, whose state branch
+holds Igor's records; `visibility-guard` (#220) calls it the lore store. Igor SHALL read the lore
+repository's visibility the way `visibility-guard`'s *A private repository is never worked
+through a public lore store* reads a worked repository's, with an `internal` lore repository
+counting as private, and SHALL read the store's visibility as that requirement does.
+
+Where the lore repository is private and the store is public, every record this capability writes
+to the state branch SHALL name a commit only by its id, a seat only by its id and a failed check
+only by its name, and SHALL hold no path, no file's content, no commit message and no text of
+git's error. A seat's id is its file's name under `seats/`, and naming it is allowed. These
+records are a condition's report and a seat notice's record. Where GitHub does not answer the
+visibility read of the lore repository, or of the store, or of both, Igor SHALL write the record
+as for a private lore repository. This requirement SHALL take precedence over every other
+requirement of this capability that names a file, a path or git's error in a record.
+
+#### Scenario: A refused commit in a private lore repository opens a condition with no path
+
+- **WHEN** the lore repository is private, the store is public, and a commit fails the startup
+  checks on `seats/bob.yaml`
+- **THEN** `lore:config:<role>` opens, and its report on the state branch names the commit's id
+  and the check that failed, but neither `seats/bob.yaml` nor the commit's message
+
+#### Scenario: An internal lore repository counts as private
+
+- **WHEN** the lore repository is `internal`, the store is public, and a commit fails the startup
+  checks on `seats/bob.yaml`
+- **THEN** the condition's report on the state branch does not name `seats/bob.yaml`
+
+#### Scenario: A visibility read GitHub does not answer writes as for a private lore repository
+
+- **WHEN** a commit fails the startup checks on `seats/bob.yaml`, and GitHub does not answer the
+  lore repository's visibility read
+- **THEN** the condition's report on the state branch does not name `seats/bob.yaml`
+
+#### Scenario: A seat notice's record from a private lore repository holds only ids
+
+- **WHEN** the lore repository is private, the store is public, and Igor applies a change to
+  `seats/bob.yaml`
+- **THEN** the notice's record on the state branch names the seat `bob` and the commit's id, and
+  no path and no commit message
+
+#### Scenario: A public lore repository's reports keep their paths
+
+- **WHEN** the lore repository and the store are both public, and a commit fails the startup
+  checks on `seats/bob.yaml`
+- **THEN** the condition's report names `seats/bob.yaml`, the commit and the check
