@@ -15,12 +15,14 @@ for is still affected, and clear only when none is; no probe item and no cooldow
 it. A notice SHALL have no stored record. Like the conditions `condition-backoff` defines, which
 are rebuilt from the execution log, the ledger, each process rebuilds it each cycle from what
 affects it: the ledger rows and `work-triage`'s flagged-hold record entries, #179's heartbeat
-files, and, on its own host, its own state directory, for absent files, and its own log, for
-refused deletes. The Igor's own log on the host
-SHALL list the items that keep each notice open, each time that list changes. Two conditions
+files, and two sources on its own host. It reads its own state directory for files that are
+absent and files no entry names, and its own log for refused deletes. The Igor's own log on the host
+SHALL list the items that keep each notice open, each time that list changes. Three conditions
 are notices: the one `graceful-handoff` opens for a question the Igor could not keep, whose
-item is affected while it is flagged-held, and the stuck-release one `work-triage` opens, whose item
-is affected while its requested release is stuck.
+item is affected while it is flagged-held; the stuck-release one `work-triage` opens, whose item
+is affected while its requested release is stuck; and the mismatch one `work-triage` opens,
+whose item is affected while its flagged-hold record, the ledger and the files on a state
+directory disagree.
 
 #### Scenario: A notice opens on its first occurrence
 
@@ -53,6 +55,26 @@ is affected while its requested release is stuck.
 - **THEN** the condition stays open, and the Igor's log lists the other
 - **AND** once the other is released too, the condition clears
 
+### Requirement: Each notice points its operator to a runbook
+
+The Igor's own log on the host SHALL name, with each notice, the section of the deployment
+guide, `docs/deployment.md`, that is its runbook, and `igor conditions` names it as *Every open
+condition is readable without naming a role* says. For each notice
+kind, `question not kept`, `release stuck` and `hold mismatch` or the keys gate two names for
+them, the runbook SHALL say what the notice means; where to investigate: the question file and
+session-log copies under `flagged-questions/<tracker>/<repo>/<item>/` in the state directory,
+and the Igor's own log on the host, which names the items and state-directory ids; and the
+exact `igor release` command, with any flag, that clears it.
+
+#### Scenario: A notice names its runbook
+
+- **WHEN** the notice for a question not kept, the stuck-release notice or the mismatch notice
+  opens
+- **THEN** its text in `igor conditions` and in the Igor's log names the deployment guide's
+  section for that notice
+- **AND** that section gives the `igor release` command that clears it
+
+
 ## MODIFIED Requirements
 
 ### Requirement: Every open condition is readable without naming a role
@@ -69,8 +91,9 @@ time SHALL be the ones `condition-backoff`'s
 *Reporting tells a refused credential from an unreadable one, and clears nothing* has budget
 reporting print, read from the same conditions. A notice, as *A notice opens at once, stops
 nothing, and stays open while an item is affected* defines it, has no scope, count or probe:
-the listing SHALL say that it stops nothing and clears when no item is affected, and SHALL name
-no item, which only the Igor's log on the host names. Each notice is listed once, though every process
+the listing SHALL say that it stops nothing and clears when no item is affected, SHALL name the
+section of the deployment guide that is its runbook (*Each notice points its operator to a
+runbook*), and SHALL name no item, which only the Igor's log on the host names. Each notice is listed once, though every process
 rebuilds it; where the ledger or the flagged-hold record it is rebuilt from cannot
 be read, the listing SHALL say so.
 

@@ -352,6 +352,90 @@ which it was, and `matched` which fields named the limit — `result` alone is t
 prose, which a crash on an item about rate limits trips too. Readable with `git show`, no
 checkout needed.
 
+## Flagged holds and their notices
+
+A *flagged run* is one whose worker met a question with a category, or ended before the Igor
+had its completed report. When such a run stops on a question it could not settle, it hands the item back without
+asking the question there, and the item is *flagged-held*: Igor does not work it again until it
+is released. The question is kept on the host instead, in
+`flagged-questions/<tracker>/<repo>/<item>/` under the state directory (`/var/lib/igor` under
+systemd and Docker, otherwise `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when
+`XDG_STATE_HOME` is unset), as a randomly named `.md` file with the run's session-log copies
+beside it, whose names start with the same random name. Only the host has them; nothing of the question goes to any
+branch. On the state branch, Igor keeps a record of flagged holds, with one entry for each hold
+naming its state directory's id and its question file's random name.
+
+To release an item, read its question file, then on that host:
+
+```bash
+igor release github/acme/api/12
+```
+
+It prints the id of the state directory it runs against and deletes that item's files there. Igor
+cannot yet tell who edited an item, so `igor release` is the only way to release one; once it
+can (#141), an edit by someone with write access to the item's repository releases it too. A
+reply never releases it. Where `igor release` says other state directories still hold files,
+find the hosts whose directories have those ids, since `igor release` prints its own
+directory's id on each host, and run it there.
+
+`igor conditions` can list three notices about flagged holds. None stops any work, and each
+names its section below. The Igor's log on the host names the items and state-directory ids
+behind each one; the notices themselves name no item.
+
+Copying a state directory while an Igor uses it, as by restoring a volume snapshot beside the
+original, is not supported. If it happens, it shows up as a hold mismatch.
+
+### Notice: question not kept
+
+A flagged run could not write its question file, so the question is not on the host. Its
+ledger row reads `needs a person, question not kept`.
+
+The Igor's log names the item and the path it could not write. Usually the state directory is
+not writable by the service user, or its id file is missing, unreadable or a link. Fix that
+first. Any session-log copies the run did move are in the item's directory.
+
+Then release the item with `igor release <tracker>/<repo>/<item>`. If the log says the run had
+no state-directory id, its hold has no entry and nothing on disk to delete, and a hold mismatch
+opens for it as well; release it with `igor release <tracker>/<repo>/<item> --files-gone`.
+
+### Notice: release stuck
+
+A release was asked for and cannot finish, for one of two reasons. A delete was refused, or no
+running Igor process uses the state directory the hold names.
+
+The Igor's log names the item, the state-directory id and, for a refused delete, the path. A
+delete is refused when a file or a directory on its path is a link, a file has more than one
+hard link or is not a regular file, or the file name the hold records is not one Igor writes.
+In each case something other than Igor changed the directory or the record: read what is at
+the path and remove it yourself. Then run `igor release <tracker>/<repo>/<item>` on that host,
+which deletes the rest; if what you removed was the question file itself, add `--files-gone`.
+
+For a directory no process uses, run `igor release <tracker>/<repo>/<item>` on the host whose
+state directory has that id. If that directory no longer exists, say so by releasing every hold
+that named it at once, from any host, with `igor release --batch --directory <id>`.
+
+### Notice: hold mismatch
+
+The record of flagged holds on the state branch and the files in a state directory disagree.
+The Igor's log says which of three things it found:
+
+- **A hold names a question file that is not there.** A crash came between deleting the file
+  and clearing its entry, a lost record was rebuilt after a release, or the directory is a copy
+  taken before the file was written. Check that no state directory with that id still has the
+  file, looking under `flagged-questions/` on each host whose `igor release` prints that id,
+  then run `igor release <tracker>/<repo>/<item> --files-gone`. To clear every hold of
+  this kind on this host's state directory at once, run `igor release --batch --files-gone`.
+- **Files are there that no hold names.** A copy of the directory released the hold first, the
+  directory took a new id after its id file was lost, a lost record dropped a run that stopped
+  part-way, or a process went on writing after its heartbeat had stopped long enough for the
+  others to count it gone. Read any question file among them, then run
+  `igor release <tracker>/<repo>/<item> --delete-unnamed` on that host.
+- **A hold has no entry at all.** Its run had no state-directory id. There is nothing on disk
+  to delete; run `igor release <tracker>/<repo>/<item> --files-gone`.
+
+A batch release never touches a hold whose question file still exists: those are released one
+item at a time, after you have read the file.
+
 ## When something is wrong
 
 | symptom | cause |

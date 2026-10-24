@@ -44,20 +44,20 @@ show that flagged hold, so the run's claim on the item is what keeps it from bei
 of the item's flagged holds, its *flagged-hold record*, SHALL NOT expire, and where that record is missing or
 unreadable the item SHALL stay flagged-held rather than be worked again. The flagged-hold record SHALL hold
 one *entry* for each flagged hold, naming the *state-directory id* (`graceful-handoff`) of the
-directory the run keeps its files in, the random name of its question file, and the process:
+directory the run keeps its files in, the random name of its question file, which also
+prefixes the name of each of its session-log copies (`graceful-handoff`), and the process:
 its rank, or `igor run` with that run's id. It SHALL name no host. A run SHALL add its flagged hold's
 entry before it writes any file under `flagged-questions`. Its `needs a person` row SHALL name
 the same state-directory id and question file name, both opaque, so that nothing about the
 host leaks; where the record has lost the run's entry by the time it appends the row, the run
 SHALL add the entry again first. A run with no readable state-directory id writes no file and
-adds no entry; its row reads `needs a person, question not kept` and names no id, and with
-nothing to delete its flagged hold is released by the first release that covers it. What appends
-its `released` row, with no entry to clear, is open (the proposal's Still open), and gate two
-does not build this release until it is settled. The Igor SHALL know a flagged-held item from the ledger: from a
+adds no entry; its row reads `needs a person, question not kept` and names no id. Such a
+flagged hold opens the notice for a question not kept (`graceful-handoff`) and, with no entry to
+clear, is also a mismatch, below, which the operator releases with `igor release`. The Igor SHALL know a flagged-held item from the ledger: from a
 `needs a person` row with no `released` row naming the same flagged hold. Where the flagged-hold record is
 lost, any process SHALL rebuild it in full from those rows, an open entry for each flagged hold whose
-`needs a person` row has no `released` row, naming the id and file name the row names,
-keeping any entry written since the loss.
+`needs a person` row has no `released` row and names a state-directory id, naming the id and
+file name the row names, keeping any entry written since the loss.
 
 A flagged-held item SHALL be released in either of two ways. The Igor's operator SHALL be able to
 release it on the host with `igor release <tracker>/<repo>/<item>`, such as
@@ -81,7 +81,7 @@ delete.
 Where the named file is absent, no process clears a flagged hold's entry: only the operator's flag,
 below, does, so a copied state directory, finding nothing, can never release a flagged hold. That
 includes an entry whose process deleted the named file and then crashed, retired or exited
-before clearing it; the stuck notice, below, and that flag are the way out. A flagged hold whose
+before clearing it; the mismatch notice, below, and that flag are the way out. A flagged hold whose
 `needs a person` row says its question was not kept named no question file; its entry is
 cleared by deleting its session-log copies. After clearing
 an entry, the process SHALL read the flagged-hold record again and, where the entry is cleared and no
@@ -113,23 +113,57 @@ succeeds. Until each flagged hold is released,
 `igor release` SHALL name the ids of the state directories whose entries remain. With a flag
 gate two names, which the operator passes after checking that no state directory with that id
 still holds the flagged hold's files, `igor release` SHALL clear an entry whose named file is absent,
-deleting nothing. No process and no `igor release` SHALL delete in a state directory other
+deleting nothing, and SHALL append the `released` row of a flagged hold that has no entry. With
+another flag gate two names, `igor release` SHALL delete the item's files in its own state
+directory that no open entry names, by the same rule against following a link; the operator
+passes it after reading any question file among those files.
+
+`igor release` SHALL also release in a batch, with flags gate two names, but only flagged holds
+that leave no question file to read. A batch *by cause* acts only on entries naming the id of
+the state directory it runs against, the one directory whose files it can see, and releases
+those whose named question file is absent there. A batch *by id* names the id of a state
+directory no live process answers for, the second stuck case below, which the operator
+states no longer exists by passing that flag with its id; it releases every entry naming that id. A batch clears such entries,
+appends their `released` rows and deletes nothing. A flagged hold whose question file
+still exists SHALL be released only by `igor release` naming its item, after the operator has
+read that file. No process and no `igor release` SHALL delete in a state directory other
 than its own.
 
-A requested release is *stuck* for a flagged hold in three cases. First, a delete is refused. Second,
-its entry is uncleared and no live process answers for its state directory: every rank and
-`igor run` that #179's heartbeat files show with that id is *gone*, as #179's *A retired rank
-does not hold its items forever* judges by the heartbeat, which records the process's
-state-directory id. Third, its entry is uncleared and its named file is absent, so only the
-operator's flag can clear it. Any process of the role that finds a flagged hold stuck, the process
-whose delete was refused for the first case and any process for the others, SHALL open a
+A requested release is *stuck* for a flagged hold in two cases. First, a delete is refused.
+Second, its entry is uncleared and no live process answers for its state directory: every rank
+and `igor run` that #179's heartbeat files show with that id is *gone*, as #179's *A retired
+rank does not hold its items forever* judges by the heartbeat, which records the process's
+state-directory id. Any process of the role that finds a flagged hold stuck, the process
+whose delete was refused for the first case and any process for the second, SHALL open a
 notice under a key of its own, distinct from the one `graceful-handoff` opens for a question
 it could not keep, such as `release stuck`, which gate two names; `stuck-conditions`' *A
 notice opens at once, stops nothing, and stays open while an item is affected* says how it is
 rebuilt and cleared. The Igor's own log on the host SHALL name each stuck item and the ids of
 the state directories involved, and tell the operator to run `igor release
 <tracker>/<repo>/<item>` on the host whose state directory has each id; the notice puts
-nothing of the item on any branch. How write access is read and who
+nothing of the item on any branch.
+
+Any *mismatch* between the flagged-hold record and the ledger, on the state branch, and the
+files under `flagged-questions` on a host SHALL open a notice under a key of its own, distinct from the other
+two, such as `hold mismatch`, which gate two names, and the operator resolves it with `igor
+release`. Each live process, a rank at the start of each cycle or an `igor run` at its start,
+SHALL compare the record with its own state directory, and any process SHALL compare the
+record with the ledger. A mismatch is any of these:
+- an open entry naming the directory's id, whose flagged hold has its `needs a person` row, and
+  whose named question file is absent there, other than a flagged hold whose question was not
+  kept, which is cleared by deleting its session-log copies; this includes a crash between
+  deleting the named file and clearing the entry, a rebuilt record that reopens a cleared
+  entry, and a copy taken before a question file was written;
+- a file under `flagged-questions` in the directory, a question file or a session-log copy,
+  whose `<name>` no open entry names, as after a copy
+  taken after a question file was written released its flagged hold, after a lost record
+  dropped a part-way run's entry, or after a process #179 judged gone went on writing;
+- a `needs a person` row with no `released` row and no entry, as for a run with no readable
+  state-directory id.
+A mismatch that lasts only while a live process finishes a release it began, between deleting a
+named file and clearing its entry, may open the notice for that cycle; it closes once the entry is cleared. The Igor's own log
+on the host SHALL name each item, the state-directory id and which of these it found, and the
+notice puts nothing of the item on any branch. How write access is read and who
 made an edit are #141's rules; until #141 lands, no edit can be attributed, and `igor release`
 is the way to release a flagged-held item.
 
@@ -236,7 +270,10 @@ is the way to release a flagged-held item.
 - **WHEN** a flagged hold's entry names a question file that no state directory with its id holds, as
   after the id file was lost and the directory took a new id
 - **AND** the item's release by an edit has been requested
-- **THEN** no process clears that entry, and the notice names its id
+- **THEN** no process clears that entry, and the stuck-release notice opens, since no live
+  process answers for the old id
+- **AND** a process on the directory with the new id opens the mismatch notice for the files
+  there that no open entry names
 - **AND** with gate two's flag, after the operator has checked that no state directory still holds
   the named file, `igor release` clears that entry without deleting anything
 
@@ -284,7 +321,7 @@ is the way to release a flagged-held item.
 
 - **WHEN** a process deleted a flagged hold's named file and then crashed before clearing its
   entry
-- **THEN** no process clears the entry, the stuck-release notice opens, and with gate two's flag
+- **THEN** no process clears the entry, the mismatch notice opens, and with gate two's flag
   `igor release` clears it
 
 #### Scenario: An entry is not cleared while its run is part-way
@@ -312,6 +349,38 @@ is the way to release a flagged-held item.
   has S's id but not the file
 - **AND** a release of the item has been requested
 - **THEN** a process on the copy finds no named file and clears nothing
+
+#### Scenario: A file no entry names opens the mismatch notice
+
+- **WHEN** state directory S holds a session-log copy or question file under `flagged-questions`
+  that no open entry names, as after a copy of S released its flagged hold
+- **THEN** a process on S opens the mismatch notice, its log naming the item, S's id and that
+  it found files no entry names, and nothing of the item on any branch
+- **AND** after reading any question file among them, the operator deletes those files with
+  `igor release` and gate two's flag
+
+#### Scenario: A flagged hold with no entry opens the mismatch notice
+
+- **WHEN** a flagged run with no readable state-directory id appends `needs a person, question
+  not kept`, so its flagged hold has no entry
+- **THEN** any process, comparing the record with the ledger, opens the mismatch notice
+- **AND** `igor release` with gate two's flag appends that flagged hold's `released` row
+
+#### Scenario: A batch release leaves out a flagged hold whose question file exists
+
+- **WHEN** no live process answers for state directory S, which the operator states no longer
+  exists, and entries naming S's id remain for two flagged holds
+- **AND** state directory T holds the question file of a third flagged hold
+- **THEN** a batch `igor release` by S's id clears the two entries and appends their `released`
+  rows, deleting nothing
+- **AND** no batch releases the third flagged hold; only `igor release` naming its item does
+
+#### Scenario: A batch by cause acts only on its own directory
+
+- **WHEN** entries naming state directory T's id include one whose question file is absent from
+  T and one whose question file is present
+- **AND** an entry naming another directory's id has a question file that is absent there
+- **THEN** a batch `igor release` by cause, run against T, releases only the first
 
 #### Scenario: A later flagged hold of the same item is independent
 

@@ -44,7 +44,9 @@ a category; that text is only in the session logs. It SHALL also list the path o
 log of the execution that open pull request #174 copies: this change depends on #174 copying
 each step's log before the next reset, the worker's, those of #153's later model steps and
 #189's second worker run included (the proposal's Still open). When the execution ends the Igor
-SHALL move every such copy into the same directory beside the file, mode 0600, and SHALL do
+SHALL move every such copy into the same directory beside the file, each named with the
+question file's random `<name>` as its prefix, so that the entry naming that `<name>` names
+the copies too, mode 0600, and SHALL do
 so before it writes the file, so the file can name a copy whose move was refused. Where #174 made
 no copy of a step's log, the file SHALL say so in place of that path. Whenever the Igor
 creates, moves or deletes a file under `flagged-questions`, the question file and the session
@@ -58,11 +60,11 @@ the first time it uses the directory, and keeps in a file directly in it, on the
 mode 0600. The Igor SHALL create and read that file by the same rule against following a link,
 and SHALL treat a link, a hard-linked or non-regular file, or an unreadable one there as no
 id. `work-triage` says how flagged-hold records use the id. Copying a state directory while an Igor
-process uses it, as by restoring a volume snapshot beside the original, is unsupported; the only
-protection, against a copy taken before a question file is written, is `work-triage`'s rule that
-an entry is cleared only by deleting the file it names, and gate two builds no other check. Where a
-copy is made, the operator recovers with the stuck-release notice and `igor release`, where an
-entry remains for them to act on (the proposal's Still open). The source of each move,
+process uses it, as by restoring a volume snapshot beside the original, is unsupported. A copy
+taken before a question file is written cannot release a flagged hold, since `work-triage`
+clears an entry only by deleting the file it names; one taken after can, leaving the original's
+files, which no open entry then names. Any copy shows as a mismatch, which the
+operator resolves with the mismatch notice and `igor release` (`work-triage`). The source of each move,
 #174's copy of a session log in the state directory, SHALL be checked by the same rule against following a link, every
 component from the state directory down to the copy. The Igor SHALL NOT check the
 directories above the state directory. The Igor SHALL refuse the action when any checked
