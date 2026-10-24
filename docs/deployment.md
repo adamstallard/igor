@@ -185,11 +185,11 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    open a new one — a token exported into one shell is invisible to every other.
 
 4. **Check `igor budget`.** The seat should print its windows — read live where the credential
-   answers with them, and otherwise the last reading a worker run or the server's probe reported.
-   A seat whose variable is unset reports its credential unreadable and is skipped, never
-   substituted with whatever login is ambient. That is a different row from a seat nothing has
-   read yet, which wants a reading — the next worker run or the probe takes one — and from a seat
-   that has run out, which wants waiting.
+   answers with them, derived from observation and record where it does not. A seat whose
+   variable is unset reports its credential unreadable and is skipped, never substituted with
+   whatever login is ambient. That is a different row from a seat nobody has observed, which
+   wants `igor observe` run on the owner's machine, and from a seat that has run out, which
+   wants waiting.
 
 `igor budget` reading a seat is necessary and not sufficient. Reading inherits this process's
 environment, so an ambient login or a keychain can answer for a seat that names no token source
@@ -242,7 +242,8 @@ earns its place there.
 
 Whichever source names it, **do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the
 variable `claude` itself reads, so it authenticates everything igor spawns rather than the seat
-you named.
+you named — and `igor observe`, which has to read a window under your own login, gets the seat's
+credential instead and reports that it carries no subscription.
 
 This does not remove the token from the `igor` process or the worker it spawns, which is where
 it has to be. It removes it from everything else you run.
@@ -279,10 +280,17 @@ nothing else is what stands in for the isolation there.
 A `claude setup-token` credential lasts **one year**, and the lifetime cannot be configured.
 Nothing warns beforehand.
 
-What you get instead is a clear failure: the seat reports its credential unreadable in
-`igor budget` — distinctly from a seat nothing has read and from one that has run out — and
-a worker's handoff carries the message the CLI actually gave rather than an exit code. Rotating
-is the same command the colleague ran the first time, and step 2 again.
+What you get instead is a clear failure. The provider refuses each run on the seat, and after
+three refusals of one credential in a row the seat stops on `seat:<id>:credential`: no role
+draws on it, and `igor budget` says so on the seat's own line, distinctly from a credential
+this machine could not read. While it is stopped, one item is let through after a cooldown to
+test whether the provider still refuses that credential, and `igor budget --credentials` prints
+which credential resolves and when that item is due.
+
+To rotate, the seat's owner runs `claude setup-token` again, signed in as that seat, and you
+store the new token as in step 2 of *Before it can run*. You do not wait for the test item: the
+seat is chosen again on the next cycle, because Igor reads the new token, sees a credential the
+provider never refused, and clears the stop.
 
 A calendar reminder eleven months out is cruder than it should be and is currently the only
 way to be told in advance.
@@ -326,6 +334,7 @@ which disappears when the manager cleans up. Point at a stable interpreter.
 
 ```bash
 igor budget                 # what each seat has left, and what state each one is in
+igor budget --credentials   # which credential each seat resolves, and any refusals of it
 igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
 
