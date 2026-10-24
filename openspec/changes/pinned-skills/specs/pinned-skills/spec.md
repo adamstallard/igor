@@ -168,11 +168,11 @@ Running with no worker user, so that the worker runs as the user Igor runs as, i
 same-user mode; `igor run` is the one command that runs that way (#175).
 
 An `igor run` that crashes leaves its home and the plugin directory it assembled (*Skills come
-from one plugin directory the server names*). At its start, before its first cycle, the next
-`igor run` of the role SHALL remove both, with the crashed run's trees, wherever it can take the
-crashed run's lock. #179's (`concurrent-instances`) *The sweep removes trees by rank, never by
-age* defines that lock, on the file `<role>-0-<run id>.lock`, and the sweep. `igor run --plan`
-SHALL remove nothing.
+from one plugin directory the server names*). The next `igor run` of the role removes both at
+its start, with the crashed run's trees. The rule, and the lock that tells a run that an earlier
+run of its role is gone, are #179's (`concurrent-instances`) *The sweep removes trees by rank,
+never by age*; the home and plugin directory it removes are the ones this capability defines.
+`igor run --plan` SHALL remove nothing.
 
 Before every model step Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
@@ -266,13 +266,12 @@ task.
 - **AND** that home is reset as a worker user's is
 - **AND** each run's home is gone once that run ends
 
-#### Scenario: A run removes what a crashed run left in the state directory
+#### Scenario: A plan removes nothing
 
-- **WHEN** an `igor run generalist` starts, and Igor's state directory holds the home and the
-  plugin directory of an earlier run of `generalist` that crashed, whose lock on
-  `generalist-0-<run id>.lock` is free, and those of a run still holding that lock on its own file
-- **THEN** before its first cycle it removes the crashed run's home and plugin directory
-- **AND** it leaves the other run's home and plugin directory
+- **WHEN** a person runs `igor run generalist --plan`, and Igor's state directory holds the home
+  and the plugin directory, both of which a run keeps there, of an earlier run of `generalist`
+  that crashed
+- **THEN** the plan removes neither
 
 #### Scenario: The worker cannot change the template
 

@@ -185,7 +185,8 @@
     home is named by the run's id, such as `<state directory>/home/<role>-<run>`, under Igor's
     state directory, so two `igor run`s of one role at once share no home and neither's reset
     replaces `~/.claude` under the other's call. The run id is the one #179 gives each run, which its
-    trees also carry, and the run removes only its own trees (#179, #175). Within one run the home lasts across its tasks.
+    trees also carry, and the run removes its own trees and those a crashed run left (#179's
+    decision 39). Within one run the home lasts across its tasks.
     *Rejected:* one home per role, which two runs of the role at once would share; and a lock
     that makes the second run refuse.
 24. **A process that escaped its group is killed by #175's kill, not by one of this change's**
@@ -248,8 +249,8 @@
 32. **`lore-search` (#216) owns the definition of Igor's state directory** (Adam, 2026-10-21):
     `$STATE_DIRECTORY`, else `$XDG_STATE_HOME/igor`. This change cites #216's `graceful-handoff`
     requirement *A handoff states what was done, what remains, and who could continue*, which
-    defines it, and names no path itself. Issue #204's archive order places #216 twelfth,
-    after this change, so until #216 archives, this change's spec cites a requirement not yet in
+    defines it, and names no path itself. Issue #204's archive order places #216 after this
+    change, so until #216 archives, this change's spec cites a requirement not yet in
     force. Whether Adam's permission to cite ahead covers it is the question *Permission to cite
     #216 ahead*, under *Still open*.
 33. **Every step's session log is copied before the next reset** (Adam, 2026-10-21, #216's
@@ -267,7 +268,9 @@
     removes three things of each earlier `igor run` of its role whose process is gone: its trees,
     its home, and the per-run plugin directory decision 20 assembles from the person's installed
     skills. #179's sweep states the rule, the home and plugin directory included, and this
-    change cites it. Each `igor run` runs as rank 0 and, while it runs, holds an exclusive lock
+    change only cites it (Adam, 2026-10-24); this change builds the removal of the home and
+    plugin directory it defines (task 2.3). As #179 states the rule: each `igor run` runs as
+    rank 0, the `0` in its lock file's name, and, while it runs, holds an exclusive lock
     on its own file, `<role>-0-<run id>.lock`, in the directory where trees are kept. The system
     releases the lock when the run's process ends, so a run whose lock another run can take is
     gone (#179's decision 48, which Adam confirmed on 2026-10-21). Where the new run cannot take
@@ -296,7 +299,30 @@
   - **Permission to cite #216 ahead.** #204 places #216 after this change, and decision 21's
     permission to cite changes that archive later names #171, #82, #179 and #153, but not #216.
     *Recommendation:* extend decision 21 to #216, as decision 32 already assumes.
-- **Findings from the same 2026-10-21 consistency reads, for this change's authors.** Each needs
+  - **A seat due a probe that #143 forbids probing** (2026-10-24 read). Where a seat is due a
+    probe at start but #143's hourly limit or five-hour back-off holds it off, while another seat
+    has a reading the gate would choose, the check may not probe that seat, and decision 28 has
+    it spend the gate's seat only where no seat is due a probe. Whether it spends the gate's seat
+    or waits is unsaid. *Recommendation:* the check
+    spends the seat the gate chooses whenever no seat may be probed.
+- **Findings of the 2026-10-24 consistency read, for this change's authors:**
+  - Under #153 the one model step with a resumed call is the step that writes a post where no
+    worker run came before it, such as a reply to a mention. *Every model step in the worker's
+    home starts from Igor's template* says the steps in that home are the worker and the steps
+    #153 runs after it, which leaves that step out. So its `HOME`, its reset and its log copy are
+    unsaid, though this change's resume scenario and #153 both assume the reset home. To settle
+    with #153.
+  - *The Igor reads no file on the worker's behalf through a link* (#175) covers the worker's
+    tree and outbox only, not the worker's home this change cites it for. #175 records the gap;
+    either #175 widens the rule to the home, or this change states its own rule for reading
+    session logs there.
+  - #175 restates #179's sweep of a crashed run's home and leaves out the plugin directory;
+    #175 should cite #179's *The sweep removes trees by rank, never by age*, as this change does.
+  - No scenario tests a probe exclusion holding off the check, the check under `igor run`
+    spending the run's local seat, or the copy of #189's second worker run's log.
+  - Igor's startup check refusing a plugin directory whose `skills/` is empty (*Igor confirms its
+    skills load before its first model call*) is a choice no decision lists.
+- **Findings from the 2026-10-21 consistency reads, for this change's authors.** Each needs
   a change to this text that the authors can make without Adam; none is made yet:
   - A dry run is `igor run --plan`, so decision 20's fallback covers it. Whether `--plan`
     assembles a plugin directory is unsaid; #179 has `--plan` change nothing, so assembling one
@@ -325,10 +351,12 @@
     defined; rationale sits in requirement text; task 0.3 is ticked though the server's version
     was never measured; spec choices on the log copy, the check's pass and `plugin.json`'s keys
     are not among the decisions; and *Why* describes issue #152 as it was.
-  - Task 1.10 of #175, built before this change, removes the usage read (`runUsage`), so this
-    change's exception for that read in *Every model call names the plugin directory*, and its
-    scenario, should go. This change's task 2.1 credits #143's decision 37 with the same removal;
-    one of the two citations is wrong.
+  - Task 1.10 of #175, built before this change, removes the usage read (`runUsage`), carrying
+    out #143's decision 37, so this change's two citations for the removal, of #175 and of
+    #143's decision 37, are both right. `runUsage` is then gone before this
+    change is built, so decision 10, the exception for that read in *Every model call names the
+    plugin directory*, its scenario, task 2.2's mention of it and *Impact*'s `src/budget.ts
+    (runUsage)` all describe code that no longer exists and should go.
   - When the startup check is a seat's first probe, its spend should be recorded as a probe,
     so #143's hourly limit and back-off count it.
   - The scenario on a session log replaced by a link passes on permissions alone; a link to a
