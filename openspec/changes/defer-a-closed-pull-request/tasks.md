@@ -2,10 +2,8 @@
 
 - [x] 1.1 One added `work-triage` requirement: a pull request an Igor opened, closed without
       merging, defers its item and asks why
-- [x] 1.2 The rule that only someone with write access lifts a deferral is carried in
-      `condition-backoff`'s existing modification of *"An item handed back is not re-worked until
-      something answers"*, not here, so that requirement has one pending modification rather than
-      two
+- [x] 1.2 A modified *"An item handed back is not re-worked until something answers"*: only
+      someone with write access lifts a deferral
 
 ## 2. Finding the close
 
@@ -25,7 +23,7 @@
 
 - [ ] 3.2 Do not ask again while the item stays deferred
 
-## 4. Who can lift a deferral — implementing `condition-backoff`'s amended requirement
+## 4. Who can lift a deferral
 
 - [ ] 4.1 A reply lifts a deferral only where its author has write access to the repository,
       read as `permissions.push`
@@ -45,6 +43,6 @@
 
 ## 6. Merging
 
-- [ ] 6.1 When merging, if `main` still says "until a reply or an edit answers it"
-      (`docs/architecture.md` §5.0.2), reword it to say only someone with write access lifts a
-      deferral. #101 carries the same task; whichever merges first does it
+- [ ] 6.1 Before this change's pull request merges, check `docs/architecture.md` §5.0.2 on `main`.
+      If that section still says "until a reply or an edit answers it", reword the sentence to say
+      only someone with write access lifts a deferral
