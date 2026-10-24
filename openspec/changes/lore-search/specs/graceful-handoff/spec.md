@@ -28,7 +28,7 @@ same `<tracker>/<repo>/<item>` the item's transcript path has on the state branc
 where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when
 `XDG_STATE_HOME` is unset. A systemd unit that sets `StateDirectory=igor` sets
 `STATE_DIRECTORY` to `/var/lib/igor`, and `deploy/docker-compose.yml` sets the variable to the
-same path itself. The file
+same path itself. The question file
 SHALL be mode 0600, owned by the user the Igor runs as, and the `flagged-questions` directory
 and every directory below it SHALL be mode 0700. The file SHALL record every category the worker's flag listed, each at most once, with the
 mark saying which belong to the question or questions the run stopped on (`task-execution`).
@@ -48,7 +48,13 @@ creates, moves or deletes a file under `flagged-questions`, the question file an
 log copies alike, it SHALL open every component of that path from its state directory down,
 the state directory itself, `flagged-questions` and each directory under it to the file,
 without following a link, such as with Linux's `openat2` and `RESOLVE_NO_SYMLINKS` or with
-`O_NOFOLLOW` on each component, as gate two chooses (task 4.12). The source of each move,
+`O_NOFOLLOW` on each component, as gate two chooses (task 4.12).
+
+The state directory SHALL also hold a *state-directory id*: a random id the Igor creates once,
+the first time it uses the directory, and keeps in a file directly in it, on the same volume,
+mode 0600. The Igor SHALL create and read that file by the same rule against following a link,
+and SHALL treat a link, a hard-linked or non-regular file, or an unreadable one there as no
+id. `work-triage` says how hold records use the id. The source of each move,
 #174's copy of a session log in the state directory, SHALL be checked the same way, every
 component from the state directory down to the copy. The Igor SHALL NOT check the
 directories above the state directory. The Igor SHALL refuse the action when any checked
@@ -70,13 +76,13 @@ ranks race, the question of a later flagged run of the same item that stops on a
 replaces any file still there, and that execution's session logs replace the earlier ones. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read
 `needs a person, question not kept`, as `task-execution` sets, and the Igor SHALL open a
-condition for its operator on that first failed write, once `condition-backoff` defines
-conditions, and a later failed write, for any item, reuses a condition already open, and write the path it could not write to its own log on the host. The condition is
+condition for its operator, the one `stuck-conditions`' *A held item's notices open at once,
+stop nothing, and stay open while an item is affected* describes, and a later failed write,
+for any item, reuses a condition already open; and the Igor SHALL write the path it could not write to its own log on the host. The condition is
 a notice only and SHALL stop no work;
 the failed write SHALL NOT delay or block the handoff. The condition's record on the state
-branch SHALL hold only its key, which gate two names, and the path SHALL appear nowhere on the state branch or the
-item. Gate two MAY ship before `condition-backoff`, the open change that defines conditions,
-lands; until then the ledger row and the log line alone record the failure. The Igor SHALL
+branch SHALL hold only its key, such as `question not kept`, which gate two names, and the path SHALL appear nowhere on the state branch or the
+item. The Igor SHALL
 NOT push, post or publish the file, or its text, anywhere.
 
 #### Scenario: Handoff content complete
@@ -155,7 +161,7 @@ NOT push, post or publish the file, or its text, anywhere.
 - **AND** a flagged run then stops on a question
 - **THEN** the Igor writes nothing through the link
 - **AND** it counts the write as failed: the handoff still posts, the ledger row's `reason` is
-  `needs a person, question not kept`, and a notice condition opens where conditions exist
+  `needs a person, question not kept`, and a notice condition opens
 
 #### Scenario: A hard-linked file under flagged-questions is refused
 
@@ -170,6 +176,12 @@ NOT push, post or publish the file, or its text, anywhere.
 - **AND** a later flagged run of the item stops on a question
 - **THEN** the Igor writes nothing to the pipe, counts the write as failed, and posts the
   handoff without waiting on the pipe
+
+#### Scenario: The state-directory id is created once and kept
+
+- **WHEN** the Igor first uses a state directory that holds no id
+- **THEN** it creates a random id there
+- **AND** every later process using that directory reads the same id
 
 #### Scenario: A link below flagged-questions is refused
 
@@ -211,7 +223,7 @@ NOT push, post or publish the file, or its text, anywhere.
 #### Scenario: The question-not-kept condition stops no work
 
 - **WHEN** the Igor cannot write a flagged run's question file for the first time
-- **THEN** it opens a condition, where `condition-backoff` is built, on that first failure
+- **THEN** it opens a condition on that first failure
 - **AND** the role goes on taking new items
 
 #### Scenario: A flagged run that stops on a question adds no question label
@@ -248,8 +260,7 @@ NOT push, post or publish the file, or its text, anywhere.
 - **THEN** the handoff posts as it would otherwise, giving the reason `needs a person`
 - **AND** the ledger row's `reason` is `needs a person, question not kept`
 - **AND** the Igor writes the path it could not write to its own log on the host
-- **AND**, where `condition-backoff` is built, it opens a condition whose record holds only its
-  key
+- **AND** it opens a condition whose record holds only its key
 
 #### Scenario: A flagged run's budget handoff still gives the reset time
 

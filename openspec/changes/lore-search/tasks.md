@@ -196,24 +196,30 @@
       the Igor moves #174's
       redacted copy of each step's log beside the file, before writing the file. A later flagged run's
       question replaces the file, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
-      the ledger row's `reason` reads `needs a person, question not kept`, a condition, once `condition-backoff`
-      is built, opens on the first failure as a notice that stops no work, holding only a key
-      gate two names, and the path goes only to the Igor's own log); and work triage keeps
+      the ledger row's `reason` reads `needs a person, question not kept`, a condition opens on
+      the first failure as a notice that stops no work, holding only a key gate two names, and the path goes only to the Igor's own log); and work triage keeps
       the item held whatever its handoff carries, with a hold record that never expires, knows a
       held item from its record, its host file, a `needs a person` ledger row or a `release
-      requested` one, records its keeping rank in the hold record, and releases it only by
-      `igor release <tracker>/<repo>/<item>` on the host, which deletes the logs and then the
-      question file first and, where a delete is refused, says it failed and leaves the item
-      held. It also releases it by an attributable edit by someone with write access, never a
-      reply: the hold
-      record names every host that may hold the item's files, each with its keeping rank or
-      `igor run`; a rank that sees the edit appends one `release requested` row for it; each
-      keeping rank deletes on its own host on its next poll and clears its entry, retrying a
-      refused delete on every poll; `igor release` clears the entry of the host it runs on;
-      whoever clears an entry reads the record again and, finding every entry cleared and no
-      `released` row yet, appends one; no rank deletes on another's host; and a stuck release,
-      meaning a refused delete or an entry no rank can clear, opens once, where conditions
-      exist, a notice under its own key naming the item and the hosts still to clear. Once
+      requested` one, and releases it in two ways only. One is `igor release <tracker>/<repo>/<item>`
+      on the host, which prints its state directory's id, deletes the logs and then the question
+      file before the item counts as released, and, where a delete is refused, says it failed and leaves the item held, and which
+      refuses a hold record with no entry unless gate two's flag is passed. The other is an
+      attributable edit by someone with write access, never a reply: each state
+      directory keeps a random id created once; the hold record has one entry per state
+      directory that may hold the item's files, naming its id and the process that last wrote
+      there (a rank, or `igor run` and its run id); a rank that sees the edit appends one
+      `release requested` row for it; each keeping process, a rank or a still running
+      `igor run`, deletes in its own state directory on its next poll and clears its entry,
+      retrying a refused delete on every poll; `igor release` clears the entry of the state
+      directory it runs against; whoever clears an entry reads the record again and, finding
+      every entry cleared and no `released` row yet, appends one; no process deletes in
+      another's state directory; and a stuck release (a refused delete, an entry whose keeping
+      process is gone by #179's heartbeat rule, or no entry at all) opens a notice under its own
+      key naming the item and the ids still to clear, or that the location is unknown. The two
+      held-item notices are built against `condition-backoff`'s merged code (`src/conditions.ts`):
+      each opens on its first occurrence, stops no scope, does not count toward stopping one,
+      is not cleared by a probe item, clears only when no item is still affected, and is listed
+      with its items in the Igor's log. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -241,7 +247,7 @@
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The keeping rank deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once* and *A release with a retired keeping rank waits for the operator* (their notices once `condition-backoff` is built), *A question kept by igor run waits for the operator*, *Two hosts that raced both release their files*, *Log copies from a question that was not kept are released*, *igor release names the hosts still to clear*, *A stuck-release notice names only the item and its hosts* (once `condition-backoff` is built), *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The keeping rank deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose keeping rank is gone waits for the operator*, *A running igor run finishes its own release*, *An igor run that has exited waits for the operator*, *Two ranks that raced in different state directories both release their files*, *Two ranks sharing a state directory share one entry*, *igor release names the state directories still to clear*, *A hold record with no entry stays held*, *A stuck-release notice names only the item and its directories*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A held item's notice opens on its first occurrence*, *A held item's notice stops no scope however often it recurs*, *A probe does not clear a held item's notice* and *A held item's notice clears when no item is affected*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
       does not release a held item*, *A held item's lost record leaves it held*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
@@ -285,6 +291,11 @@
       creates `/var/lib/igor` for that user, and that #175's trees volume at
       `/var/lib/igor/trees` (#175's task 8.3) mounts inside it without hiding it or changing
       its owner.
+
+- [ ] 3.11 Give the two held-item conditions' keys (decisions 111 and 118) a form that
+      `condition-backoff`'s merged `src/conditions.ts` opens as a condition, which neither
+      stops a role, as a `role:`-shaped key would, nor is ignored, as a key of an unknown
+      shape is by `conditionOf`.
 
 ## 4. Facts to check before anyone relies on a search or a citation in a run
 
@@ -331,10 +342,6 @@
 - [ ] 4.11 Whether Claude Code keeps any per-user state or session under `HOME` outside
       `~/.claude` and `~/.claude.json`, which #174 resets. If it does, one run could read
       another's there despite decision 87; file an issue against #174 before relying on it.
-- [ ] 4.13 Which host name a hold record's entry uses that stays the same for a host and its
-      `igor release` (decision 110), measured under Docker, where a recreated container gets a
-      new hostname unless `deploy/docker-compose.yml` sets `hostname:`. Where the name does not
-      match, an entry stays uncleared and the release stuck, which its notice then reports.
 - [ ] 4.12 How igor, a Node program, opens each path component from the state directory
       itself down to a file under `flagged-questions`, and down to a move's source, #174's
       copy, without following a link (decisions 101 and 102). A move is a rename, which opens
@@ -345,6 +352,12 @@
       check that the real path stays inside the tree, and open a file with `O_NONBLOCK` and
       check it with `fstat` before writing.
 
+- [ ] 4.13 Where the state-directory id file lives and how it is created only once when two
+      processes sharing the directory start together (decision 116), such as by an exclusive
+      create, and that it survives a recreated Docker container on the named volume
+      `deploy/docker-compose.yml` mounts at `/var/lib/igor` (decision 103). If two ids can be
+      minted, one directory's files go unnamed in hold records; fix the creation before relying
+      on it.
 ## 5. Before archiving
 
 - [ ] 5.1 Once #171 merges, and before this change archives (decision 107), rewrite the

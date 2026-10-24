@@ -590,10 +590,12 @@ and never pushes it. Today's unit sets no state directory, so the Igor falls bac
 `~/.local/state/igor`, which that unit's `ProtectHome=read-only` makes read-only: until #179's
 unit lands, a deployed Igor keeps no question, and every such write fails. When the file
 cannot be written, the handoff still posts, the ledger row's `reason` reads `needs a person,
-question not kept`. Once the open change `condition-backoff`, which defines conditions,
-lands, the Igor also opens a condition: a stuck-work record whose key gate two names. The
-condition holds no path; the operator learns which path failed from the Igor's own log on the
-host, where the path goes. The operator finds a kept question under the state directory at
+question not kept`, and the Igor opens a `condition-backoff` condition
+under a key gate two, the implementation stage of the two-gate workflow (#150), names. It opens on the first failure, stops no work, and stays open while
+any item it was opened for is still held, whatever a *probe item*, the one item `condition-backoff` lets a stopped scope take to test a
+condition, shows; the Igor's log lists
+those items. The condition holds no path; the operator learns which path failed from the Igor's own log on the
+host, which is where the Igor writes the path. The operator finds a kept question under the state directory at
 `flagged-questions/<tracker>/<repo>/<item>.md`, the same `<tracker>/<repo>/<item>` as the item's
 transcript path. The kept file records the flag's categories and, for each question the run stopped on, that
 question's category or, for one without, its text, as the run's handback would have asked it.
@@ -611,14 +613,17 @@ does; either way of releasing deletes the item's session logs and then its quest
 before the item counts as released, the question file last so that a refused delete leaves
 it in place and the item still known as held. For an edit, the Igor process of the role
 that sees it, one of #179's *ranks*, appends a `release requested` row to the ledger, and the
-rank that kept the question on its host does the deletes on its next poll, retrying a
-refused one on every poll. The hold record names every host that may hold the item's files,
-each with the rank that kept them there or `igor run`; because every such host is named, two
-ranks that raced are both cleaned up, and the item is released once every host's files are
-gone. No rank deletes on another's host. If a host's rank has left #179's roster, or the
-files were kept by `igor run`, the item stays held; once `condition-backoff` defines
-conditions, a notice under a key of its own, a stuck release, tells the operator to run
-`igor release` on that host. An edit by anyone without write access, or one whose author
+rank that kept the question does the deletes on its next poll, retrying a refused one on
+every poll. Each state directory keeps a random id, created once, and the hold record has one
+entry per state directory that may hold the item's files, naming that id, never a host, and
+the rank or `igor run` that last wrote there; because every such directory is named, two
+ranks that each kept files for the same item, in different state directories, are both cleaned up, and the item is released once every directory's files
+are gone. No process deletes in another's state directory. If the keeping rank's delete is refused, or it is gone by
+#179's heartbeat rule, or the `igor run` has exited, or the record has no entry, the item
+stays held, and a notice under a key of its own, a stuck release, tells the operator to run
+`igor release` on the host whose state directory has that id (`igor release` prints its own
+id, so the operator can match them), or that the
+files' location is unknown. An edit by anyone without write access, or one whose author
 cannot be read, leaves the item held.
 
 Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and

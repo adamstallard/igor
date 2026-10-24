@@ -190,6 +190,12 @@ asked. A *run* is one execution of an item, with every worker run it starts, as 
 has a *category* when shared-skills #25's inquisitor gives it one: `vulnerability`, `secret`
 or `personal`.
 
+Open pull request #220 (change `visibility-guard`)'s *A private repository is never worked
+through a public lore store* holds for every file this requirement pushes: no run on a private
+repository pushes to a public lore store. This requirement does not restate it. #220's rule for
+the state branch does not cover the `questions` branch, and this requirement's own visibility
+rule, below, governs each push.
+
 During an Igor's run, the worker SHALL report each citation it makes, by the cited entry's id
 and nothing else, and the Igor reads only that id from a report. The worker SHALL NOT report a
 citation for a question with a category. When the Igor runs the inquisitor skill itself, with
@@ -421,6 +427,9 @@ refused.
 A *questions-branch file* is a file that shared-skills #25's inquisitor puts on the destination
 repository's `questions` branch: a log file for a question about an organization or a project,
 including one that records an agent's own choice with `authority: agent`, or a miss file.
+
+#220's rule that a private repository is never worked through a public lore store, which *An
+Igor publishes the citations its worker reports* cites, holds for questions-branch files too.
 
 During an Igor's run, the worker SHALL report each questions-branch file it writes, on the
 channel it reports citations on, and SHALL NOT push it. The worker SHALL report no such file

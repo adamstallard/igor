@@ -143,6 +143,9 @@ value says whose run: a worker's or the Igor's own.
 
 Execution SHALL record the worker transcript, except as below, the reported cost, and the
 outcome. These SHALL be written to the state branch, never to the destination's default branch.
+Open pull request #220 (change `visibility-guard`)'s *Nothing from a private repository is
+written to a public state branch* holds for every record this requirement writes, a flagged
+run's included, and this requirement does not restate it.
 
 A run whose worker reported meeting a question with a *category*, as `lore-firing`'s *An Igor
 publishes the citations its worker reports* defines it, or whose Igor met one in its own

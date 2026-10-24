@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and twelve decisions, as this list does too,
+[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and nineteen decisions, as the numbered list below does too,
 and all are Adam's. Where the agent that wrote this change fitted
 details Adam had not stated, that decision says so; where Adam has since confirmed them, a
 later decision records it, and where he has not, Still open lists them. A *consistency read*
@@ -89,7 +89,10 @@ request; Adam answered the questions each read raised. He made:
   and confirming the `released` row on such a release and `lore-firing`'s new requirement
   name;
 - decisions 110 to 112 on 2026-10-21, answering the two questions the reads of decision 108
-  raised and confirming its fitted details.
+  raised and confirming its fitted details;
+- decisions 113 to 119 on 2026-10-24, confirming the details fitted to decisions 110 and 111,
+  answering the six questions the reads of those decisions raised, and citing #220's visibility
+  rules.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -274,9 +277,9 @@ Terms used here:
 
     For such a run the pull request body carries no excerpt of the worker's result and no link
     to a transcript, though today's body carries up to 700 characters of it (`prBody`,
-    `src/execute.ts:1169`). A record of the provider refusing the run keeps only the refusal's
+    `src/execute.ts:1178`). A record of the provider refusing the run keeps only the refusal's
     reason, never the provider's text, which today's refusal record keeps unredacted
-    (`src/execute.ts:2077`). Adam extended the decision to both later on 2026-10-20.
+    (`src/execute.ts:2133`). Adam extended the decision to both later on 2026-10-20.
 
     The Igor learns of such a question from the worker's report: a flag saying the run met
     one, with no question or answer. Decisions 92 and 97 add the categories met to the flag. A citation report still carries no category
@@ -335,7 +338,7 @@ Terms used here:
     and its refusal record keeps only the limit and reset time Igor parsed. The Igor cannot
     tell whether such a run's worker met a question with a category, since the flag would
     have come in the report the run never completed. The refusal record is written from the
-    provider's reply whether or not a flag arrived (`src/execute.ts:2088`), so without this
+    provider's reply whether or not a flag arrived (`src/execute.ts:2133`), so without this
     rule such a run would keep the whole reply and its transcript.
 
     *Rejected:* a marker file the worker writes in the run's workspace when it meets such a
@@ -390,7 +393,7 @@ Terms used here:
 
     The reason comes from reading the code of igor's `main`, #174 and #175, without running
     or changing anything. A worker cannot run the inquisitor's script, since its Bash is
-    limited to its role's `commands` (`src/execute.ts:1607`). Under #175 it could not read the
+    limited to its role's `commands` (`src/execute.ts:1652`). Under #175 it could not read the
     lore checkout either, which #175's design gives mode 0750 (task 4.2 checks). It has no
     `inquisitor.json`, the inquisitor skill's configuration file, and no `gh` login. The Igor
     already holds the checkout and the run's scope. *Rejected:* skills declaring scripts safe for a worker to
@@ -426,7 +429,7 @@ Terms used here:
     reposting what it read about a private repository, not reading it, since the Igor and its
     worker may see the destination repository. A
     worker could carry what it read into a more public place, and its pull request body
-    quotes up to 700 characters of its result (`prBody`, `src/execute.ts:1169`). Filtering
+    quotes up to 700 characters of its result (`prBody`, `src/execute.ts:1178`). Filtering
     what a worker is given is the only certain guard, because what a worker writes cannot be
     policed reliably. *Rejected:* checking the worker's output for copied passages before
     publishing, which catches only verbatim copies. *Rejected:* accepting the exposure as a
@@ -732,8 +735,8 @@ Terms used here:
     `graceful-handoff`'s comment on the item states why it stopped only in the fixed words its
     ledger row's `reason` keeps (decisions 51 and 56), quotes no failure detail, and points to
     the item's transcript path on the state branch instead. Today that comment quotes a
-    failure's detail (`src/handoff.ts:316`) and, for a run that declined, the worker's own
-    account of why (`src/handoff.ts:310-313`, from `declineReason` at `src/loop.ts:510`),
+    failure's detail (`src/handoff.ts:326`) and, for a run that declined, the worker's own
+    account of why (`src/handoff.ts:320-324`, from `declineReason` at `src/loop.ts:42`),
     either of which could repeat what a sensitive question brought into the run (Adam,
     2026-10-21). The agent that wrote this change fitted the rule, and Adam confirmed it (decision 90):
     a declining worker's reason is not quoted either, and facts igor records itself, such as a
@@ -849,8 +852,8 @@ Terms used here:
 85. **Decision 80's condition opens on the first failed write, as a notice only.** A condition
     normally opens only when its key recurs; this is a second exception to that in
     `condition-backoff`, beside #101's refused credential, and stops no work, since
-    the item is already held (Adam, 2026-10-21). This change does not modify that requirement,
-    so the exception is an item for `condition-backoff` and #101. One new scenario. The agent
+    the item is already held (Adam, 2026-10-21). With #101 merged, this change states the
+    exception itself, in its `stuck-conditions` requirement (decision 118). One new scenario. The agent
     that wrote this change fitted, and Adam confirmed (decision 95), that a later failed write,
     for any item, reuses a condition already open rather than opening another.
 86. **A relayed answer pushed as `input` names its actual author.** Where decision 78 makes the
@@ -860,7 +863,7 @@ Terms used here:
     One changed scenario.
 87. **Each worker run's Claude state is private to it, and its session log is collected.** Every
     role and rank runs today as the user `igor` with one shared home, and `workerEnv` forwards `HOME`
-    (`src/execute.ts:838`), so every worker could read every other run's Claude Code session log
+    (`src/execute.ts:847`), so every worker could read every other run's Claude Code session log
     under `~/.claude/projects/`, a run still in progress included. Each worker run's Claude
     state, its session log included, is private to that run, and the log is collected when the
     run ends (Adam, 2026-10-21). Open pull request
@@ -1050,25 +1053,62 @@ Terms used here:
     hosts), the item stays held, and the notice tells the operator to run `igor release` on the
     named host. No rank takes over another's release, and nothing deletes on a host other than
     the one named. For the race, Adam asked that the record name every host that may hold
-    files, or say how the race is resolved. The agent that wrote this change fitted, for Adam
-    to check: the record holds one entry per host, which the rank or `igor run` that writes a
+    files, or say how the race is resolved. The agent that wrote this change fitted, and Adam confirmed (decision 113): the record holds one entry per host (per state directory since decision 116), which the rank or `igor run` that writes a
     file there adds; each entry is cleared when that host's files are deleted, by its keeping
     rank or by `igor release` run on that host; and `released` is appended once every entry is
-    cleared, by whoever clears the last, with `igor release` naming the hosts still to clear.
+    cleared, by whoever, re-reading the record after a clear, finds them all cleared, with `igor release` naming the hosts still to clear.
     Under those details the ranks finish the race and a not-kept question's log copies
-    themselves, though decision 110 listed both among the cases no rank can finish (Still
-    open). Six new `work-triage` scenarios.
+    themselves, though decision 110 listed both among the cases no rank can finish; decision
+    113 confirms these details. Six new `work-triage` scenarios.
+    Decision 116 replaces host names with state-directory ids, and decisions 114 and 115 say
+    when `igor run` and a rank count as unable to finish.
 111. **A stuck release has a condition key of its own** (Adam, 2026-10-21, amending decision
     108). A refused delete, or an entry no rank can clear, opens a notice condition whose key
     is separate from `question not kept`, such as `release stuck`, which gate two names, so the
-    operator can tell a stuck release from a question never written. The Still open item for `condition-backoff` and
-    #101 keeps asking that a recurring refused delete not count toward stopping a scope. The
-    agent that wrote this change fitted, for Adam to check, that the rank that finds a release
-    stuck opens the notice, and that its notice names the item and the hosts still to clear
+    operator can tell a stuck release from a question never written. This change's `stuck-conditions` requirement keeps a recurring refused delete from counting toward stopping a scope, `condition-backoff`'s rule that a recurring condition stops new work in the scope it names (decision 118). The
+    agent that wrote this change fitted, and Adam confirmed (decision 113), that the process that finds a release
+    stuck opens the notice, and that its notice names the item and the entries, by id since decision 116, still to clear
     and nothing else of the item.
 112. **Decision 108's fitted details are Adam's** (Adam, 2026-10-21): the hold record names the
     keeping rank; a lost record stays held when the latest ledger row is `release requested`;
     one `release requested` row per edit; and the notice waits on `condition-backoff`.
+113. **The details fitted to decisions 110 and 111 are Adam's** (Adam, 2026-10-24): one entry
+    per state directory, with a re-read of the hold record before `released`; any process
+    that finds a release stuck opens the notice; and the notice names only the item and its
+    entries.
+114. **`igor run` counts as stuck only after it exits** (Adam, 2026-10-24). While alive, it
+    finishes its own release on its next poll, like a keeping rank; once it has exited, its
+    entry counts as stuck, and the notice tells the operator to run `igor release` against
+    its state directory.
+115. **A keeping rank is gone when #179's heartbeat rule says so** (Adam, 2026-10-24): #179's
+    *A retired rank does not hold its items forever* decides by the rank's heartbeat, not by
+    whether the roster still lists it. #179
+    judges an `igor run` the same way, by its run's heartbeat file.
+116. **Entries name an opaque state-directory id, not a host** (Adam, 2026-10-24). Each state
+    directory holds a random id created once and kept on its volume; entries, notices and
+    `igor release`'s report name that id, and `igor release` prints its own id so the operator
+    can match them. This replaces host names throughout decisions 110 and 111, keeps host names
+    off a state branch that can be public, and task 4.13 now covers where the id file lives. The
+    agent that wrote this change fitted, for Adam to check, what two ranks sharing a state
+    directory mean for clearing: they share one id and so one entry, which names whichever
+    wrote there last, and that process's deletes clear it for both.
+117. **A hold record with no entries stays held** (Adam, 2026-10-24), and its notice says the
+    files' location is unknown. `igor release` refuses such a record unless the operator,
+    having checked their state directories, passes a flag gate two names; it then writes
+    `released`.
+118. **The two held-item conditions stay open while any item is affected** (Adam, 2026-10-24).
+    The `question not kept` and `release stuck` conditions clear only when no item is still
+    affected, the Igor's host log lists the items, and `condition-backoff`'s probe, the one item a stopped scope takes after a cooldown to test a
+    condition, does not clear them. A new `stuck-conditions` requirement says so, with four scenarios. With decision 111's rule that a recurring refused delete does not count toward
+    stopping a scope, and decision 85's first-occurrence rule, it makes the requirement this
+    change once asked of `condition-backoff`.
+119. **#220's rules are cited where this change writes to the lore store** (Adam, 2026-10-24,
+    relayed from the agent session working on igor's #219). Wherever this change writes questions-branch log files, citations or a flagged
+    run's material to the lore store or its state branch, it cites open pull request #220's
+    rules (change `visibility-guard`, issue #219), so no private repository's content reaches
+    a public state branch; it does not restate them. The `lore-firing` delta cites only *A private repository is never worked
+    through a public lore store*, since #220's state-branch rule does not cover the `questions`
+    branch; the `task-execution` delta cites the state-branch rule.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -1137,19 +1177,70 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   read-only (`ProtectHome=read-only`, only `/srv/igor` writable), so neither #174's per-run
   home nor the question's file can be written. This change's gate two merges only after #179's
   unit sets `StateDirectory=igor`.
-- **For `condition-backoff` and [#101](https://github.com/adamstallard/igor/pull/101)
-  (decision 85).** A condition opens on its first occurrence only for #101's refused App
-  credential. Decision 85 adds a second exception, the first failed write of a held question,
-  as a notice that stops no work, against `condition-backoff`'s rule that a recurring condition
-  stops its scope. `condition-backoff` also exempts a handoff caused by a fact about the Igor
-  from suppression, while decision 82 keeps a held item held. This change archives after
-  #101, so its `work-triage` delta carries `condition-backoff`'s exemption and states that a
-  held item stays held despite it. What stays open is the first point: `condition-backoff`
-  should name decision 85's notice as a second exception to its rule, and decision 111's
-  stuck-release notice, whose refused delete recurs on every poll for one held item, should
-  not count toward stopping a scope either. `condition-backoff` clears a condition when a
-  *probe item*, the one item a stopped scope takes after a cooldown, does not meet it, and no
-  probe item can observe a delete stuck on one held item.
+- **Settled, recorded for the reviewer: this change carries what it once asked of
+  `condition-backoff`.** Adam merged
+  [#101](https://github.com/adamstallard/igor/pull/101), the pull request carrying
+  `condition-backoff`, on 2026-10-22, so its code is on main, though its change is not yet
+  archived and archives first in #204's order. The rules Adam decided for it are this change's
+  own, built at gate two against that code: a held item is not released by the cure-key
+  exemption (decision 82), in this change's `work-triage` delta, which carries
+  `condition-backoff`'s text of that requirement; and the two held-item notices, the one for a
+  question not kept (decision 85) and the stuck release (decision 111), open on their first
+  occurrence, stop no scope and do not count toward stopping one, and clear only when no item
+  is still affected (decision 118), in a new `stuck-conditions` requirement of this change,
+  *A held item's notices open at once, stop nothing, and stay open while an item is
+  affected*. It is an added requirement that names the two it makes exceptions to, rather than
+  modified copies of `condition-backoff`'s *A condition that recurs stops the affected scope
+  from taking new work* and *A condition clears by not recurring, and a probe is what
+  observes that*: #171, which archives before this change, modifies both, and #82 and #208,
+  which archive after it, change `stuck-conditions` too, so modified copies would have to
+  carry each other's text, while an added requirement touches none of theirs.
+- **For Adam: this change cites #220 ahead of its archive** (decision 119). Its `lore-firing`
+  delta cites [#220](https://github.com/adamstallard/igor/pull/220)'s *A private repository is
+  never worked through a public lore store*, and its `task-execution` delta *Nothing from a
+  private repository is written to a public state branch*; #220's state-branch rule does not
+  cover the `questions` branch, so `lore-firing` cites only the first. #204 places #220 at 15,
+  after this change at 12, and lets a change cite a later one's requirement only by Adam's
+  leave. #220 cannot simply move ahead: it cites #82's *A process that refuses to start exits
+  with status 78*, and #82 sits at 14. So either Adam accepts the citation ahead, or #82 and
+  #220 both move before this change, or this change moves after #220.
+- **For Adam: what a stuck-release notice can carry** (decisions 113 and 118). Decision 113
+  has the notice name the item and its entries, but a condition's record holds only its key,
+  and one stuck-release condition stays open for many items. The spec has the notice name the
+  item and ids and the Igor's log list the items; with two items stuck, the notice cannot name
+  "the" item. Should the notice say only that releases are stuck and point to the Igor's log,
+  which names each item and its ids?
+- **For Adam: `igor run` has no next poll** (decision 114). `igor run` runs one cycle and
+  exits (`src/cli.ts`, and #179: each `igor run` runs one cycle), so a release requested while
+  one is alive is almost never finished by it; its entry is stuck as soon as it exits. Is that
+  the intended reading, or should a later `igor run` on the same state directory finish it?
+- **For Adam: an id that is lost or copied** (decision 116). Until #175, a worker running as the
+  Igor's user can rewrite or delete the state-directory id file; a recreated volume or a wiped
+  `~/.local/state` loses it too. An entry then names an id no directory holds, which nothing
+  can clear, and the no-entry flag does not apply, so the item is held for good; a copied id
+  lets one directory's deletes clear another's entry. Should `igor release` also accept a flag
+  to clear an entry whose directory is gone, or should the id be checked some other way?
+- **For Adam: the detail fitted to decision 116.** Two ranks sharing a state directory share one
+  entry, naming whichever wrote last, whose deletes clear it for both; if that rank is gone
+  while its directory-mate lives, the release is stuck though a live process could delete.
+- **For Adam: one kind or two in `stuck-conditions`** (decision 118). #171, which archives before
+  this change, makes its *read-cleared condition* a kind that opens on a failing read, stops
+  nothing and clears without a probe, and states the exceptions to recurrence and to
+  probe-clearing as exhaustive. This change adds two more exceptions. Should the held-item
+  notices be a kind like #171's, citing it, or should #171's counts be amended?
+- **For #82 and #208 (decision 118).** #82's list of the ways a condition clears, and its
+  `igor conditions` listing of scope, recurrence and probe, leave out the held-item notices,
+  which have no scope or probe and clear when no item is affected. #82 and #208, which copies
+  that requirement, archive after this change and should name them.
+- **For gate two: the condition keys** (decisions 111 and 118). In the merged
+  `src/conditions.ts`, a key of a shape it does not know names no scope and is never a
+  condition, and a `role:`-shaped key counts toward stopping the role. Gate two gives the two
+  keys a form that opens a condition which neither stops a role nor is ignored (task 3.11).
+- **For the author: a TLA+ model of the release protocol.** Several processes add, clear and
+  re-read entries in one hold record, with crashes possible between writes. Adam's standing
+  rule asks for a TLA+ model beside the spec at gate one for such a change, with each
+  invariant naming the requirement it proves and TLC run in CI. None is written yet; the next
+  round of this change should add it.
 - **This change depends on [#174](https://github.com/adamstallard/igor/pull/174) (decisions 87
   and 88)** for each worker run's private Claude state and the copied, redacted session log;
   decision 88 moves a flagged run's copy beside its question. #174's record in the execution
@@ -1165,43 +1256,12 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   `XDG_STATE_HOME` set, #174's log copy and the question file sit in different state
   directories, and decision 102's check of a move's source, from the state directory down,
   starts from the wrong one.
-- **For gate two: how a host is named, and how ranks update one hold record** (decision 110,
-  task 4.13). The hold record names each host that may hold an item's files; gate two picks a
-  name that a rank and `igor release` both read the same way, and that survives a Docker
-  container being recreated, and how several ranks add or clear entries in one record on the
-  state branch without losing a write, which #179's rules for state-branch writes govern;
-  #179's task 5.1 does not yet list hold records among its keyed state.
-- **For Adam: the details fitted to decisions 110 and 111.** One entry per host, added by the
-  writer; each cleared when that host's files are deleted; `released` appended by whoever,
-  after clearing an entry, finds every entry cleared and no `released` row yet; `igor release`
-  naming the hosts still to clear; any rank that finds a release stuck opening the notice; and
-  the notice naming the item and the hosts and nothing else. Decision 110 named the race and a
-  question whose write failed after log copies existed among the cases no rank can finish;
-  under these details the ranks finish both themselves, by their own entries.
-- **For Adam: the release rule's open edges** (decisions 110 and 111), raised by the
-  consistency read of those decisions:
-  - *`igor run` is rank 0 under #179.* An entry naming `igor run` is stuck from the moment it
-    exists, though the run may still be going; nothing tells a running `igor run` to delete,
-    and nothing tells a rank when that run has ended. Should rank 0 delete on its next cycle
-    like any keeping rank, and be stuck only once ended?
-  - *Roster or "gone"?* The spec takes a rank that has left #179's roster as unable to finish.
-    #179 judges a rank unavailable by its heartbeat, and its ranks may read different rosters,
-    so a declared rank whose host died is never stuck, and two ranks may disagree. Which test
-    applies?
-  - *Host or state directory?* One host can hold a serving rank's files under
-    `/var/lib/igor` and an `igor run`'s under `~/.local/state/igor`; two ranks on one host share
-    a state directory; and #179 does not bind a rank to a host. Should an entry name the state
-    directory instead, and may any live rank sharing it clear the entry?
-  - *No entries.* Where the hold record was lost, or a crash came between writing a file and
-    adding its entry, `igor release` on one host clears "every entry" at once, and a requested
-    release has no entry to be stuck on, so another host's files stay and no notice opens.
-  - *One condition for many items.* `condition-backoff` keys a condition by its cure key and
-    has it name no item, so a second stuck item reuses the open condition and its hosts are
-    never shown; and a probe item, never meeting it, clears it while the release stays stuck.
-  - *Host names on the state branch.* The hold record and the notice are on the state branch,
-    which can be public, so an `igor run` developer's hostname would sit beside an item that
-    met a `personal` or `secret` question. Is a hostname acceptable there, or should an entry
-    use an opaque host id?
+- **For gate two: the state-directory id, and how processes update one hold record**
+  (decision 116, task 4.13). Gate two picks where the id file lives and how it is created only
+  once when two processes sharing the directory start together, and how several processes add
+  or clear entries in one record on the state branch without losing a write, which #179's
+  rules for state-branch writes govern; for #179: its task 5.1 does not yet list hold records among
+  its keyed state.
 - **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decisions
   87 and 107)** for the rule that every seat names a token, and that an organization declaring no
   seats is refused (#171's decision 36). It archives after #171 (decision 107). Until #171 merges, main's `seat-budget` still lets a
@@ -1325,7 +1385,7 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   scenario tests that case. Nor does a questions-branch scenario test the `repository` key's
   visibility changing between the run's start and the push.
 - Whether a worker allowed only `Bash(igor lore-search)` can feed the command its standard
-  input, since a pipe from `echo` needs `echo` allowed (`src/execute.ts:1607`). Task 4.5
+  input, since a pipe from `echo` needs `echo` allowed (`src/execute.ts:1652`). Task 4.5
   checks; if it cannot, gate two gives the command another way to take the text before any
   worker relies on it.
 - [#189](https://github.com/adamstallard/igor/pull/189) starts two worker runs in one
@@ -1622,11 +1682,13 @@ reading the codebase. Two cases contradict that:
   record that never expires, and lets the operator release it with `igor release`, which
   keeps the item held when a delete is refused; a release by an edit deletes the files the
   same way, done by the rank that kept the question, and also keeps the item held when a
-  delete is refused, the hold record naming every host that holds the item's files and a
-  stuck release opening its own notice. It has nineteen new scenarios, including those for
-  `igor release`, and three changed (decisions 76, 79, 82, 83, 84, 102, 104, 108, 110 and
-  111). It also carries `condition-backoff`'s rule that a handoff caused by a fact
+  delete is refused, the hold record naming, by its id, every state directory that holds the
+  item's files, and a stuck release opening its own notice. It has twenty-two new scenarios,
+  including those for `igor release`, and three changed (decisions 76, 79, 82, 83, 84, 102,
+  104, 108, 110, 111 and 113 to 117). It also carries `condition-backoff`'s rule that a handoff caused by a fact
   about the Igor is not suppressed, with that rule's scenario (decision 107).
+- `stuck-conditions` gains *A held item's notices open at once, stop nothing, and stay open
+  while an item is affected*, with four scenarios (decisions 85, 111 and 118).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.
@@ -1653,8 +1715,10 @@ None.
   points to its transcript path, asks no question, and keeps that question on the host, and
   a failed write does not block it (decisions 71, 73, 75, 76 and 80).
 - `work-triage`: a reply does not rerun an item a flagged run handed back; it stays held, and
-  only `igor release` or an edit by someone with write access releases it (decisions 76, 79 and
-  82 to 84).
+  only `igor release` or an edit by someone with write access releases it (decisions 76, 79,
+  82 to 84, 102, 104, 108, 110, 111 and 113 to 117).
+- `stuck-conditions`: the two held-item notices open on their first occurrence, stop no
+  scope, and clear only when no item is still affected (decisions 85, 111 and 118).
 - `task-execution`: pushing a run's citations and its question and miss files is exempt from
   the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run
   that met a question with a category stores no transcript; a question it could not keep is
