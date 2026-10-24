@@ -23,8 +23,10 @@ as its reason the fixed words `needs a person`, which `task-execution` sets for 
 the run's question text SHALL NOT reach the item. The Igor SHALL add no `igor:question` label,
 or any other label that routes the item to an inquisitor role, to such a handoff.
 
-The Igor SHALL instead write a file about that question on its own host: `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory, with the
-same `<tracker>/<repo>/<item>` the item's transcript path has on the state branch. The state directory is `$STATE_DIRECTORY`
+The Igor SHALL instead write a file about that question on its own host:
+`flagged-questions/<tracker>/<repo>/<item>/<name>.md` under its state directory, with the same
+`<tracker>/<repo>/<item>` the item's transcript path has on the state branch and a random
+`<name>` of its own, which the entry for its hold in `work-triage`'s hold record names. The state directory is `$STATE_DIRECTORY`
 where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when
 `XDG_STATE_HOME` is unset. A systemd unit that sets `StateDirectory=igor` sets
 `STATE_DIRECTORY` to `/var/lib/igor`, and `deploy/docker-compose.yml` sets the variable to the
@@ -59,21 +61,21 @@ id. `work-triage` says how hold records use the id. The source of each move,
 component from the state directory down to the copy. The Igor SHALL NOT check the
 directories above the state directory. The Igor SHALL refuse the action when any checked
 component is a link, or when the file, the source of a move included, already exists and
-either is not a regular file or has more than one hard link; this covers an existing question
-file a later flagged run would replace. Checking a file SHALL NOT block on it, so a planted
+either is not a regular file or has more than one hard link; this covers a file planted at the
+path a question file is about to be written to. Checking a file SHALL NOT block on it, so a planted
 pipe is refused, not waited on. A refused create counts as a file it cannot write, below. A
 refused move or delete leaves the path in place, and the Igor records the refusal and the path
 only in its own log on the host, adding nothing about it to the state branch. A refused move
 of a session-log copy SHALL NOT count as a file it cannot write: the question file SHALL say
-that copy is missing, as for a log #174 did not copy. A refused delete of an earlier
-execution's session log, which a later one replaces below, leaves that log in place. What a
+that copy is missing, as for a log #174 did not copy. A refused delete of a
+session log leaves that log in place. What a
 refused delete does to `igor release` is `work-triage`'s rule. Once workers run as users of their own (#175),
 no worker run SHALL be able to reach the `flagged-questions` directory; #175 builds that, not
 this change. Until then, and always under `igor run`, another worker running as the same user can
 read it, its logs and categories included, and plant or delete a file in it, which Adam
-accepts. Where the item is worked again after a release, or two
-ranks race, the question of a later flagged run of the same item that stops on a question
-replaces any file still there, and that execution's session logs replace the earlier ones. Where the Igor cannot write the file, it
+accepts. A later flagged run of the same item that stops on a question, after a release or
+while another flagged run of it is still running, keeps its question in a file of its own, a hold of its own (`work-triage`),
+with its own session logs beside it. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read
 `needs a person, question not kept`, as `task-execution` sets, and the Igor SHALL open a
 notice for its operator, a condition of the kind `stuck-conditions`' *A notice opens at once,
@@ -163,15 +165,16 @@ NOT push, post or publish the file, or its text, anywhere.
 
 #### Scenario: A hard-linked file under flagged-questions is refused
 
-- **WHEN** the item's question file under `flagged-questions` has more than one hard link
-- **AND** a later flagged run of the item stops on a question
+- **WHEN** a flagged run of the item stops on a question
+- **AND** a file with more than one hard link already exists at the path its question file is
+  about to be written to
 - **THEN** the Igor writes nothing to that file and counts the write as failed
 
 #### Scenario: A pipe planted as the question file is refused without blocking
 
-- **WHEN** a worker running as the Igor's user replaces the item's question file under
-  `flagged-questions` with a named pipe
-- **AND** a later flagged run of the item stops on a question
+- **WHEN** a flagged run of the item stops on a question
+- **AND** a worker running as the Igor's user has planted a named pipe at the path its question
+  file is about to be written to
 - **THEN** the Igor writes nothing to the pipe, counts the write as failed, and posts the
   handoff without waiting on the pipe
 
@@ -235,15 +238,16 @@ NOT push, post or publish the file, or its text, anywhere.
 - **WHEN** a flagged run of item 12 in `acme/api`, on GitHub, stops on a question it could not
   settle, under a systemd unit that sets `StateDirectory=igor`
 - **THEN** the Igor writes the question to
-  `/var/lib/igor/flagged-questions/github/acme/api/12.md`, mode 0600, owned by the user it
+  `/var/lib/igor/flagged-questions/github/acme/api/12/<name>.md`, with a random `<name>`, mode 0600, owned by the user it
   runs as, in directories from `flagged-questions` down of mode 0700
 - **AND** nothing the Igor pushes, posts or publishes holds the question's text
 
-#### Scenario: A later flagged run's question replaces the kept one
+#### Scenario: A later flagged run's question is kept beside the first
 
 - **WHEN** a flagged run of an item keeps its question on the host
 - **AND** a later flagged run of the same item stops on another question
-- **THEN** the item's file holds only the later question
+- **THEN** the later question is kept in a file of its own, with a random name of its own, and
+  the first file stays until its own hold is released
 
 #### Scenario: Outside systemd the question goes under the XDG state directory
 
@@ -258,7 +262,7 @@ NOT push, post or publish the file, or its text, anywhere.
 - **THEN** the handoff posts as it would otherwise, giving the reason `needs a person`
 - **AND** the ledger row's `reason` is `needs a person, question not kept`
 - **AND** the Igor writes the path it could not write to its own log on the host
-- **AND** it opens a condition whose record holds only its key
+- **AND** it opens a notice, of which nothing is written to the state branch
 
 #### Scenario: A flagged run's budget handoff still gives the reset time
 

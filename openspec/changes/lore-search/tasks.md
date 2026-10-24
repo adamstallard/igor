@@ -184,7 +184,7 @@
       transcript path, which holds the transcript-withheld note. A flagged run that stopped on
       a question it could not settle posts that handoff asking nothing, with the reason
       `needs a person`, and the ledger row's `reason` is `needs a person` too. It adds no
-      `igor:question` label, writes a file to `flagged-questions/<tracker>/<repo>/<item>.md`
+      `igor:question` label, writes a file to `flagged-questions/<tracker>/<repo>/<item>/<name>.md`
       under its state directory, mode 0600 in directories of mode 0700, recording the flag's
       categories with their marks and, for each question the run stopped on, its category or
       else its text, and listing every session log of the execution; for every create, move
@@ -195,36 +195,44 @@
       a missing copy, and the path of a refused move or delete is recorded only in the Igor's own log;
       the Igor moves #174's
       redacted copy of each step's log beside the file, before writing the file. A later flagged run's
-      question replaces the file, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
-      the ledger row's `reason` reads `needs a person, question not kept`, a condition opens on
-      the first failure as a notice that stops no work, holding only a key gate two names, and the path goes only to the Igor's own log); and work triage keeps
-      the item held whatever its handoff carries, with a hold record that never expires, knows a
-      held item from its record, its host file, a `needs a person` ledger row or a `release
-      requested` one, and releases it in two ways only. One is `igor release <tracker>/<repo>/<item>`
-      on the host, which prints its state directory's id, deletes the logs and then the question
-      file before the item counts as released, and, where a delete is refused, says it failed and leaves the item held, and which
-      refuses a hold record with no entry unless gate two's flag is passed, and drops a named
-      entry only with gate two's other flag. The other is an attributable edit by someone with
-      write access, never a reply: each state directory keeps a random id created once; the
-      hold record has one entry per state directory that may hold the item's files, naming its
-      id and the process that last wrote there (a rank, or `igor run` and its run id), added
-      before any file is written there; a rank that sees the edit appends one `release
-      requested` row for it; any live process on a directory with an uncleared entry, a rank at
-      the start of its cycle or an `igor run` at its start, deletes there and clears the entry,
-      retrying a refused delete every cycle; `igor release` clears the entry of the state
-      directory it runs against; whoever clears an entry reads the record again and, finding
-      every entry cleared and no `released` row yet, appends one; no process deletes in
-      another's state directory; and a stuck release (a refused delete, an entry no live
-      process answers for, or no entry at all) opens a notice under its own key, whose state
-      branch record holds only the key while its text and the Igor's log name the item and the
-      ids. The two notices are a kind of condition of their own, built against
-      `condition-backoff`'s merged code (`src/conditions.ts`): each opens on its first
-      occurrence, stops no scope, does not count toward stopping one, is not cleared by a probe
-      item, clears only when no item is still affected, and is listed with its items in the
-      Igor's log. The TLA+ model of the hold and its release, in this change's `model/`
-      directory, which the `tla-lore-search` workflow runs, states these rules as invariants;
-      gate two's tests and code keep to them. Its passing configurations assume no keep is
-      part-way when a release starts, which the proposal leaves open for Adam. Once
+      question goes in a file of its own, a hold of its own, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
+      the ledger row's `reason` reads `needs a person, question not kept`, a notice opens on
+      the first failure that stops no work and has no stored record, under a key gate two names, and the path goes only to the Igor's own log); and work triage keeps
+      the item held whatever its handoff carries: each flagged run that keeps its question
+      starts a hold of its own, identified by its `needs a person` row, which names its state
+      directory's opaque id; the item is held while any hold has no `released` row naming it,
+      read from the ledger. The hold record never expires and has one entry per hold, naming
+      its state-directory id, its question file's random name and its process, added before
+      any file is written and added again if lost by the time its row is appended; a lost
+      record is rebuilt from the `needs a person` rows, which name the id and file name; a
+      file name that is not one path component of the random form is refused. A hold's
+      entry is cleared only once its `needs a person` row exists or its run is gone, and only
+      by deleting the named file (a hold whose question was not kept, by deleting its session
+      logs); after a clear, the process re-reads and appends `released` naming the hold, and
+      any process appends a missed one. Holds are released in two ways only. One is
+      `igor release <tracker>/<repo>/<item>` on the host, which prints its state directory's
+      id, acts for each hold whose entry names that id, says where a delete is refused and
+      leaves the hold open, and with gate two's flag clears an entry whose named file is gone.
+      The other is an attributable edit by someone with write access, never a reply: a rank or
+      `igor run` that sees it appends one `release requested` row, which covers the holds whose
+      rows came before it; any live process on a
+      directory with an uncleared entry's id, a rank at the start of its cycle or an `igor run`
+      at its start, acts for that hold, retrying a refused delete every cycle; no process
+      deletes in another's state directory; and a stuck hold (a refused delete, an entry no live
+      process answers for by #179's heartbeat, which records each process's state-directory
+      id, or an entry whose named file is gone) opens a notice under its own key. The two
+      notices are a kind of condition of their own, with no stored record, rebuilt from the
+      ledger rows and hold-record entries, built against `condition-backoff`'s code on main
+      (`src/conditions.ts`): each opens on its first occurrence, stops no scope, does not count
+      toward stopping one, is not cleared by a probe item, clears only when no item is still
+      affected, is listed with its items in the Igor's log, and is listed by `igor conditions`
+      with no scope, count or probe. The TLA+ model of the holds and their release, in this
+      change's `model/` directory, which the `tla-lore-search` workflow runs, states these
+      rules as invariants; gate two's tests and code keep to them. Its passing configurations
+      assume a copied state directory holds no question file, and its liveness configuration
+      that a process's record of the named files it deleted survives a crash, which the spec
+      does not yet promise; the proposal leaves both open for Adam, so liveness is shown only
+      under that assumption. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -246,13 +254,13 @@
       names the setting that would let it proceed*, *A flagged run that stopped on a question
       posts no question* (its handoff asks nothing and gives the reason `needs a person`), *A
       flagged run that stops on a question adds no question label*, *A flagged run's question is kept on the
-      host, never pushed*, *A later flagged run's question replaces the kept one*, *Outside systemd the question goes
+      host, never pushed*, *A later flagged run's question is kept beside the first*, *Outside systemd the question goes
       under the XDG state directory*,
       *A reply does not rerun a flagged item*, *An edit by someone with write access releases a
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *A process on the directory deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose directory's ranks are all gone waits for the operator*, *A directory-mate finishes the release of a gone rank*, *The next igor run on a directory finishes its release*, *igor release drops an entry whose id no directory holds*, *Two ranks that raced in different state directories both release their files*, *Two ranks sharing a state directory share one entry*, *A keep adds its entry before writing a file*, *igor release names the state directories still to clear*, *A hold record with no entry stays held*, *A stuck-release notice keeps item names off the state branch*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A notice opens on its first occurrence*, *A notice stops no scope however often it recurs*, *Repeated questions not kept do not stop the role*, *A probe does not clear a notice* and *A notice clears when no item is affected*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *A process on the directory deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose directory's ranks are all gone waits for the operator*, *A directory-mate finishes the release of a gone rank*, *The next igor run on a directory finishes its release*, *igor release drops an entry whose named file is gone*, *Two holds of one item are released one at a time*, *Two holds on a shared state directory have an entry each*, *A keep adds its entry before writing a file*, *An entry is not cleared while its run is part-way*, *A copied state directory that finds nothing releases nothing*, *A later hold of the same item is independent*, *igor release names the state directories still to clear*, *A lost hold record is rebuilt from the ledger*, *A stuck-release notice keeps item names off the state branch*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A notice opens on its first occurrence*, *A notice stops no scope however often it recurs*, *Repeated questions not kept do not stop the role*, *A probe does not clear a notice* and *A notice clears when no item is affected*, *A notice says it stops nothing and names no item*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
       does not release a held item*, *A held item's lost record leaves it held*, *A released item is not held again by its old ledger row*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
@@ -383,3 +391,6 @@
 - [ ] 5.3 When this change archives, point `.github/workflows/tla-lore-search.yml`'s paths
       and working directory at the model's archived place, as #179's task 6.7 does for its
       own, so TLC keeps running on it.
+- [ ] 5.4 Once #82 merges, and before this change archives (decision 129), bring the
+      `stuck-conditions` delta's copy of #82's *Every open condition is readable without naming
+      a role* up to #82's final text, keeping the sentence and scenario on notices.

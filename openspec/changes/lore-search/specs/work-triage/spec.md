@@ -32,81 +32,90 @@ Where the handoff is a flagged run's that stopped on a question it could not set
 the item is *held*, and SHALL stay held whatever else its handoff carries: a cure key
 (`condition-backoff`'s key for a handoff caused by a fact about the Igor, which a question not
 kept is), a question not kept, or anything else that would exempt another handoff from suppression, does
-not release it. A reply SHALL NOT count as an answer. The record this requirement keeps of a held item,
-its *hold record*, SHALL NOT expire, and where that record is missing or unreadable the item
-SHALL stay held rather than be worked again. A *rank* is one of the Igor processes #179 runs
-for the role. The hold record SHALL hold one *entry* for every state directory that may hold
-files under `flagged-questions` for the item, each naming that directory's *state-directory
-id* (`graceful-handoff`) and the process that last wrote the question file or moved a
-session-log copy there for the item: its rank, or `igor run` with that run's id. It SHALL name
-no host. A rank or `igor run` that writes such a file for an item SHALL add or update its
-directory's entry before it writes any file there; one that has no readable state-directory id
-writes no file, and counts the question as one it could not keep. Processes that share one
-state directory share one id, and so one entry. An entry is *cleared* once its directory's
-files for the item are deleted, or once `igor release` drops it, below. A lost hold record
-counts as one with no entry. The Igor SHALL know a held item from its hold
-record. Where that record is lost, it SHALL know one from its file under `flagged-questions`
-on the host, from the item's latest ledger row where that row's `reason` starts `needs a
-person`, or from a latest row whose `reason` is `release requested`, the row a release by an
-edit appends, below.
+not release it. A reply SHALL NOT count as an answer.
+
+Each flagged run that stops on a question it could not settle starts a *hold* of its own,
+identified by its own `needs a person` ledger row, whether or not its question was kept; a
+later hold of the same item is independent of an earlier one. The item is held while any of
+its holds is open, and while a live run that keeps one is part-way, since that run still holds
+the item's claim. A
+*rank* is one of the Igor processes #179 runs for the role. The record this requirement keeps
+of the item's holds, its *hold record*, SHALL NOT expire, and where that record is missing or
+unreadable the item SHALL stay held rather than be worked again. The hold record SHALL hold
+one *entry* for each hold, naming the *state-directory id* (`graceful-handoff`) of the
+directory the run keeps its files in, the random name of its question file, and the process:
+its rank, or `igor run` with that run's id. It SHALL name no host. A run SHALL add its hold's
+entry before it writes any file under `flagged-questions`. Its `needs a person` row SHALL name
+the same state-directory id and question file name, both opaque, so that nothing about the
+host leaks; where the record has lost the run's entry by the time it appends the row, the run
+SHALL add the entry again first. A run with no readable state-directory id writes no file and
+adds no entry; its row reads `needs a person, question not kept` and names no id, and with
+nothing to delete its hold is released by the first release that covers it. The Igor SHALL know a held item from the ledger: from a
+`needs a person` row with no `released` row naming the same hold. Where the hold record is
+lost, any process SHALL rebuild it in full from those rows, an open entry for each hold whose
+`needs a person` row has no `released` row, naming the id and file name the row names,
+keeping any entry written since the loss.
 
 A held item SHALL be released in either of two ways. The Igor's operator SHALL be able to
 release it on the host with `igor release <tracker>/<repo>/<item>`, such as
-`igor release github/acme/api/12`, whatever an edit's attribution shows. `igor release` SHALL
-print the id of the state directory it runs against. It SHALL first delete the item's session
-logs and then its question file under `flagged-questions` in that state directory, by
-`graceful-handoff`'s rule against following a link, so that no fallback above, its file or ledger rows, holds it
-again, and clear that directory's entry in the hold record. Whenever a process or `igor release`
-clears an entry, it SHALL then read the hold record again and, where every entry is cleared
-and no `released` row is yet recorded for the item, mark the hold record released and append
-a ledger row whose `reason` is `released`. Any process that finds a hold record with entries,
-every one cleared, and no `released` row, as after a crash between those two writes, SHALL do
-the same. A record whose entries are all cleared is not one with no entry. Until every entry is cleared, `igor release` SHALL
-name the ids of the state directories that still hold files. Where any delete is refused,
-`igor release` SHALL say that it failed and that the path is in the Igor's own log on the
-host, SHALL leave any file it did not yet delete, the question file included, and SHALL clear
-nothing and append no row, so the item stays held; the operator can run it again. Where the
-hold record has no entry at all, `igor release` SHALL refuse, saying the files' location is
-unknown, unless the operator passes a flag gate two names, after checking their state
-directories; with it, `igor release` deletes the item's files in its own state directory, if
-any, and appends `released`. Likewise, `igor release` SHALL drop a named entry only with a flag
-gate two names, which the operator passes after checking that no state directory with that id
-still holds the item's files, as when the id was lost or copied; dropping clears the entry
-without deleting anything. No release SHALL delete files in any state directory but the one
-it runs against; every Igor process of the role reads the release from the state branch, so a
-rank elsewhere does not hold the item again from its own file or ledger rows. An edit to the
+`igor release github/acme/api/12`, whatever an edit's attribution shows. An edit to the
 item, a relabel or a change of holder included, by someone with write access to the item's
-repository SHALL also release it, where the edit can be attributed. A process of the role that
-sees such an edit, a rank or an `igor run`, SHALL append a ledger row for the item whose `reason` is `release requested`, unless one
-is already recorded for that edit, and the item stays held. Once a release has been
-requested, any live process whose state directory has an uncleared entry for the item, a rank
-at the start of each cycle or an `igor run` at its start, SHALL delete the item's session logs and then its question file in
-that directory exactly as `igor release` does and clear the entry, releasing the item as above
-once every entry is cleared; every other process learns of the release from the `released`
-row on the state branch. Where a delete is refused, the process SHALL write the path only to its own log
-on the host, leave any file it did not yet delete, and clear nothing, so the item stays held,
-and SHALL try the deletes again on every later cycle until they succeed. No process SHALL
-delete in a state directory other than its own.
+repository SHALL also release it, where the edit can be attributed: a process of the role
+that sees such an edit, a rank or an `igor run`, SHALL append a ledger row for the item whose
+`reason` is `release requested`, unless one is already recorded for that edit. That row covers
+the holds whose `needs a person` rows came before it; a later hold needs a later edit or
+`igor release`. The item stays held until each of its holds is released. An edit by anyone without write access, or
+one whose author the Igor cannot read, SHALL leave the item held.
 
-An edit by anyone without write access, or one whose author the Igor cannot read, SHALL leave
-the item held.
+A hold is released one entry at a time, by deleting its files. Its entry SHALL be cleared
+only once its hold's `needs a person` row exists, so its run has written all its files, or
+once that run is gone, as below; and only by deleting the question file the entry names. A
+process clears an entry only after it has itself deleted the hold's session logs and then the
+named question file, by `graceful-handoff`'s rule against following a link. A name that is
+not a single path component of the random form the Igor writes is refused, as a refused
+delete.
+Where the named file is absent, no process clears the entry: only the operator's flag, below,
+does, so a copied state directory, finding nothing, can never release a hold. A hold whose
+`needs a person` row says its question was not kept named no question file; its entry is
+cleared by deleting its session-log copies. After clearing
+an entry, the process SHALL read the hold record again and, where the entry is cleared and no
+`released` row names its hold, append a ledger row whose `reason` is `released`, naming that
+hold. Any process that finds a cleared entry with no `released` row for its hold, as after a
+crash between those two writes, SHALL do the same. A hold is released once that row exists,
+and the item is released once each of its holds is.
 
-A requested release is *stuck* in three cases. First, a delete is refused. Second, an
-uncleared entry remains whose state directory no live process answers for: every rank on it
-is *gone*, as #179's *A retired rank does not hold its items forever* judges by its heartbeat,
-and no `igor run` on it is running, which #179 judges the same way, by its run's heartbeat
-file. Third, the hold record has no entry, so the files' location is unknown. Any process of
-the role that finds a requested release stuck, the process whose delete was refused for the
-first case and any process for the others, SHALL open a
+Once a release covering a hold has been requested, any live process whose state directory
+has that hold's id, a rank at the start of each cycle or an `igor run` at its start, SHALL act for
+that hold this way in its own directory; every other process learns of the release from the
+`released` rows on the state branch. `igor release` SHALL print the id of the state directory
+it runs against and act for each of the item's holds whose entry names that id the same way.
+Where a delete is refused, `igor release` SHALL say that it failed and that the path is in the
+Igor's own log on the host, and a process SHALL write the path only to its own log on the
+host; `igor release` and the process each leave any file it did not yet delete, clears nothing and appends no row, so the
+hold stays open, and a process tries again on every later cycle. Until each hold is released,
+`igor release` SHALL name the ids of the state directories whose entries remain. With a flag
+gate two names, which the operator passes after checking that no state directory with that id
+still holds the hold's files, `igor release` SHALL clear an entry whose named file is absent,
+deleting nothing. No process and no `igor release` SHALL delete in a state directory other
+than its own.
+
+A requested release is *stuck* for a hold in three cases. First, a delete is refused. Second,
+its entry is uncleared and no live process answers for its state directory: every rank and
+`igor run` that #179's heartbeat files show with that id is *gone*, as #179's *A retired rank
+does not hold its items forever* judges by the heartbeat, which records the process's
+state-directory id. Where the heartbeat files name no state-directory id, as before #179
+records one, no process judges a hold stuck this way. Third, its entry is uncleared and its named file is absent, so only the
+operator's flag can clear it. Any process of the role that finds a hold stuck, the process
+whose delete was refused for the first case and any process for the others, SHALL open a
 notice under a key of its own, distinct from the one `graceful-handoff` opens for a question
-it could not keep, such as `release stuck`, which gate two names; `stuck-conditions`' *A notice opens at once, stops nothing, and stays open while an item is affected* says how it opens and clears. The notice text the operator reads and the Igor's own log on the host SHALL name
-each stuck item and the ids of the state directories no live process answers for, and tell the
-operator to run `igor release <tracker>/<repo>/<item>` on the host whose state directory has
-each id, or, with no entry, say that the files' location is unknown; the notice puts nothing of
-the item on any branch. The item
-stays held until every entry is cleared. How write access is read and who made an edit are
-#141's rules; until #141 lands, no edit can be attributed, and `igor release` is the way to
-release a held item.
+it could not keep, such as `release stuck`, which gate two names; `stuck-conditions`' *A
+notice opens at once, stops nothing, and stays open while an item is affected* says how it is
+rebuilt and cleared. The Igor's own log on the host SHALL name each stuck item and the ids of
+the state directories involved, and tell the operator to run `igor release
+<tracker>/<repo>/<item>` on the host whose state directory has each id; the notice puts
+nothing of the item on any branch. How write access is read and who
+made an edit are #141's rules; until #141 lands, no edit can be attributed, and `igor release`
+is the way to release a held item.
 
 #### Scenario: A handed-back item does not return unanswered
 
@@ -152,13 +161,14 @@ release a held item.
   with write access
 - **THEN** rank 2 appends a `release requested` row and the item stays held
 - **AND** at the start of its next cycle rank 1 deletes the session logs and then the question
-  file, marks the hold record released and appends a `released` row
+  file, clears the hold's entry and appends a `released` row naming the hold
 - **AND** rank 2 learns of the release from that row
 
 #### Scenario: A requested release is not a release
 
 - **WHEN** an item's latest ledger row is `release requested` and its hold record is lost
-- **THEN** the item stays held
+- **THEN** the item stays held, since a `needs a person` row has no `released` row naming its
+  hold
 
 #### Scenario: A refused delete keeps an edited item held
 
@@ -204,65 +214,87 @@ release a held item.
 - **AND** a later `igor run` starts with state directory D
 - **THEN** at its start it deletes the item's files in D and clears D's entry
 
-#### Scenario: igor release drops an entry whose id no directory holds
+#### Scenario: igor release drops an entry whose named file is gone
 
-- **WHEN** a held item's hold record has an entry naming an id that no state directory holds,
-  because the id file was lost
-- **AND** its release by an edit has been requested
-- **THEN** `igor release` without gate two's flag leaves that entry, and the notice names it
-- **AND** with the flag, after the operator has checked, `igor release` clears that entry
-  without deleting anything
-
-#### Scenario: Two ranks that raced in different state directories both release their files
-
-- **WHEN** ranks with state directories S1 and S2 each kept a question file for the same held
-  item, and its hold record has an entry for each
+- **WHEN** a hold's entry names a question file that no state directory with its id holds, as
+  after the id file was lost and the directory took a new id
 - **AND** the item's release by an edit has been requested
-- **AND** only the rank with S1 has deleted its files
-- **THEN** the item stays held, and no `released` row is appended
-- **AND** once the rank with S2 deletes its files and finds every entry cleared, it appends the
-  `released` row
+- **THEN** no process clears that entry, and the notice names its id
+- **AND** with gate two's flag, after the operator has checked that no state directory still holds
+  the named file, `igor release` clears that entry without deleting anything
 
-#### Scenario: Two ranks sharing a state directory share one entry
+#### Scenario: Two holds of one item are released one at a time
 
-- **WHEN** ranks 1 and 2 share state directory S, and each wrote the item's files there
-- **THEN** the hold record has one entry for S
-- **AND** either rank's deletes in S clear that entry
+- **WHEN** runs with state directories S1 and S2 each kept a hold of the same item
+- **AND** the item's release by an edit has been requested
+- **AND** only the rank with S1 has deleted its hold's files
+- **THEN** S1's hold has its `released` row and S2's has none, and the item stays held
+- **AND** once the rank with S2 deletes its hold's named file and clears its entry, it appends
+  the `released` row for that hold, and the item is released
+
+#### Scenario: Two holds on a shared state directory have an entry each
+
+- **WHEN** ranks 1 and 2 share state directory S, and each kept a hold of the item there
+- **THEN** the hold record has an entry for each hold, each naming S's id and its own question
+  file
+- **AND** either rank in S can clear either entry by deleting the file it names
 
 #### Scenario: A keep adds its entry before writing a file
 
 - **WHEN** a flagged run keeps its question in state directory S
-- **THEN** the hold record has S's entry before any of the item's files is written in S
+- **THEN** the hold record has its hold's entry before any of its files is written in S
+
+#### Scenario: An entry is not cleared while its run is part-way
+
+- **WHEN** a flagged run in state directory S has added its hold's entry but not yet appended
+  its `needs a person` row
+- **AND** a release of the item has been requested
+- **THEN** no process clears that entry until the row exists, or until that run is gone
+
+#### Scenario: A copied state directory that finds nothing releases nothing
+
+- **WHEN** state directory S is copied before a hold's question file is written in S, so the copy
+  has S's id but not the file
+- **AND** a release of the item has been requested
+- **THEN** a process on the copy finds no named file and clears nothing
+
+#### Scenario: A later hold of the same item is independent
+
+- **WHEN** a hold of an item was released
+- **AND** a later flagged run keeps a new hold of the item
+- **THEN** the item is held by the new hold, whose `needs a person` row has no `released` row
+  naming it, whatever the earlier hold's rows say
 
 #### Scenario: igor release names the state directories still to clear
 
-- **WHEN** a held item's hold record has entries for state directories S1 and S2
+- **WHEN** a held item has holds with entries naming state directories S1 and S2
 - **AND** the operator runs `igor release` for the item against S1, and its deletes succeed
-- **THEN** `igor release` prints S1's id, S1's entry is cleared, the item stays held, and
+- **THEN** `igor release` prints S1's id, S1's hold is released, the item stays held, and
   `igor release` names S2's id as still holding files
 
-#### Scenario: A hold record with no entry stays held
+#### Scenario: A lost hold record is rebuilt from the ledger
 
-- **WHEN** a held item's hold record has no entry
-- **AND** its release by an edit has been requested
-- **THEN** the item stays held, and the stuck-release notice says the files' location is unknown
-- **AND** `igor release` for the item refuses unless the operator passes gate two's flag, and
-  with it deletes any of the item's files in its own state directory and appends `released`
+- **WHEN** two holds of an item are open and the hold record is lost
+- **THEN** a process rebuilds it with an open entry for each hold whose `needs a person` row has
+  no `released` row, from the state-directory id each row names
+- **AND** the item stays held throughout
 
 #### Scenario: A stuck-release notice keeps item names off the state branch
 
 - **WHEN** a requested release is stuck because no live process answers for state directory S
-- **THEN** the notice's record on the state branch holds only its key
-- **AND** the notice text and the Igor's log lines for the notice name the item and S's id and
-  tell the operator to run `igor release` against S, and hold nothing else of the item: no
+- **THEN** nothing about the notice is written to the state branch: each process rebuilds it
+  each cycle
+- **AND** the Igor's log lines for the notice name the item and S's id and tell the operator to run `igor release` against S, and hold nothing else of the item: no
   question, category, path or host name
 
 #### Scenario: Log copies from a question that was not kept are released
 
 - **WHEN** a flagged run's question file could not be written, but a session-log copy was moved
   under `flagged-questions` in state directory S
-- **THEN** the hold record has an entry for S naming the rank that moved the copy
-- **AND** a release deletes that copy in S before the item is worked again
+- **THEN** the hold record has an entry for its hold naming S's id, and its ledger row reads
+  `needs a person, question not kept`
+- **AND** a release deletes that session-log copy in S and so clears the entry, since no question
+  file was written
 
 #### Scenario: The operator releases a held item on the host
 
@@ -283,11 +315,11 @@ release a held item.
 
 #### Scenario: A released item is not held again by its old ledger row
 
-- **WHEN** the operator released a held item with `igor release`
+- **WHEN** the operator released each hold of an item with `igor release`
 - **AND** the item's hold record is later missing
-- **THEN** the item is not held again, since its latest ledger row is `released` and its host
-  file is gone
-- **AND** the session logs kept beside that file are gone too
+- **THEN** the item is not held again, since each `needs a person` row has a `released` row
+  naming its hold, and the question files the entries named are gone
+- **AND** the session logs kept beside them are gone too
 
 #### Scenario: A cure key does not release a held item
 
@@ -301,8 +333,8 @@ release a held item.
 - **WHEN** a flagged run stopped on a question and handed the item back
 - **AND** the item's hold record is later missing or unreadable, or older than the 30 days
   after which another item's record expires
-- **AND** the item's file under `flagged-questions` is on the host
-- **THEN** the item stays held
+- **THEN** the item stays held, since its `needs a person` row has no `released` row naming its
+  hold
 
 #### Scenario: An edit without write access leaves a flagged item held
 

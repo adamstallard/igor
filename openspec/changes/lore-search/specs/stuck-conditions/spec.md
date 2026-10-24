@@ -12,7 +12,10 @@ stopping one. It carries no *discriminator*, the value `condition-backoff` lets 
 occurrence use to close an open one, so an occurrence for one item never closes one open for
 another. It SHALL stay open while any item it was opened
 for is still affected, and clear only when none is; no probe item and no cooldown SHALL clear
-it. Its record on the state branch SHALL hold only its key. The Igor's own log on the host
+it. A notice SHALL have no stored record. Like the conditions `condition-backoff` defines, which
+are rebuilt from the execution log, each process rebuilds it each cycle, from the ledger rows
+and hold-record entries that affect it, #179's heartbeat files, and, on its own host, its own
+state directory and log. The Igor's own log on the host
 SHALL list the items that keep each notice open, each time that list changes. Two conditions
 are notices: the one `graceful-handoff` opens for a question the Igor could not keep, whose
 item is affected while it is held, and the stuck-release one `work-triage` opens, whose item
@@ -48,3 +51,68 @@ is affected while its requested release is stuck.
 - **AND** one of them is released
 - **THEN** the condition stays open, and the Igor's log lists the other
 - **AND** once the other is released too, the condition clears
+
+## MODIFIED Requirements
+
+### Requirement: Every open condition is readable without naming a role
+
+Every open condition SHALL be readable from `igor conditions`, a command run with no argument, so that its reader need not know which role to ask about,
+stating for each one: the cure key, the scope it stops, how many times it has recurred, what would
+cure it, and when its probe is due. Some conditions clear without a probe: a read-cleared
+condition clears on a passing read and keeps no recurrence count, and one on a refused GitHub
+App credential clears when a token is minted again, as `surface-adapter` says. For such a
+condition the listing SHALL say what clears it in place of a probe time. It SHALL show a count
+only for a condition whose kind keeps one, as the requirement defining that kind says. A seat's
+refused credential, unlike the App's, keeps a count and a probe; for it, the count and the probe
+time SHALL be the ones `condition-backoff`'s
+*Reporting tells a refused credential from an unreadable one, and clears nothing* has budget
+reporting print, read from the same conditions. A notice, as *A notice opens at once, stops
+nothing, and stays open while an item is affected* defines it, has no scope, count or probe:
+the listing SHALL say that it stops nothing and clears when no item is affected, and SHALL name
+no item, which only the Igor's log on the host names. A notice is listed once whatever its
+key, as each process rebuilds it; where the ledger or the hold record it is rebuilt from cannot
+be read, the listing SHALL say so.
+
+A condition is one cure key in the execution log every Igor appends to, so a condition several
+Igors met SHALL appear once, with the one count the log holds for its cure key. Where no
+condition is open, the command SHALL say so, and where the execution log the conditions are
+rebuilt from cannot be read, it SHALL say that instead. Reading the listing SHALL change
+nothing: no condition cleared, no count reset, no cooldown shortened.
+
+#### Scenario: A role-scoped stop is visible to somebody who did not know which role
+
+- **WHEN** a condition stops one role of several
+- **THEN** it is listed by a command that was given no role
+- **AND** the listing names the cure key, the role it stops, and what would cure it
+
+#### Scenario: One cure met by several Igors reads as one condition
+
+- **WHEN** five Igors have met the same cure key
+- **THEN** the listing shows one condition, with one count
+
+#### Scenario: The listing says when the probe is due
+
+- **WHEN** an open condition that clears by a probe is listed
+- **THEN** the instant its next probe is due is shown
+
+#### Scenario: A condition with no probe says what clears it
+
+- **WHEN** a read-cleared condition is listed
+- **THEN** the listing shows no probe time and no count, and says a passing read clears it
+
+#### Scenario: A notice says it stops nothing and names no item
+
+- **WHEN** the stuck-release notice is open for one item
+- **THEN** `igor conditions` lists it with no scope, count or probe time, says it stops nothing
+  and clears when no item is affected, and names no item
+
+#### Scenario: Reading changes nothing
+
+- **WHEN** an operator reads the listing
+- **THEN** every condition is in the state it was in, with the same count and the same cooldown
+
+#### Scenario: Nothing open reads as nothing open
+
+- **WHEN** no condition is open
+- **THEN** the listing says so
+- **AND** that is distinct from a listing that could not be read
