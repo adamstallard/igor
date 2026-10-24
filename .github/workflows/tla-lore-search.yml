@@ -10,11 +10,6 @@
 #   model/negative/, named No<rule>.cfg, turns one of those rules off. TLC
 #   must find a violation there; a file that passes means the model does
 #   not show that rule is needed.
-# - No job runs model/findings/. Each file there finds a violation the rules
-#   do not prevent, a limit the repository's owner has accepted (decisions
-#   133 and 134 in the change's proposal). Those violations are expected and
-#   change nothing a reviewer must act on, so a job would only repeat them;
-#   each file keeps finding its violation until the spec's rules change.
 #
 # To move to another tla2tools.jar release, change TLA_TOOLS_VERSION and
 # TLA_TOOLS_SHA256 together: the checksum step rejects any other file.
@@ -52,6 +47,9 @@ jobs:
           - LoreSearchHoldsLostRecord.cfg
           - LoreSearchHoldsCopy.cfg
           - LoreSearchHoldsLiveness.cfg
+          - LoreSearchHoldsCopyAfterWrite.cfg
+          - LoreSearchHoldsCrashBeforeClear.cfg
+          - LoreSearchHoldsLostPartWay.cfg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1

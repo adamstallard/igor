@@ -53,21 +53,33 @@
 (* lost: it is what every process reads holds from.                        *)
 (*                                                                         *)
 (* Each rule the model found the change needs is a TRUE/FALSE constant,    *)
-(* TRUE in the change as specified. The configurations under negative/     *)
-(* each turn one rule off and find a violation, and those under findings/  *)
-(* record violations the rules do not prevent, limits that Adam, the       *)
-(* repository's owner, accepts (decisions 133 and 134).                    *)
+(* TRUE in the change as specified, and each configuration under negative/ *)
+(* turns one rule off and finds a violation.                               *)
 (*                                                                         *)
 (* Two further constants are assumptions, not rules. CopyBeforeFiles says  *)
-(* a copied directory holds no question file, since copying a live state   *)
-(* directory is unsupported; every configuration but                       *)
-(* findings/CopiedQuestion.cfg sets it. DeletedSurvivesCrash says a        *)
-(* process still knows after a crash which named files it deleted; the     *)
-(* liveness configurations set it, and findings/CrashBeforeClear.cfg drops *)
-(* it. Each finding shows what dropping its assumption costs. Without      *)
-(* DeletedSurvivesCrash, a rank that retires, or an `igor run` that exits, *)
-(* between deleting a named file and clearing its entry forgets what it    *)
-(* deleted just as a crash does.                                           *)
+(* a copied directory holds no question file; DeletedSurvivesCrash says a  *)
+(* process still knows after a crash which named files it deleted. Neither *)
+(* is promised: copying a live state directory is unsupported (decision    *)
+(* 133), and a crash between deleting a named file and clearing its entry  *)
+(* is a known limit the spec leaves to the operator (decision 134).        *)
+(* Without DeletedSurvivesCrash, a rank that retires, or an `igor run`     *)
+(* that exits, between deleting a named file and clearing its entry also   *)
+(* forgets what it deleted, so no process on its directory can clear that  *)
+(* entry.                                                                  *)
+(*                                                                         *)
+(* The model checks one rule (decision 140) for the ways the record and    *)
+(* the files can disagree, where it used to have a configuration for each: *)
+(* every mismatch on a directory a live process uses leads to the mismatch *)
+(* notice, which the operator resolves with `igor release`. Three          *)
+(* configurations check that rule, MismatchNoticed, where a mismatch       *)
+(* arises. LoreSearchHoldsCopyAfterWrite.cfg sets CopyBeforeFiles FALSE    *)
+(* and leaves out the two invariants a copy is known to break,             *)
+(* ClearedOnlyByDeleting and NeverReleasedWithFiles.                       *)
+(* LoreSearchHoldsCrashBeforeClear.cfg sets DeletedSurvivesCrash FALSE     *)
+(* with no operator, so a crash before a clear leaves the hold for good,   *)
+(* and leaves out ReleaseCompletes, which in the real system the           *)
+(* operator's flag completes. LoreSearchHoldsLostPartWay.cfg loses the     *)
+(* record while a rank may retire part-way.                                *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets
 
@@ -92,6 +104,7 @@ CONSTANTS
     WorkOnlyIfReleased, \* a process works the item only when no hold is open
     DeletedSurvivesCrash, \* assumption, not a rule: that a named file was deleted is kept on the directory, past a crash or a retirement
         CleanOrphans,   \* once the process keeping a hold is gone before its `needs a person` row, a live process on its directory deletes its files and clears its entry, with no request (decision 135)
+    DetectMismatch, \* each live process compares the record with its own directory and opens the mismatch notice (decision 140)
     OperatorActs    \* the operator may run `igor release`; the liveness configurations leave it out
 
 \* Processes are "r1", "r2", "rc" and "run"; directories are "d1", "d2" and
@@ -131,9 +144,10 @@ VARIABLES
     delBy,      \* ghost: delBy[d] is who has deleted files on directory d
     clearedBy,  \* ghost: clearedBy[h] is how hold h's entry was cleared
     opMay,      \* <<hold, directory>>: named files `igor release` has just deleted
+    notice,     \* the directories for which the mismatch notice is open
     crashes, losses, retires, copies
 
-vars == <<present, lost, entry, needs, released, requested, keep, mayClear,
+vars == <<notice, present, lost, entry, needs, released, requested, keep, mayClear,
           pending, up, gone, worked, delBy, clearedBy, opMay, crashes, losses,
           retires, copies>>
 
@@ -155,6 +169,7 @@ Init ==
     /\ delBy = [d \in Dirs |-> {}]
     /\ clearedBy = [h \in Holds |-> "none"]
     /\ opMay = {}
+    /\ notice = {}
     /\ crashes = 0 /\ losses = 0 /\ retires = 0 /\ copies = 0
 
 \* A hold is open while it has its `needs a person` row and no `released`
@@ -175,7 +190,7 @@ AddEntry(p) ==
     /\ entry' = [entry EXCEPT ![p] = "open"]
     /\ keep' = [keep EXCEPT ![p] = 1]
     /\ worked' = FALSE
-    /\ UNCHANGED <<present, lost, needs, released, requested, mayClear, pending,
+    /\ UNCHANGED <<notice, present, lost, needs, released, requested, mayClear, pending,
                    up, gone, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 MoveLog(p) ==
@@ -183,14 +198,14 @@ MoveLog(p) ==
     /\ present' = present \cup {<<p, "log", Home(p)>>}
     /\ keep' = [keep EXCEPT ![p] = 2]
     /\ worked' = IF keep[p] = 0 THEN FALSE ELSE worked
-    /\ UNCHANGED <<lost, entry, needs, released, requested, mayClear, pending, up,
+    /\ UNCHANGED <<notice, lost, entry, needs, released, requested, mayClear, pending, up,
                    gone, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* Without EntryFirst, the entry may come after the files.
 LateEntry(p) ==
     /\ ~EntryFirst /\ up[p] /\ keep[p] \in {2, 3} /\ entry[p] = "none"
     /\ entry' = [entry EXCEPT ![p] = "open"]
-    /\ UNCHANGED <<present, lost, needs, released, requested, keep, mayClear,
+    /\ UNCHANGED <<notice, present, lost, needs, released, requested, keep, mayClear,
                    pending, up, gone, worked, delBy, clearedBy, opMay, crashes, losses,
                    retires, copies>>
 
@@ -198,7 +213,7 @@ WriteQ(p) ==
     /\ up[p] /\ keep[p] = 2
     /\ present' = present \cup {<<p, "q", Home(p)>>}
     /\ keep' = [keep EXCEPT ![p] = 3]
-    /\ UNCHANGED <<lost, entry, needs, released, requested, mayClear, pending, up,
+    /\ UNCHANGED <<notice, lost, entry, needs, released, requested, mayClear, pending, up,
                    gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* The `needs a person` row, naming the directory's id and the question
@@ -212,7 +227,7 @@ AppendNeeds(p) ==
     /\ needs' = [needs EXCEPT ![p] = TRUE]
     /\ entry' = IF EntryFirst /\ entry[p] = "none" THEN [entry EXCEPT ![p] = "open"] ELSE entry
     /\ keep' = [keep EXCEPT ![p] = 4]
-    /\ UNCHANGED <<present, lost, released, requested, mayClear, pending,
+    /\ UNCHANGED <<notice, present, lost, released, requested, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 (* ---------------------------- releasing -------------------------------- *)
@@ -224,7 +239,7 @@ AppendNeeds(p) ==
 SeeEdit(p) ==
     /\ up[p] /\ \E h \in Holds : needs[h] /\ h \notin requested
     /\ requested' = requested \cup {h \in Holds : needs[h]}
-    /\ UNCHANGED <<present, lost, entry, needs, released, keep, mayClear, pending,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, released, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* A run gone before appending its `needs a person` row left an entry, and
@@ -255,7 +270,7 @@ DeleteLog(x, h) ==
     /\ ActsFor(x, h) /\ <<h, "log", d>> \in present
     /\ present' = present \ {<<h, "log", d>>}
     /\ delBy' = [delBy EXCEPT ![d] = @ \cup {x}]
-    /\ UNCHANGED <<lost, entry, needs, released, requested, keep, mayClear,
+    /\ UNCHANGED <<notice, lost, entry, needs, released, requested, keep, mayClear,
                    pending, up, gone, worked, clearedBy, opMay, crashes, losses, retires, copies>>
 
 DeleteQ(x, h) ==
@@ -264,7 +279,7 @@ DeleteQ(x, h) ==
     /\ present' = present \ {<<h, "q", d>>}
     /\ mayClear' = [mayClear EXCEPT ![x] = @ \cup {h}]
     /\ delBy' = [delBy EXCEPT ![d] = @ \cup {x}]
-    /\ UNCHANGED <<lost, entry, needs, released, requested, keep, pending, up,
+    /\ UNCHANGED <<notice, lost, entry, needs, released, requested, keep, pending, up,
                    gone, worked, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* What x knows was deleted: its own memory, or, under DeletedSurvivesCrash,
@@ -277,9 +292,7 @@ Deleted(x) ==
 \* With ClearByDeleting, x clears h's entry only after the named file was
 \* deleted as Deleted says; without it, finding no file is enough. An
 \* orphan's run may have written no question file, so its entry is cleared
-\* once none of its files is left (decision 135; a detail the agent that
-\* wrote the change fitted, which the proposal's Still open asks Adam to
-\* confirm).
+\* once none of its files is left (decisions 135 and 141).
 Clear(x, h) ==
     LET d == Where(x, h) IN
     /\ ActsFor(x, h) /\ <<h, "log", d>> \notin present
@@ -288,7 +301,7 @@ Clear(x, h) ==
     /\ mayClear' = [y \in Procs |-> mayClear[y] \ {h}]
     /\ pending' = [pending EXCEPT ![x] = @ \cup {h}]
     /\ clearedBy' = [clearedBy EXCEPT ![h] = d]
-    /\ UNCHANGED <<present, lost, needs, released, requested, keep, up, gone,
+    /\ UNCHANGED <<notice, present, lost, needs, released, requested, keep, up, gone,
                    worked, delBy, crashes, losses, retires, copies, opMay>>
 
 ReRead(x, h) ==
@@ -297,20 +310,20 @@ ReRead(x, h) ==
     /\ IF (~ReReadBeforeReleased \/ entry[h] = "cleared") /\ needs[h] /\ ~released[h]
           THEN released' = [released EXCEPT ![h] = TRUE]
           ELSE UNCHANGED released
-    /\ UNCHANGED <<present, lost, entry, needs, requested, keep, mayClear, up,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, requested, keep, mayClear, up,
                    gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* Without ReReadBeforeReleased, `released` may come without a clear.
 EarlyReleased(x, h) ==
     /\ ~ReReadBeforeReleased /\ up[x] /\ ActsFor(x, h)
     /\ released' = [released EXCEPT ![h] = TRUE]
-    /\ UNCHANGED <<present, lost, entry, needs, requested, keep, mayClear, pending,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 Recover(x, h) ==
     /\ RecoverReleased /\ up[x] /\ ~lost /\ entry[h] = "cleared" /\ needs[h] /\ ~released[h]
     /\ released' = [released EXCEPT ![h] = TRUE]
-    /\ UNCHANGED <<present, lost, entry, needs, requested, keep, mayClear, pending,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* `igor release`, run against directory d, deletes a hold's files there.
@@ -323,7 +336,7 @@ OpDelete(h, d) ==
                        /\ present' = present \ {<<h, k, d>>}
                        /\ opMay' = IF k = "q" THEN opMay \cup {<<h, d>>} ELSE opMay
     /\ delBy' = [delBy EXCEPT ![d] = @ \cup {Op}]
-    /\ UNCHANGED <<lost, entry, needs, released, requested, keep, mayClear,
+    /\ UNCHANGED <<notice, lost, entry, needs, released, requested, keep, mayClear,
                    pending, up, gone, worked, clearedBy, crashes, losses, retires, copies>>
 
 \* `igor release` clears the entry once it has itself deleted the named file
@@ -335,7 +348,7 @@ OpClear(h) ==
         /\ opMay' = {m \in opMay : m[1] # h}
         /\ clearedBy' = [clearedBy EXCEPT ![h] = d]
     /\ entry' = [entry EXCEPT ![h] = "cleared"]
-    /\ UNCHANGED <<present, lost, needs, released, requested, keep, mayClear,
+    /\ UNCHANGED <<notice, present, lost, needs, released, requested, keep, mayClear,
                    pending, up, gone, worked, delBy, crashes, losses, retires, copies>>
 
 \* With decision 121's flag, the operator clears an entry whose named file
@@ -346,13 +359,13 @@ OpDrop(h) ==
     /\ \A d \in Dirs : \A k \in Kinds : <<h, k, d>> \notin present
     /\ entry' = [entry EXCEPT ![h] = "cleared"]
     /\ clearedBy' = [clearedBy EXCEPT ![h] = "flag"]
-    /\ UNCHANGED <<present, lost, needs, released, requested, keep, mayClear,
+    /\ UNCHANGED <<notice, present, lost, needs, released, requested, keep, mayClear,
                    pending, up, gone, worked, delBy, crashes, losses, retires, copies, opMay>>
 
 OpReRead(h) ==
     /\ OperatorActs /\ ~lost /\ entry[h] = "cleared" /\ needs[h] /\ ~released[h]
     /\ released' = [released EXCEPT ![h] = TRUE]
-    /\ UNCHANGED <<present, lost, entry, needs, requested, keep, mayClear, pending,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 (* ---------------------------- rebuilding -------------------------------- *)
@@ -362,7 +375,7 @@ LoseRecord ==
     /\ lost' = TRUE
     /\ entry' = [h \in Holds |-> "none"]
     /\ losses' = losses + 1
-    /\ UNCHANGED <<present, needs, released, requested, keep, mayClear, pending,
+    /\ UNCHANGED <<notice, present, needs, released, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, retires, copies>>
 
 \* Rebuild the record from the ledger: an open entry for each hold whose
@@ -376,7 +389,7 @@ Rebuild(x) ==
                    IF entry[h] # "none" THEN entry[h]
                    ELSE IF RebuildFromLedger /\ needs[h] /\ ~released[h] THEN "open"
                    ELSE "none"]
-    /\ UNCHANGED <<present, needs, released, requested, keep, mayClear, pending,
+    /\ UNCHANGED <<notice, present, needs, released, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 (* ---------------------------- working ---------------------------------- *)
@@ -391,20 +404,49 @@ Work(p) ==
     /\ up[p] /\ AnyHold /\ ~worked
     /\ IF WorkOnlyIfReleased THEN NotHeld ELSE TRUE
     /\ worked' = TRUE
-    /\ UNCHANGED <<present, lost, entry, needs, released, requested, keep, mayClear,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, released, requested, keep, mayClear,
                    pending, up, gone, delBy, clearedBy, opMay, crashes, losses, retires, copies>>
+
+(* ---------------------------- mismatches -------------------------------- *)
+
+\* A mismatch on directory d (decision 140): the flagged-hold record, read
+\* when it is not lost, and the files on d disagree. Either an open entry for
+\* a hold with its `needs a person` row names d's id while its question file
+\* is absent from d, or d holds a file of a hold whose entry is not open. The
+\* third kind, a `needs a person` row with no entry once the record is
+\* readable, arises only from a run with no state-directory id, since a
+\* rebuild restores every other; the model leaves such runs out.
+Mismatch(d) ==
+    /\ ~lost
+    /\ \E h \in Holds :
+        \/ /\ entry[h] = "open" /\ needs[h] /\ IdOf(Home(h)) = IdOf(d)
+           /\ <<h, "q", d>> \notin present
+        \/ /\ entry[h] # "open"
+           /\ \E k \in Kinds : <<h, k, d>> \in present
+
+\* A live process compares the record with its own directory and opens or
+\* clears the mismatch notice for it. It reads only its own directory, the
+\* one on its own machine.
+Detect(p) ==
+    /\ DetectMismatch /\ up[p]
+    /\ notice' = IF Mismatch(DirOf(p)) THEN notice \cup {DirOf(p)}
+                                       ELSE notice \ {DirOf(p)}
+    /\ UNCHANGED <<present, lost, entry, needs, released, requested, keep, mayClear,
+                   pending, up, gone, worked, delBy, clearedBy, opMay, crashes, losses,
+                   retires, copies>>
 
 (* ---------------------------- faults ----------------------------------- *)
 
 \* A crash loses which named files p has just deleted, unless
-\* DeletedSurvivesCrash keeps that on the directory; findings/CrashBeforeClear.cfg
-\* shows what losing it costs.
+\* DeletedSurvivesCrash keeps that on the directory;
+\* LoreSearchHoldsCrashBeforeClear.cfg checks that losing it still opens the
+\* mismatch notice.
 Crash(p) ==
     /\ up[p] /\ crashes < MaxCrashes
     /\ mayClear' = IF DeletedSurvivesCrash THEN mayClear ELSE [mayClear EXCEPT ![p] = {}]
     /\ pending' = [pending EXCEPT ![p] = {}]
     /\ crashes' = crashes + 1
-    /\ UNCHANGED <<present, lost, entry, needs, released, requested, keep, up, gone,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, released, requested, keep, up, gone,
                    worked, delBy, clearedBy, opMay, losses, retires, copies>>
 
 Retire(p) ==
@@ -414,7 +456,7 @@ Retire(p) ==
     /\ mayClear' = IF DeletedSurvivesCrash THEN mayClear ELSE [mayClear EXCEPT ![p] = {}]
     /\ pending' = [pending EXCEPT ![p] = {}]
     /\ retires' = retires + 1
-    /\ UNCHANGED <<present, lost, entry, needs, released, requested, keep, worked,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, released, requested, keep, worked,
                    delBy, clearedBy, opMay, crashes, losses, copies>>
 
 Exit(p) ==
@@ -423,7 +465,7 @@ Exit(p) ==
     /\ gone' = [gone EXCEPT ![p] = TRUE]
     /\ mayClear' = IF DeletedSurvivesCrash THEN mayClear ELSE [mayClear EXCEPT ![p] = {}]
     /\ pending' = [pending EXCEPT ![p] = {}]
-    /\ UNCHANGED <<present, lost, entry, needs, released, requested, keep, worked,
+    /\ UNCHANGED <<notice, present, lost, entry, needs, released, requested, keep, worked,
                    delBy, clearedBy, opMay, crashes, losses, retires, copies>>
 
 \* A copy of "d1" as it stands, files included, to "d1copy". With
@@ -434,13 +476,13 @@ CopyDir ==
     /\ present' = {f \in present : f[3] # "d1copy"}
                     \cup {<<f[1], f[2], "d1copy">> : f \in {g \in present : g[3] = "d1"}}
     /\ copies' = copies + 1
-    /\ UNCHANGED <<lost, entry, needs, released, requested, keep, mayClear, pending,
+    /\ UNCHANGED <<notice, lost, entry, needs, released, requested, keep, mayClear, pending,
                    up, gone, worked, delBy, clearedBy, opMay, crashes, losses, retires>>
 
 Next ==
     \/ \E p \in Procs :
         \/ AddEntry(p) \/ MoveLog(p) \/ LateEntry(p) \/ WriteQ(p) \/ AppendNeeds(p)
-        \/ SeeEdit(p) \/ Rebuild(p) \/ Work(p) \/ Crash(p) \/ Retire(p) \/ Exit(p)
+        \/ SeeEdit(p) \/ Rebuild(p) \/ Work(p) \/ Detect(p) \/ Crash(p) \/ Retire(p) \/ Exit(p)
         \/ \E h \in Holds :
             \/ DeleteLog(p, h) \/ DeleteQ(p, h) \/ Clear(p, h) \/ ReRead(p, h)
             \/ EarlyReleased(p, h) \/ Recover(p, h)
@@ -452,7 +494,7 @@ Next ==
 Fairness ==
     \A p \in Procs :
         /\ WF_vars(AddEntry(p)) /\ WF_vars(MoveLog(p)) /\ WF_vars(WriteQ(p))
-        /\ WF_vars(AppendNeeds(p)) /\ WF_vars(Rebuild(p))
+        /\ WF_vars(AppendNeeds(p)) /\ WF_vars(Rebuild(p)) /\ WF_vars(Detect(p))
         /\ \A h \in Holds :
             /\ WF_vars(DeleteLog(p, h)) /\ WF_vars(DeleteQ(p, h)) /\ WF_vars(Clear(p, h))
             /\ WF_vars(ReRead(p, h)) /\ WF_vars(Recover(p, h))
@@ -465,13 +507,14 @@ TypeOK ==
     /\ present \subseteq (Holds \X Kinds \X Dirs)
     /\ entry \in [Holds -> {"none", "open", "cleared"}]
     /\ keep \in [Procs -> 0..5]
+    /\ notice \subseteq Dirs
 
 \* Requirement: "An item handed back is not re-worked until something answers"
 \* (work-triage), decisions 104, 108, 125, 127, 128 and 132.
 \* A hold is never released while its files remain on its own state
 \* directory. A copy's own files are outside this invariant; a release made
 \* on a copy while the original's files remain breaks it, as
-\* findings/CopiedQuestion.cfg shows.
+\* LoreSearchHoldsCopyAfterWrite.cfg shows.
 NeverReleasedWithFiles ==
     \A h \in Holds : released[h] => \A k \in Kinds : <<h, k, Home(h)>> \notin present
 
@@ -503,9 +546,11 @@ ClearedOnlyByDeleting ==
 \* record is not lost and each requested hold's home directory has a live
 \* process at that moment, every hold the request covers is released. The
 \* formula asks for that process only at that moment; the configurations
-\* keep one there, with at most one rank retiring from a shared directory. The configurations that check it lose
-\* no record and copy no directory; a crash between deleting a named file
-\* and clearing its entry is in findings/CrashBeforeClear.cfg.
+\* keep one there, with at most one rank retiring from a shared directory.
+\* The passing configurations that check it lose no record and copy no
+\* directory; a
+\* crash between deleting a named file and clearing its entry is left to the
+\* mismatch notice and the operator's flag (decision 134).
 ReleaseCompletes ==
     (requested # {} /\ (\A p \in Procs : keep[p] \in {4, 5}) /\ ~lost
        /\ \A h \in requested : ~released[h] =>
@@ -515,14 +560,27 @@ ReleaseCompletes ==
 \* Requirement: the same, decision 135: once the process keeping a hold is
 \* gone before appending its `needs a person` row, and its home directory
 \* has a live process, its files are deleted and its entry cleared, with no
-\* release requested. The
-\* configurations that check it lose no record: a lost record drops such an
-\* entry, since the rebuild reads only `needs a person` rows (the proposal's
-\* Still open section asks whether that is accepted).
+\* release requested. The configurations that check it lose no record: a
+\* lost record drops such an entry, since the rebuild reads only `needs a
+\* person` rows, and the files left are a mismatch (decision 141), which
+\* LoreSearchHoldsLostPartWay.cfg checks MismatchNoticed against.
 OrphanCleaned ==
     \A h \in Holds :
         (gone[h] /\ ~needs[h] /\ entry[h] = "open" /\ ~lost
            /\ \E p \in Procs : up[p] /\ DirOf(p) = Home(h))
             ~> (entry[h] = "cleared" /\ \A k \in Kinds : <<h, k, Home(h)>> \notin present)
+
+\* Requirement: the same, decisions 140 and 142: any mismatch the model
+\* reaches on a directory that a live process uses leads to the mismatch
+\* notice being open for it, unless the mismatch ends first, as one does
+\* between a process deleting a named file and clearing its entry. This one
+\* property covers a copy, a crash before a clear, a lost record dropping a
+\* part-way entry, and a rebuilt record reopening a cleared entry: an entry
+\* cleared before the record is lost, with its `released` row not yet
+\* appended, which the rebuild opens again with its files gone.
+MismatchNoticed ==
+    \A d \in Dirs :
+        (Mismatch(d) /\ \E p \in Procs : up[p] /\ DirOf(p) = d)
+            ~> (d \in notice \/ ~Mismatch(d))
 
 =============================================================================
