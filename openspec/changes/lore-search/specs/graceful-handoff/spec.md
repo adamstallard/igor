@@ -64,7 +64,9 @@ process uses it, as by restoring a volume snapshot beside the original, is unsup
 taken before a question file is written cannot release a flagged hold, since `work-triage`
 clears an entry only by deleting the file it names; one taken after can, leaving the original's
 files, which no open entry then names. Any copy shows as a mismatch, which the
-operator resolves with the mismatch notice and `igor release` (`work-triage`). The source of each move,
+operator resolves with the mismatch notice and `igor release` (`work-triage`). No path component of `<tracker>/<repo>/<item>` under `flagged-questions` SHALL be `.` or
+`..`, or empty, whether it comes from the item, the ledger or the operator's `igor release`
+argument; the Igor SHALL refuse such a path, as it refuses a link. The source of each move,
 #174's copy of a session log in the state directory, SHALL be checked by the same rule against following a link, every
 component from the state directory down to the copy. The Igor SHALL NOT check the
 directories above the state directory. The Igor SHALL refuse the action when any checked
@@ -80,8 +82,7 @@ session log leaves that log in place. What a
 refused delete does to `igor release` is `work-triage`'s rule. Once workers run as users of their own (#175),
 no worker run SHALL be able to reach the `flagged-questions` directory; #175 builds that, not
 this change. Until then, and always under `igor run`, another worker running as the same user can
-read it, its logs and categories included, and plant or delete a file in it, which Adam
-accepts. A later flagged run of the same item that stops on a question, after a release or
+read it, its logs and categories included, and plant or delete a file in it (the proposal's decision 94). A later flagged run of the same item that stops on a question, after a release or
 while another flagged run of it is still running, keeps its question in a file of its own, a flagged hold of its own (`work-triage`),
 with its own session logs beside it. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read
@@ -207,6 +208,11 @@ NOT push, post or publish the file, or its text, anywhere.
 - **THEN** each session-log copy moved beside it has a name starting with `<name>`
 - **AND** the entry naming `<name>` names those copies, so a release deletes them and the
   mismatch comparison counts them as named
+
+#### Scenario: A path component that climbs is refused
+
+- **WHEN** the operator runs `igor release github/acme/../12`
+- **THEN** the Igor refuses the path and deletes nothing
 
 #### Scenario: A link below flagged-questions is refused
 

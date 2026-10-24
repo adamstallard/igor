@@ -38,11 +38,14 @@ Each flagged run that stops on a question it could not settle starts a *flagged 
 identified by its own `needs a person` ledger row, whether or not its question was kept; a
 later flagged hold of the same item is independent of an earlier one. The item is flagged-held while any of
 its flagged holds is open, and while a live run keeping its question is *part-way*, having added its flagged hold's entry,
-below, but not yet appended its `needs a person` row; the ledger does not yet
-show that flagged hold, so the run's claim on the item is what keeps it from being worked. A
+below, but not yet appended its `needs a person` row; while part-way, the run's claim on the item
+keeps it from being worked. A
 *rank* is one of the Igor processes #179 runs for the role. The record this requirement keeps
 of the item's flagged holds, its *flagged-hold record*, SHALL NOT expire, and where that record is missing or
-unreadable the item SHALL stay flagged-held rather than be worked again. The flagged-hold record SHALL hold
+unreadable the item SHALL stay flagged-held rather than be worked again. A lost record alone is rebuilt from
+the ledger, below; but the ledger is on the state branch too, so where the state branch itself
+is lost or reset, every flagged hold it recorded is
+released, a limit the proposal's decision 147 accepts. The flagged-hold record SHALL hold
 one *entry* for each flagged hold, naming the *state-directory id* (`graceful-handoff`) of the
 directory the run keeps its files in, the random name of its question file, which also
 prefixes the name of each of its session-log copies (`graceful-handoff`), and the process:
@@ -124,9 +127,8 @@ that leave no question file to read. A batch *by cause*, the cause being a quest
 absent, acts only on entries naming the id of the state directory it runs against, the one
 directory whose files it can see, and releases those whose named question file is absent there
 and none of whose session-log copies remain; since copying a live state directory is
-unsupported (`graceful-handoff`), a file absent there is taken as absent everywhere. Log copies
-are left alone because they hold the question's text. A flagged hold whose question was not kept, or whose log copies remain, is left to `igor release`
-naming its item. A batch *by id* names the id of a state
+unsupported (`graceful-handoff`), a file absent there is taken as absent everywhere. A flagged hold whose log copies remain is left to `igor release` naming its
+item. A batch *by id* names the id of a state
 directory no live process answers for, the second stuck case below, which the operator
 states no longer exists by passing that flag with its id; it releases every entry naming that id. A batch clears such entries,
 appends their `released` rows and deletes nothing. A flagged hold whose question file
@@ -379,6 +381,13 @@ is the way to release a flagged-held item.
 - **THEN** a batch `igor release` by S's id clears the two entries and appends their `released`
   rows, deleting nothing
 - **AND** no batch releases the third flagged hold; only `igor release` naming its item does
+
+#### Scenario: A batch by cause leaves out a hold whose log copies remain
+
+- **WHEN** two entries naming state directory T's id have question files absent from T
+- **AND** a session-log copy of the first remains in T
+- **THEN** a batch `igor release` by cause, run against T, releases only the second
+- **AND** the first is released only by `igor release` naming its item
 
 #### Scenario: A batch by cause acts only on its own directory
 

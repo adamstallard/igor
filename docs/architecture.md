@@ -580,51 +580,89 @@ in that comment. A flagged run, one that met or may have met a sensitive questio
 one that ended before its completed report, posts a handoff that asks no question, even when
 the run stopped on one it could not settle: its reason reads `needs a person`, and the
 question's text never reaches the item. The handoff gets no `igor:question` label, so
-nothing routes the item to an inquisitor role. The Igor keeps the question in a file on its own
-host, `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory
-(`$STATE_DIRECTORY` where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is
-`~/.local/state/igor` when `XDG_STATE_HOME` is unset; a systemd unit that sets
-`StateDirectory=igor`, such as open pull request #179's, sets `STATE_DIRECTORY` to
-`/var/lib/igor`, and `deploy/docker-compose.yml` sets the variable to the same path itself), readable only by its own user,
-and never pushes it. Today's unit sets no state directory, so the Igor falls back to
-`~/.local/state/igor`, which that unit's `ProtectHome=read-only` makes read-only: until #179's
-unit lands, a deployed Igor keeps no question, and every such write fails. When the file
-cannot be written, the handoff still posts, the ledger row's `reason` reads `needs a person,
-question not kept`, and the Igor opens a `condition-backoff` condition
-under a key gate two, the implementation stage of the two-gate workflow (#150), names. It opens on the first failure, stops no work, and stays open while
-any item it was opened for is still held, whatever a *probe item*, the one item `condition-backoff` lets a stopped scope take to test a
-condition, shows; the Igor's log lists
-those items. The condition holds no path; the operator learns which path failed from the Igor's own log on the
-host, which is where the Igor writes the path. The operator finds a kept question under the state directory at
-`flagged-questions/<tracker>/<repo>/<item>.md`, the same `<tracker>/<repo>/<item>` as the item's
-transcript path. The kept file records the flag's categories and, for each question the run stopped on, that
-question's category or, for one without, its text, as the run's handback would have asked it.
-It names every Claude Code session log of the execution that #174 copies; this change needs
-#174 to copy one for every model step, before the reset that precedes the next, and the Igor
-moves those copies beside the file, so the operator reads a categorized question itself in those
-logs. A reply on
-the item does not rerun the item: the operator reads the question and decides whether it may be
-worked again. The item stays held, not worked again, whatever else its
-handoff carries, such as a cure key that would release any other item, and its hold record never expires; a lost record leaves it held. The operator
-can always release it with `igor release <tracker>/<repo>/<item>` on the host. An edit, relabel
-or change of holder by someone with write access to the item's repository releases it too,
-where the edit can be attributed, which needs #141, so until #141 lands only `igor release`
-does; either way of releasing deletes the item's session logs and then its question file
-before the item counts as released, the question file last so that a refused delete leaves
-it in place and the item still known as held. For an edit, the Igor process of the role
-that sees it, one of #179's *ranks*, appends a `release requested` row to the ledger, and the
-rank that kept the question does the deletes on its next poll, retrying a refused one on
-every poll. Each state directory keeps a random id, created once, and the hold record has one
-entry per state directory that may hold the item's files, naming that id, never a host, and
-the rank or `igor run` that last wrote there; because every such directory is named, two
-ranks that each kept files for the same item, in different state directories, are both cleaned up, and the item is released once every directory's files
-are gone. No process deletes in another's state directory. If the keeping rank's delete is refused, or it is gone by
-#179's heartbeat rule, or the `igor run` has exited, or the record has no entry, the item
-stays held, and a notice under a key of its own, a stuck release, tells the operator to run
-`igor release` on the host whose state directory has that id (`igor release` prints its own
-id, so the operator can match them), or that the
-files' location is unknown. An edit by anyone without write access, or one whose author
-cannot be read, leaves the item held.
+nothing routes the item to an inquisitor role. The Igor keeps the question in a file on its own host,
+`flagged-questions/<tracker>/<repo>/<item>/<name>.md` under its state directory, where `<name>`
+is random and `<tracker>/<repo>/<item>` is the item's transcript path. The state directory is
+`$STATE_DIRECTORY` where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is
+`~/.local/state/igor` when `XDG_STATE_HOME` is unset. #179's systemd unit sets
+`StateDirectory=igor`, so `STATE_DIRECTORY` is `/var/lib/igor`, and `deploy/docker-compose.yml`
+sets the variable to the same path itself. The file is readable only by the Igor's own user, and
+igor never pushes it. It records the flag's categories and, for each question the run stopped
+on, that question's category, or, for a stopped question with no category, its text, as the run's handback would have
+asked it. It names every Claude Code session log of the execution that #174 copies, one for
+every model step, taken before the reset that precedes the next, and the Igor moves those
+copies beside the file, each named with the file's `<name>` as its prefix. The operator reads a
+categorized question itself in those logs. When the file cannot be written, the handoff still
+posts, the ledger row's `reason` reads `needs a person, question not kept`, and a notice opens,
+below; the path that failed appears only in the Igor's own log on the host.
+
+Each such run puts a *flagged hold* on the item, and the item is *flagged-held* while any of its
+flagged holds is open. (#179's "held", an item a claim holds, is a different thing.) A reply does
+not release it, nor does a *cure key*, `condition-backoff`'s key for a handoff caused by the Igor's own
+setup, which would release any other item: the operator reads the
+question and decides whether the item may be worked again. Each flagged hold is identified by
+its own `needs a person` ledger row, and a later flagged run of the same item starts a hold of
+its own, with a file of its own. The *flagged-hold record* on the state branch has one entry per
+flagged hold, naming the opaque id of the state directory that holds its files, its question
+file's random name and the process that kept the hold, but never a host, so nothing about the
+host reaches the branch. Each state directory keeps that
+random id, created once. The record never expires. The `needs a person` row names the same id and
+file name, so a lost record is rebuilt in full from the ledger. A run adds its entry
+before writing any file, and its row comes last.
+
+The operator can always release an item with `igor release <tracker>/<repo>/<item>` on the
+host. An edit, relabel or change of holder by someone with write access to the item's
+repository releases it too, where the edit can be attributed, which needs #141, the change that lets igor tell who made
+an edit; until #141 lands, only `igor release` does. For an edit, the Igor process that sees it, a *rank*, one of the processes #179 runs
+for the role, or an `igor run`, appends a `release requested` row, which covers the flagged holds before it. Any
+live process whose state directory has a covered hold's id then deletes that hold's session
+logs and then its question file, by the no-follow rule below, clears its entry, and appends a
+`released` row naming the hold; `igor release` does the same for its own directory. An entry is
+cleared only once its run's `needs a person` row exists, so the run has written all its files,
+and only by deleting the file the entry names, so a directory that finds nothing, such as a
+copy taken before the question file was written, can never release a hold. A hold whose question was not kept is the exception: its entry is
+cleared by deleting its session-log copies. No process deletes in another's state directory. A run that dies
+part-way, after its entry but before its row, is cleaned up by any live process on its
+directory once #179's heartbeat shows it gone, with no request. The item is released once each
+of its flagged holds has its `released` row.
+
+Three notices tell the operator about flagged holds. Each opens on its first occurrence, stops
+no work, is rebuilt each cycle with no record of its own, and clears when no item is affected;
+`igor conditions` lists it with no item, and the Igor's log on the host names the items and
+state-directory ids. *Question not kept* is the failed write above. *Release stuck* means a
+delete was refused, or no live process answers for the hold's state directory; #179's heartbeat,
+which records each process's state-directory id, shows whether one does. *Hold mismatch* covers every way
+the record, the ledger and the files on a host can disagree: an entry whose named file is
+absent, a file no open entry names, or an open hold with no entry. Each process compares the
+record with its own directory every cycle, so a crash between a delete and a clear, a rebuilt
+record that reopens a cleared entry, a copied state directory, or a process that wrote after it
+was counted gone, all end in this one notice rather than a rule of their own. Copying a live
+state directory is unsupported. Each notice names its runbook in `docs/deployment.md`, which
+gives the `igor release` command and flag that clears it. `igor release` also releases in a
+batch, but only flagged holds that leave nothing to read: by cause, those whose question file
+and session-log copies are all absent from the directory it runs against; by id, every hold naming a directory no live process answers for; running that batch is the
+operator's statement that the directory is gone. A hold whose question file
+exists is released only by naming its item, after the operator has read it. The state branch
+is a cache that may be lost or reset, and the ledger is on it too, so losing it releases every
+flagged hold: one whose
+question was kept leaves files the mismatch notice finds, and one whose question was not kept,
+with no session-log copy left, is dropped silently. That is accepted, since it is rare and a rerun of the item meets the same
+question and is flagged-held again. An edit by anyone
+without write access, or one whose author cannot be read, leaves the item flagged-held.
+
+These rules are checked by a TLA+ model, `openspec/changes/lore-search/model/`, which the
+`tla-lore-search` workflow runs with TLC on every change to it. Ranks and `igor run`s share or
+own state directories, every write is its own step, and processes crash, retire and exit
+between any two writes; the record can be lost and a directory copied. Each rule that the model
+showed the change needs is a constant that turns it on or off, and a configuration under `negative/` turns each off and
+must find a violation. The passing configurations check that no hold is released while its
+files remain, that no process deletes outside its own directory, that an item is never worked
+while a hold is open, and that an entry is cleared only by deleting its file; that a requested
+release completes while a live process uses each hold's directory; that a part-way run is
+cleaned up; and that any mismatch on a directory a live process uses opens the mismatch notice.
+Two assumptions the spec does not promise are named as such: that a copy holds no question
+file, and that a process remembers its deletes across a crash. Each configuration that
+drops one of these assumptions checks that the mismatch notice opens instead.
 
 Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and
 `~/.claude.json` there from a template before each model step, has a worker authenticate only
@@ -646,7 +684,7 @@ component is a link, or when an existing file is hard-linked or not a regular fi
 write of the question file counts as a question not kept. A refused move of a session-log copy
 does not; igor moves the copies before writing the question file, which notes such a copy as
 missing. When `igor release` meets a refused delete, it says it failed and leaves the item
-held. igor records the path of a refused move or delete only in its own log on the host.
+flagged-held. igor records the path of a refused move or delete only in its own log on the host.
 
 For a flagged run's ledger row, the changed paths, and the actions the role's `allow` list
 refused, which differ from the sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
@@ -1067,7 +1105,9 @@ Items handed back live there as well, in `deferred.json`. A handoff releases the
 leaves no pull request, so nothing downstream stops the item returning — and the handoff
 comment itself lifts the item above the watermark, which is what makes it return. The record is
 what keeps the Igor quiet until a reply or an edit answers it, and losing it costs one repeated
-handoff.
+handoff. An item a flagged run handed back over a question is the exception: a reply does not
+answer it, and it is known from the ledger's `needs a person` rows, not from this record, so
+losing the record costs nothing (§3.4.1).
 
 **Reconciliation keeps one there too, in `reconcile.json`, and it is what makes running on every
 merge affordable.** `reconcile` used to read the destination's whole pull request history each

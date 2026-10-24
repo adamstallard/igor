@@ -378,9 +378,11 @@ reply never releases it. Where `igor release` says other state directories still
 find the hosts whose directories have those ids, since `igor release` prints its own
 directory's id on each host, and run it there.
 
-`igor conditions` can list three notices about flagged holds. A release stuck on a refused delete, and
-any hold mismatch, are seen only on the host whose state directory is involved, since only
-that host can look in it; the other notices show from any host. So run `igor conditions` on
+`igor conditions` can list three notices about flagged holds. A release stuck on a refused delete, and a
+hold mismatch over files on a state directory, are seen only on that directory's host, since
+only it can look there; the other cases show from any host: a question not kept, a release
+stuck because no live process uses a directory, and a hold mismatch where a hold has no
+entry. So run `igor conditions` on
 each host. None stops any work, and each
 names its section below. The Igor's log on the host names the items and state-directory ids
 behind each one; the notices themselves name no item.

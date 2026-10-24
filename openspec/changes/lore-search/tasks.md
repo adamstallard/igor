@@ -215,8 +215,8 @@
       leaves the flagged hold open, and with gate two's flags clears an entry whose named file is
       gone, appends the `released` row of a flagged hold with no entry, and deletes the item's
       files that no open entry names. With batch flags it releases only flagged holds
-      that leave no question file to read: by cause, those whose named question file is absent
-      from the directory it runs against; by id, every entry naming a directory no live process
+      that leave no question file to read: by cause, those whose named question file and
+      session-log copies are all absent from the directory it runs against; by id, every entry naming a directory no live process
       answers for, which the operator states no longer exists; a flagged hold whose question file exists is released only by
       naming its item.
       The other is an attributable edit by someone with write access, never a reply: a rank or
@@ -240,7 +240,7 @@
       toward stopping one, is not cleared by a probe item, clears only when no item is still
       affected, is listed with its items in the Igor's log, and is listed by `igor conditions`
       with no scope, count or probe, and each one's text names its runbook section in
-      `docs/deployment.md`; gate two keeps the flag names that guide uses in step with the code. The TLA+ model of the flagged holds and their release, in this
+      `docs/deployment.md`, whose flag names task 3.12 builds. The TLA+ model of the flagged holds and their release, in this
       change's `model/` directory, which the `tla-lore-search` workflow runs, states these
       rules as invariants; gate two's tests and code keep to them. Its property `MismatchNoticed` shows that any mismatch
       the model reaches on a directory a live process uses opens the mismatch notice, a copy
@@ -272,8 +272,8 @@
       *A reply does not rerun a flagged item*, *An edit by someone with write access releases a
       flagged item*, *An edit without write access leaves an item flagged-held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
-      text*, *A kept question without a category holds its text*, *An id file that is a link counts as no id*, *Session-log copies carry the question file's name*, *The question-not-kept
-      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item flagged-held*, *A process on the directory deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose directory's ranks are all gone waits for the operator*, *A directory-mate finishes the release of a gone rank*, *The next igor run on a directory finishes its release*, *igor release drops an entry whose named file is gone*, *Two flagged holds of one item are released one at a time*, *Two flagged holds on a shared state directory have an entry each*, *A keep adds its entry before writing a file*, *A run whose entry a lost record dropped adds it again*, *A missed released row is appended by any process*, *A question file name not of the random form is refused*, *A crash after deleting the named file leaves the entry to the operator*, *An entry is not cleared while its run is part-way*, *A run gone part-way leaves nothing behind*, *A copied state directory that finds nothing releases nothing*, *A file no entry names opens the mismatch notice*, *A flagged hold with no entry opens the mismatch notice*, *A batch release leaves out a flagged hold whose question file exists*, *A batch by cause acts only on its own directory*, *A later flagged hold of the same item is independent*, *igor release names the state directories still to clear*, *A lost flagged-hold record is rebuilt from the ledger*, *A stuck-release notice keeps item names off the state branch*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A notice opens on its first occurrence*, *A notice stops no scope however often it recurs*, *Repeated questions not kept do not stop the role*, *A probe does not clear a notice*, *A notice clears when no item is affected* and *A notice says it stops nothing and names no item*, *A notice names its runbook*, and `work-triage`'s *The operator releases a flagged-held item on the host*, *A refused delete keeps the item flagged-held*, *A cure key
+      text*, *A kept question without a category holds its text*, *An id file that is a link counts as no id*, *Session-log copies carry the question file's name*, *A path component that climbs is refused*, *The question-not-kept
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item flagged-held*, *A process on the directory deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose directory's ranks are all gone waits for the operator*, *A directory-mate finishes the release of a gone rank*, *The next igor run on a directory finishes its release*, *igor release drops an entry whose named file is gone*, *Two flagged holds of one item are released one at a time*, *Two flagged holds on a shared state directory have an entry each*, *A keep adds its entry before writing a file*, *A run whose entry a lost record dropped adds it again*, *A missed released row is appended by any process*, *A question file name not of the random form is refused*, *A crash after deleting the named file leaves the entry to the operator*, *An entry is not cleared while its run is part-way*, *A run gone part-way leaves nothing behind*, *A copied state directory that finds nothing releases nothing*, *A file no entry names opens the mismatch notice*, *A flagged hold with no entry opens the mismatch notice*, *A batch release leaves out a flagged hold whose question file exists*, *A batch by cause leaves out a hold whose log copies remain*, *A batch by cause acts only on its own directory*, *A later flagged hold of the same item is independent*, *igor release names the state directories still to clear*, *A lost flagged-hold record is rebuilt from the ledger*, *A stuck-release notice keeps item names off the state branch*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A notice opens on its first occurrence*, *A notice stops no scope however often it recurs*, *Repeated questions not kept do not stop the role*, *A probe does not clear a notice*, *A notice clears when no item is affected* and *A notice says it stops nothing and names no item*, *A notice names its runbook*, and `work-triage`'s *The operator releases a flagged-held item on the host*, *A refused delete keeps the item flagged-held*, *A cure key
       does not release a flagged-held item*, *A flagged-held item's lost record leaves it flagged-held*, *A released item is not flagged-held again by its old ledger row*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
@@ -322,6 +322,11 @@
       `condition-backoff`'s merged `src/conditions.ts` opens as a condition, which neither
       stops a role, as a `role:`-shaped key would, nor is ignored, as a key of an unknown
       shape is by `conditionOf`.
+- [ ] 3.12 Build `igor release`'s flags with the names `docs/deployment.md`'s runbook uses
+      (decision 148): `--files-gone`, `--delete-unnamed`, `--batch` and `--directory`. Where gate
+      two names one otherwise, change the guide in the same pull request, so the merged guide
+      always matches the code.
+
 
 ## 4. Facts to check before anyone relies on a search or a citation in a run
 
