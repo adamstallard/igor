@@ -472,10 +472,10 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
       `test/capacity.test.ts` 'a declared capacity' (`:448-490`) and `:569-571`
 - [ ] 14.4 Verify that `README.md` doesn't mention `capacity_estimate`
 
-## 15. After #101 merges
+## 15. Owed now that #101 is merged
 
-#101 (`condition-backoff`) is approved and about to merge. Once it has, and its stuck-conditions
-requirements are in force:
+PR #101 (`condition-backoff`) is merged, and its requirements are in force as the capability
+`stuck-conditions`, in `openspec/specs/stuck-conditions/spec.md`. Each task below can be done now:
 
 - [ ] 15.1 Move the credential rules of *A probe checks the credential too*, and task 6.7 (a probe's
       401 row), out of seat-budget into a stuck-conditions delta written against #101's text (Adam,
@@ -493,15 +493,14 @@ requirements are in force:
       requirement has to be matched in #171's block.
       When writing that delta, also update the sentence in `docs/architecture.md` that says one
       probe 401 opens `seat:<id>:credential`
-- [ ] 15.2 `condition-backoff/design.md` (from #101), `concurrent-instances/design.md` and
-      `archive/2026-10-10-reset-by-comparison/design.md` link to `docs/architecture.md` §6.3.4 by
-      the anchor `#634-…specified-on-143-not-built`. This change renames the heading to
-      "— **built**", so update the three links to the anchor the renamed heading generates. The
-      archived link is broken on this branch already, since the heading is renamed here; fix all
-      three in gate two
-- [ ] 15.3 #101's stuck-conditions spec and its task 3.3 say "from pacing". Pacing is withdrawn
-      here; the state is "holding back at the line". Once #101's stuck-conditions spec is in
-      force, change that wording in it
+- [ ] 15.2 `archive/2026-10-24-condition-backoff/design.md` (from #101),
+      `concurrent-instances/design.md` and `archive/2026-10-10-reset-by-comparison/design.md` link
+      to `docs/architecture.md` §6.3.4 by the anchor `#634-…specified-on-143-not-built`. This
+      change renames that heading to "— **built**", so all three links are broken on this branch.
+      Update them to the anchor the renamed heading generates, in gate two (the implementation
+      pushed onto this branch)
+- [ ] 15.3 The in-force `stuck-conditions` spec, and #101's task 3.3, say "from pacing". Pacing is
+      withdrawn here; the state is "holding back at the line". Change that wording in the spec
 
 ## 16. Archiving
 

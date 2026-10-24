@@ -6,11 +6,13 @@ provider's report of how full a seat's window is, carried in each run's output a
 **unreset**, or **unexpired**, until the reset it states; one whose reset never resolved is
 unreset until one window length after it was taken. A
 **probe** is one minimal model call made on the server that runs the Igors, with a seat's own
-token, to get a reading. #101 is `condition-backoff`, which records stuck conditions and is about
-to merge; #171 is `seat-files`, which moves seat configuration into one file per seat and carries
-a lent seat's token as ciphertext; #179 is `concurrent-instances`, which runs several processes of
-one role, each with a number, its **rank**, and each writing a **heartbeat** file its siblings
-read. #75 (`triage-refusal-calibrates`) records a refused triage call as an observation of its
+token, to get a reading. PR #101 is `condition-backoff`, which records stuck conditions; it is
+merged, and its requirements are in force as the capability `stuck-conditions`, in
+`openspec/specs/stuck-conditions/spec.md`. #171 is `seat-files`, which moves seat configuration
+into one file per seat and stores, encrypted, the token of a seat its owner lends to someone
+else's Igor; #179 is `concurrent-instances`, which runs several processes of one role, each with
+a number, its **rank**, and each writing a **heartbeat** file its siblings read.
+#75 (`triage-refusal-calibrates`) records a refused triage call as an observation of its
 seat. #174 (`pinned-skills`) gives every model call one shared set of arguments, and #175
 (`worker-user`) runs the worker as a separate Unix user.
 
