@@ -2869,10 +2869,12 @@ describe('the base the artifact is laid over', () => {
 })
 
 /**
- * A 401 is not a limit and must never be read as one: `usageLimit` would hand the item back to
- * wait for a reset, capture an envelope into `refusals/`, and record a capacity observation at
- * 100% off an authentication failure. What it is instead is the one structured signal that separates a revoked credential
- * from a working one, which nothing local can do — #56.
+ * How a worker's 401 is read. It is never a usage limit: read as one, `usageLimit` would hand the
+ * item back to wait for a reset that never comes, capture the envelope into `refusals/`, and
+ * record a capacity observation at 100% off an authentication failure. Instead a 401 mints
+ * `seat:<id>:credential` (records it in the run's `cures`) with the credential's hash beside it.
+ * The provider's 401 is the only structured signal that tells a revoked credential from a working
+ * one; nothing on this machine can (#56).
  */
 describe('a credential the provider refuses names itself, and names which credential', () => {
   const CREDENTIALS = {
@@ -2924,6 +2926,7 @@ describe('a credential the provider refuses names itself, and names which creden
     expect(row()['tokenFingerprint']).toBe(credentialFingerprint({ CLAUDE_CODE_OAUTH_TOKEN: TOKEN }))
     // A hash, and never the credential or any part of it: this row is committed to the
     // destination, where a prefix of a secret is a prefix an attacker no longer has to guess.
+    // The check below catches the whole token only; a leaked prefix would still pass it.
     expect(JSON.stringify(row())).not.toContain(TOKEN)
   })
 
@@ -2936,8 +2939,9 @@ describe('a credential the provider refuses names itself, and names which creden
   })
 
   it('names it on a run the worker returned rather than threw, which exits zero', async () => {
-    // The CLI reports a refused credential in the envelope, and a run that made no changes
-    // settles as `nothing-to-do` without passing the throw path at all.
+    // The CLI can exit zero and still report the refused credential in its envelope. With no
+    // changes in the tree, such a run settles as `nothing-to-do` and never reaches the throw path,
+    // so the zero-exit path has to mint the key too.
     const result = await ran(CREDENTIALS, { thrown: false })
 
     expect(result.outcome).toBe('nothing-to-do')
@@ -2945,8 +2949,9 @@ describe('a credential the provider refuses names itself, and names which creden
   })
 
   it('names nothing on a run that finished, whatever status its envelope repeats', async () => {
-    // A run that met a 401, retried and then succeeded did not stop for it. Minting the key off
-    // that status would stop a working seat, and every clean probe would meet it again.
+    // `is_error: false` with `api_error_status: 401` still in the envelope: a run that met a 401,
+    // retried and finished. Minting the key off that status would stop a working seat, and every
+    // clean probe on it would meet the condition again.
     const { provider } = fakeProvider(edited)
     const { host } = fakeCodeHost()
     const { t } = fakeTracker()
@@ -2965,10 +2970,11 @@ describe('a credential the provider refuses names itself, and names which creden
   })
 
   it('asks a run that exited zero to have said it errored, not merely to have not denied it', async () => {
-    // The two paths carry different evidence and are asked different questions. A non-zero exit
-    // has already said the run did not finish, so an envelope that says nothing about erroring is
-    // still a failure there. Exit zero says the opposite, and holding a seat that is publishing
-    // pull requests is the failure this must never commit.
+    // A zero exit and a non-zero exit carry different evidence, so a 401 is read differently on
+    // each. A non-zero exit has already said the run did not finish, so an envelope silent about
+    // erroring still counts as a refusal. A zero exit says the run finished and may have
+    // published, so its envelope must say `is_error: true`: stopping a seat that is publishing
+    // pull requests is the mistake this must never make.
     const { provider } = fakeProvider(edited)
     const { host } = fakeCodeHost()
     const { t } = fakeTracker()
@@ -2983,14 +2989,15 @@ describe('a credential the provider refuses names itself, and names which creden
     expect(produced.outcome).toBe('produced')
     expect(produced.cures ?? []).not.toContain('seat:fleet-1:credential')
 
-    // And the throw path is untouched: there, saying nothing about erroring is still a failure.
+    // The same silent envelope from a worker that exited non-zero still mints the key.
     const thrown = await ran(silent)
     expect(thrown.cures).toContain('seat:fleet-1:credential')
   })
 
   it('names nothing for a failure that is not a credential rejection', async () => {
-    // Minting on a 500 would take a working seat out of rotation, which is worse than burning
-    // items on a revoked one. A 500 is the provider failing, not refusing.
+    // A 500 is the provider failing, not refusing the credential, so it mints nothing. Minting
+    // on it would take a working seat out of rotation, which is worse than burning items on a
+    // revoked one.
     const result = await ran({ is_error: true, api_error_status: 500, result: 'API Error: 500' })
 
     expect(result.cures ?? []).not.toContain('seat:fleet-1:credential')
@@ -3006,10 +3013,10 @@ describe('a credential the provider refuses names itself, and names which creden
   })
 
   it('names the credential even where the seat names no token source and runs on the ambient one', async () => {
-    // `workerEnv` forwards the ambient login for such a seat, so the run is attributable, and a
-    // refusal row carrying no hash is one no condition can count. Such a seat would then burn an
-    // item on its refused credential every cycle (#56), for the whole configuration that
-    // forwarding exists to support.
+    // A seat with no token source runs on the ambient login, which `workerEnv` forwards, so the
+    // hash is taken from that login. A refusal row with no hash is one no condition can count:
+    // without it, the seat would burn an item on its refused credential every cycle (#56), and so
+    // would every seat that relies on the ambient login instead of naming a token source.
     vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'ambient-one')
     const { provider } = fakeProvider([])
     const { host } = fakeCodeHost()
@@ -3029,7 +3036,8 @@ describe('a credential the provider refuses names itself, and names which creden
   })
 
   it('publishes the fingerprint only beside the key that reads it', async () => {
-    // Every other row would carry a digest nothing looks at, on a log committed to a repository.
+    // Only a run that minted `seat:<id>:credential`, the one key that reads the hash, carries it.
+    // On any other row it would be a digest nothing reads, on a log committed to a repository.
     const { provider } = fakeProvider(edited)
     const { host } = fakeCodeHost()
     const { t } = fakeTracker()
@@ -3063,8 +3071,10 @@ describe('a run that asked no worker observed no condition', () => {
     const refusal = (minutes: number) => ({
       at: at(minutes), role: 'triage', seat: 'fleet', cures: ['seat:fleet:credential'], tokenFingerprint: A,
     })
-    // A catch-up whose merge came out clean in the clone asks no worker. That happens when the
-    // code host reported a conflict and somebody pushed a fix before the clone was made.
+    // A catch-up (bringing the Igor's own conflicting pull request up to date with its base)
+    // whose merge comes out clean in the clone asks no worker. That happens when the code host
+    // reported a conflict and somebody pushed a fix before the clone was made. Its row sits among
+    // the refusals; read as an outcome of the seat condition, it would cut the count from 3 to 1.
     const { provider: plain } = fakeProvider([])
     const provider: TreeProvider = {
       name: 'fake',
