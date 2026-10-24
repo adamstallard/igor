@@ -76,13 +76,11 @@ ranks race, the question of a later flagged run of the same item that stops on a
 replaces any file still there, and that execution's session logs replace the earlier ones. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read
 `needs a person, question not kept`, as `task-execution` sets, and the Igor SHALL open a
-condition for its operator, the one `stuck-conditions`' *A held item's notices open at once,
-stop nothing, and stay open while an item is affected* describes, and a later failed write,
-for any item, reuses a condition already open; and the Igor SHALL write the path it could not write to its own log on the host. The condition is
-a notice only and SHALL stop no work;
-the failed write SHALL NOT delay or block the handoff. The condition's record on the state
-branch SHALL hold only its key, such as `question not kept`, which gate two names, and the path SHALL appear nowhere on the state branch or the
-item. The Igor SHALL
+notice for its operator, a condition of the kind `stuck-conditions`' *A notice opens at once,
+stops nothing, and stays open while an item is affected* describes, and a later failed write,
+for any item, reuses a condition of that key already open; and the Igor SHALL write the path it could not write to its own log on the host. The failed write SHALL NOT delay or block the handoff. The condition's key is such as
+`question not kept`, which gate two names, and the path SHALL appear nowhere on the state branch
+or the item. The Igor SHALL
 NOT push, post or publish the file, or its text, anywhere.
 
 #### Scenario: Handoff content complete

@@ -203,23 +203,28 @@
       requested` one, and releases it in two ways only. One is `igor release <tracker>/<repo>/<item>`
       on the host, which prints its state directory's id, deletes the logs and then the question
       file before the item counts as released, and, where a delete is refused, says it failed and leaves the item held, and which
-      refuses a hold record with no entry unless gate two's flag is passed. The other is an
-      attributable edit by someone with write access, never a reply: each state
-      directory keeps a random id created once; the hold record has one entry per state
-      directory that may hold the item's files, naming its id and the process that last wrote
-      there (a rank, or `igor run` and its run id); a rank that sees the edit appends one
-      `release requested` row for it; each keeping process, a rank or a still running
-      `igor run`, deletes in its own state directory on its next poll and clears its entry,
-      retrying a refused delete on every poll; `igor release` clears the entry of the state
+      refuses a hold record with no entry unless gate two's flag is passed, and drops a named
+      entry only with gate two's other flag. The other is an attributable edit by someone with
+      write access, never a reply: each state directory keeps a random id created once; the
+      hold record has one entry per state directory that may hold the item's files, naming its
+      id and the process that last wrote there (a rank, or `igor run` and its run id), added
+      before any file is written there; a rank that sees the edit appends one `release
+      requested` row for it; any live process on a directory with an uncleared entry, a rank at
+      the start of its cycle or an `igor run` at its start, deletes there and clears the entry,
+      retrying a refused delete every cycle; `igor release` clears the entry of the state
       directory it runs against; whoever clears an entry reads the record again and, finding
       every entry cleared and no `released` row yet, appends one; no process deletes in
-      another's state directory; and a stuck release (a refused delete, an entry whose keeping
-      process is gone by #179's heartbeat rule, or no entry at all) opens a notice under its own
-      key naming the item and the ids still to clear, or that the location is unknown. The two
-      held-item notices are built against `condition-backoff`'s merged code (`src/conditions.ts`):
-      each opens on its first occurrence, stops no scope, does not count toward stopping one,
-      is not cleared by a probe item, clears only when no item is still affected, and is listed
-      with its items in the Igor's log. Once
+      another's state directory; and a stuck release (a refused delete, an entry no live
+      process answers for, or no entry at all) opens a notice under its own key, whose state
+      branch record holds only the key while its text and the Igor's log name the item and the
+      ids. The two notices are a kind of condition of their own, built against
+      `condition-backoff`'s merged code (`src/conditions.ts`): each opens on its first
+      occurrence, stops no scope, does not count toward stopping one, is not cleared by a probe
+      item, clears only when no item is still affected, and is listed with its items in the
+      Igor's log. The TLA+ model of the hold and its release, in this change's `model/`
+      directory, which the `tla-lore-search` workflow runs, states these rules as invariants;
+      gate two's tests and code keep to them. Its passing configurations assume no keep is
+      part-way when a release starts, which the proposal leaves open for Adam. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -247,8 +252,8 @@
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The keeping rank deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose keeping rank is gone waits for the operator*, *A running igor run finishes its own release*, *An igor run that has exited waits for the operator*, *Two ranks that raced in different state directories both release their files*, *Two ranks sharing a state directory share one entry*, *igor release names the state directories still to clear*, *A hold record with no entry stays held*, *A stuck-release notice names only the item and its directories*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A held item's notice opens on its first occurrence*, *A held item's notice stops no scope however often it recurs*, *A probe does not clear a held item's notice* and *A held item's notice clears when no item is affected*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
-      does not release a held item*, *A held item's lost record leaves it held*,
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *A process on the directory deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once*, *A release whose directory's ranks are all gone waits for the operator*, *A directory-mate finishes the release of a gone rank*, *The next igor run on a directory finishes its release*, *igor release drops an entry whose id no directory holds*, *Two ranks that raced in different state directories both release their files*, *Two ranks sharing a state directory share one entry*, *A keep adds its entry before writing a file*, *igor release names the state directories still to clear*, *A hold record with no entry stays held*, *A stuck-release notice keeps item names off the state branch*, *Log copies from a question that was not kept are released*, `stuck-conditions`' *A notice opens on its first occurrence*, *A notice stops no scope however often it recurs*, *Repeated questions not kept do not stop the role*, *A probe does not clear a notice* and *A notice clears when no item is affected*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
+      does not release a held item*, *A held item's lost record leaves it held*, *A released item is not held again by its old ledger row*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
@@ -368,9 +373,13 @@
       `lore-firing`'s citation of it at the new name.
 - [ ] 5.2 Before this change archives, carry the text of each change #204 archives before it
       into the requirements this change replaces whole, beyond `condition-backoff`'s, which
-      `work-triage` already carries: #143's `reserve` field and its merge
+      `work-triage` already carries, and beyond #150's, #82's and #220's, which the next pass of
+      this task checks now that #204 places them before this change: #143's `reserve` field and its merge
       rule into `role-config`'s two requirements; #179's rank-named `igor serve reviewer-1`
       into `surface-adapter`'s *An Igor that cannot act as its App does not start*; and, in
       `task-execution`, point decision 56's citation at #179's *A killed worker's failure names
       the silence it breached* and drop the `time ceiling` example. Then run #204's archive
       check with this change in its place.
+- [ ] 5.3 When this change archives, point `.github/workflows/tla-lore-search.yml`'s paths
+      and working directory at the model's archived place, as #179's task 6.7 does for its
+      own, so TLC keeps running on it.
