@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { uniqueId } from '../src/id.js'
 import { ENTRIES_DIR, REJECTED_DIR, createTarget } from '../src/store.js'
-import { tempDir } from './tmp.js'
+import { tempDir, templated } from './tmp.js'
 
 /**
  * The id `create` mints, over the real `github.ts` with only the `gh` process faked.
@@ -60,13 +60,12 @@ const CLAIM = 'Use the shared query hook.'
 const SLUG = 'use-shared-query-hook'
 
 /** A checkout whose origin is the destination, which is where `repoFromCheckout` reads it. */
-function store(): string {
-  const dir = tempDir('igor-create-gh-')
+const checkout = templated((dir) => {
   const quiet: ExecFileSyncOptions = { stdio: 'ignore' }
   execFileSync('git', ['-C', dir, 'init', '-q'], quiet)
   execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/org/lore.git'], quiet)
-  return dir
-}
+})
+const store = (): string => checkout('igor-create-gh-')
 
 function holdsLocally(destination: string, dir: string, id: string): void {
   mkdirSync(join(destination, dir), { recursive: true })

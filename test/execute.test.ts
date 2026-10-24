@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { chmodSync, mkdtempSync, writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -577,21 +577,34 @@ const wordy = () => 'First sentence here. '.repeat(80)
 /** A worker that finishes, having said more than a pull request body will hold. */
 const verbose: WorkerRunner = async () => ({ result: wordy(), total_cost_usd: 0.03 })
 
+/**
+ * Yields between a fake worker's events. With `checkpointMs: 0`, `execute` re-reads the claim on
+ * each event, and that read and what follows it are promise callbacks. Every one of them runs
+ * before the next macrotask, so a single `setImmediate` lets the read settle before the worker
+ * goes on, whatever the load on the machine.
+ */
+const nextTurn = () => new Promise((r) => setImmediate(r))
+
+/** Settles when the run is aborted, which is how a worker learns it was killed. */
+const aborted = (signal: AbortSignal | undefined) =>
+  new Promise<void>((r) => {
+    if (signal?.aborted === true) return r()
+    signal?.addEventListener('abort', () => r(), { once: true })
+  })
+
 /** Emits assistant turns carrying usage, then waits to be killed. */
 function spendingWorker(turns: number): WorkerRunner {
   return async ({ onEvent, signal }) => {
     for (let turn = 1; turn <= turns; turn++) {
-      await new Promise((r) => setTimeout(r, 1))
+      await nextTurn()
       if (signal?.aborted) return {}
       onEvent?.({
         type: 'assistant',
         message: { usage: { output_tokens: 3, cache_read_input_tokens: turn * 1000 } },
       } as unknown as WorkerEvent)
     }
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 1))
-      if (signal?.aborted) return {}
-    }
+    await aborted(signal)
+    return {}
   }
 }
 
@@ -834,7 +847,7 @@ function streamingWorker(events: number) {
   const ran = { events: 0, aborted: false }
   const worker: WorkerRunner = async ({ onEvent, signal }) => {
     for (let i = 0; i < events; i++) {
-      await new Promise((r) => setTimeout(r, 1))
+      await nextTurn()
       if (signal?.aborted) {
         ran.aborted = true
         return {}
@@ -842,7 +855,7 @@ function streamingWorker(events: number) {
       ran.events++
       onEvent?.({ type: 'assistant' })
     }
-    await new Promise((r) => setTimeout(r, 1))
+    await nextTurn()
     if (signal?.aborted) {
       ran.aborted = true
       return {}
@@ -1155,7 +1168,11 @@ function stubCommand(body: string): string {
 /** Enough for the stub's `#!/usr/bin/env node` to resolve, and nothing more. */
 const stubPath = (): NodeJS.ProcessEnv => ({ PATH: process.env['PATH'] ?? '' })
 
-function runStub(body: string, limits: { toolMs: number; modelMs: number; ceilingMs: number }) {
+function runStub(
+  body: string,
+  limits: { toolMs: number; modelMs: number; ceilingMs: number },
+  onEvent?: (event: WorkerEvent) => void,
+) {
   return claudeWorker(stubCommand(body))({
     cwd: tempDir('igor-test-cwd-'),
     system: 'be useful',
@@ -1163,48 +1180,76 @@ function runStub(body: string, limits: { toolMs: number; modelMs: number; ceilin
     model: 'claude-sonnet-5',
     limits,
     env: stubPath(),
+    ...(onEvent === undefined ? {} : { onEvent }),
   })
+}
+
+/**
+ * Puts the watchdog's timers under the test's control while the stub stays a real process. A
+ * silence window (`modelMs` or `toolMs`) or the ceiling then elapses only when the test advances
+ * the faked clock. The tests advance it from `onEvent`, which runs as each event arrives, so a
+ * window is measured from that event however long a loaded machine takes to start the stub.
+ */
+function watchdogOnTestClock() {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 }
 
 const busy = { toolMs: 60_000, modelMs: 60_000, ceilingMs: 60_000 }
 
 describe('the watchdog is wired to the worker stream', () => {
+  afterEach(() => vi.useRealTimers())
+
   it('lets a steadily-emitting worker run well past the window', async () => {
-    // Twelve turns at 200ms is 2.4s of work under a 1.5s window. A wall clock kills this.
+    // The callback advances the clock a second per event: twelve events are 12s of work under a
+    // 1.5s silence window. A limit on total duration rather than on silence would kill this.
+    watchdogOnTestClock()
     const out = await runStub(
-      `let turns = 0
-       const t = setInterval(() => {
-         emit({ type: 'assistant', message: { content: [{ type: 'thinking' }] } })
-         if (++turns === 12) {
-           clearInterval(t)
-           emit({ type: 'result', result: 'done', total_cost_usd: 0.01 })
-         }
-       }, 200)`,
+      `for (let turn = 0; turn < 12; turn++) emit({ type: 'assistant', message: { content: [{ type: 'thinking' }] } })
+       emit({ type: 'result', result: 'done', total_cost_usd: 0.01 })`,
       { ...busy, modelMs: 1_500, toolMs: 1_500 },
+      () => vi.advanceTimersByTime(1_000),
     )
     expect(out.result).toBe('done')
     expect(out.total_cost_usd).toBe(0.01)
   })
 
   it('kills a worker whose model has gone quiet', async () => {
+    watchdogOnTestClock()
     await expect(
-      runStub(`emit({ type: 'system', subtype: 'init' }); setInterval(() => {}, 10_000)`, {
-        ...busy,
-        modelMs: 1_000,
-      }),
+      runStub(
+        `emit({ type: 'system', subtype: 'init' }); setInterval(() => {}, 10_000)`,
+        { ...busy, modelMs: 1_000 },
+        () => vi.advanceTimersByTime(1_000),
+      ),
     ).rejects.toThrow('worker produced nothing for 1s and was killed')
   })
 
   it('waits out a tool the worker dispatched, then kills on the tool window', async () => {
-    const started = Date.now()
-    await expect(
-      runStub(
-        `emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash' }] } })
-         setInterval(() => {}, 10_000)`,
-        { ...busy, modelMs: 300, toolMs: 2_000 },
-      ),
-    ).rejects.toThrow('worker produced nothing for 2s while a tool ran and was killed')
-    expect(Date.now() - started).toBeGreaterThan(1_500)
+    watchdogOnTestClock()
+    let dispatched = () => {}
+    const toolRunning = new Promise<void>((r) => (dispatched = r))
+    const run = runStub(
+      `emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash' }] } })
+       setInterval(() => {}, 10_000)`,
+      { ...busy, modelMs: 300, toolMs: 2_000 },
+      () => {
+        // Far past the model window, and still short of the tool's.
+        vi.advanceTimersByTime(1_999)
+        dispatched()
+      },
+    )
+    await toolRunning
+    // A kill during that advance would already have rejected the run, and the run's rejection
+    // handlers all run before the next macrotask. So the race below reads whether a kill landed,
+    // whatever the load on the machine.
+    const outcome = await Promise.race([
+      run.then(() => 'settled', () => 'settled'),
+      new Promise((r) => setImmediate(() => r('running'))),
+    ])
+    expect(outcome).toBe('running')
+
+    vi.advanceTimersByTime(1)
+    await expect(run).rejects.toThrow('worker produced nothing for 2s while a tool ran and was killed')
   })
 
   it('does not count output that is not an event as progress', async () => {
@@ -1218,18 +1263,23 @@ describe('the watchdog is wired to the worker stream', () => {
   })
 
   it('kills a live worker at the ceiling', async () => {
+    watchdogOnTestClock()
     await expect(
-      runStub(`setInterval(() => emit({ type: 'assistant' }), 25)`, { ...busy, ceilingMs: 1_000 }),
+      runStub(`setInterval(() => emit({ type: 'assistant' }), 25)`, { ...busy, ceilingMs: 1_000 }, () =>
+        vi.advanceTimersByTime(100),
+      ),
     ).rejects.toThrow('worker ran 1s without finishing and was killed')
   })
 
   it('keeps the result of a finished run whose process will not exit', async () => {
     // The run is over once the result lands. A process still holding the pipe open is worth
     // killing and is not worth the transcript and the cost it already reported.
+    watchdogOnTestClock()
     const out = await runStub(
       `emit({ type: 'result', result: 'I fixed the bug', total_cost_usd: 0.42 })
        setInterval(() => {}, 10_000)`,
       { ...busy, modelMs: 700 },
+      () => vi.advanceTimersByTime(700),
     )
     expect(out.result).toBe('I fixed the bug')
     expect(out.total_cost_usd).toBe(0.42)
@@ -1259,43 +1309,92 @@ describe('a worker killed for a limit still says what it changed', () => {
   })
 })
 
-/** A worker that spawns a tool subprocess, the shape every real kill lands on. */
-function withGrandchild(markers: { started: string; late: string }, delayMs: number): string {
-  const fs = "require('node:fs')"
-  const grandchild =
-    `${fs}.writeFileSync(${JSON.stringify(markers.started)}, 'x');` +
-    `setTimeout(() => ${fs}.writeFileSync(${JSON.stringify(markers.late)}, 'x'), ${delayMs})`
+/**
+ * A worker that spawns a tool subprocess, the shape every real kill lands on. The subprocess
+ * reports its pid once it runs. The worker then writes its own pid and that one to `started`,
+ * and only after that emits the `tool_use` event, so the kill always lands on a subprocess that
+ * is running.
+ */
+function withGrandchild(started: string): string {
+  const grandchild = `process.stdout.write(String(process.pid)); setInterval(() => {}, 10_000)`
   return `import('node:child_process').then(({ spawn }) => {
-            spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' })
-            emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash' }] } })
+            const tool = spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: ['ignore', 'pipe', 'ignore'] })
+            tool.stdout.once('data', (pid) => {
+              require('node:fs').writeFileSync(${JSON.stringify(started)}, process.pid + ' ' + pid)
+              emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash' }] } })
+            })
             setInterval(() => {}, 10_000)
           })`
 }
 
-const settle = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/**
+ * Settles once the process is gone. It never settles for a process the kill missed, so the
+ * test's own timeout is what fails that case.
+ */
+async function exited(pid: number): Promise<void> {
+  for (;;) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return
+    }
+    await new Promise((r) => setTimeout(r, 10))
+  }
+}
+
+/** The pids the worker recorded: its own, then the one its tool subprocess reported. */
+const pids = (started: string): { worker: number; tool: number } => {
+  const [worker, tool] = readFileSync(started, 'utf8').split(' ').map(Number)
+  return { worker: worker!, tool: tool! }
+}
+
+/** The pid the tool subprocess reported, which also proves it was running. */
+const toolPid = (started: string): number => pids(started).tool
 
 describe('a kill reaches what the worker spawned', () => {
+  const markers: string[] = []
+  /**
+   * Where the stub records its own pid and its subprocess's, remembered so `afterEach` can kill
+   * their group.
+   */
+  const marker = (): string => {
+    const started = join(tempDir('igor-test-tree-'), 'started')
+    markers.push(started)
+    return started
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+    // Neither the worker nor its subprocess exits by itself, so a kill that misses them fails
+    // the test only at its timeout. Their group is killed here, so a failing run leaves no
+    // process behind.
+    for (const started of markers.splice(0)) {
+      if (!existsSync(started)) continue
+      try {
+        process.kill(-pids(started).worker, 'SIGKILL')
+      } catch {
+        // Already gone, which is what a passing test leaves.
+      }
+    }
+  })
+
   it('kills the tool subprocess with the worker on the watchdog path', async () => {
-    const dir = tempDir('igor-test-tree-')
-    const markers = { started: join(dir, 'started'), late: join(dir, 'late') }
+    const started = marker()
 
-    await expect(runStub(withGrandchild(markers, 1_200), { ...busy, toolMs: 500 })).rejects.toThrow(
-      'while a tool ran and was killed',
-    )
-    await settle(2_000)
+    watchdogOnTestClock()
+    await expect(
+      runStub(withGrandchild(started), { ...busy, toolMs: 500 }, () => vi.advanceTimersByTime(500)),
+    ).rejects.toThrow('while a tool ran and was killed')
+    vi.useRealTimers()
 
-    // The first marker proves the subprocess was running when the kill landed. Without it, the
-    // second one's absence would also be satisfied by a grandchild that never started.
-    expect(existsSync(markers.started)).toBe(true)
-    expect(existsSync(markers.late)).toBe(false)
+    await exited(toolPid(started))
   })
 
   it('kills the tool subprocess when the run is aborted', async () => {
-    const dir = tempDir('igor-test-tree-')
-    const markers = { started: join(dir, 'started'), late: join(dir, 'late') }
+    const started = marker()
     const stop = new AbortController()
 
-    const run = claudeWorker(stubCommand(withGrandchild(markers, 1_200)))({
+    const run = claudeWorker(stubCommand(withGrandchild(started)))({
       cwd: tempDir('igor-test-cwd-'),
       system: 'be useful',
       prompt: 'work this item',
@@ -1303,14 +1402,11 @@ describe('a kill reaches what the worker spawned', () => {
       limits: busy,
       env: stubPath(),
       signal: stop.signal,
+      onEvent: () => stop.abort(),
     })
-    await settle(500)
-    stop.abort()
     await run
-    await settle(1_500)
 
-    expect(existsSync(markers.started)).toBe(true)
-    expect(existsSync(markers.late)).toBe(false)
+    await exited(toolPid(started))
   })
 
   it('does not fail cleanup when the worker has already exited', async () => {

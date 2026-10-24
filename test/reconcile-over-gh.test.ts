@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Config } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
 import { ENTRIES_DIR, REJECTED_DIR, loadEntry, serialize, writeEntry } from '../src/store.js'
-import { tempDir } from './tmp.js'
+import { templated } from './tmp.js'
 
 /**
  * `reconcile` over the real `github.ts`, with only the `gh` process faked.
@@ -154,13 +154,12 @@ function entry(id: string): Entry {
 }
 
 /** A checkout whose origin is the destination, which is where `repoFromCheckout` reads it. */
-function store(): string {
-  const dir = tempDir('igor-over-gh-')
+const checkout = templated((dir) => {
   execFileSync('git', ['-C', dir, 'init', '-q'])
   execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/org/lore.git'])
   mkdirSync(join(dir, ENTRIES_DIR), { recursive: true })
-  return dir
-}
+})
+const store = (): string => checkout('igor-over-gh-')
 
 /** `/commits/{sha}` and `/pulls/N/files` both report a status per file; added is the default. */
 function touched(...files: (string | [string, string])[]): { filename: string; status?: string }[] {
