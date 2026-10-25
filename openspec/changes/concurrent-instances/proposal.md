@@ -442,13 +442,16 @@ settle**
     nothing, which decision 46 replaced; #173 adds a further exception to the holder rule, in the
     claim window; and the reread and unreadable-claim rule, with near-identical scenarios, is
     stated in both changes, so one should own it and the other cite it.
-  - *For Adam:* decision 60, made on 2026-10-24 under his rule for agents and now withdrawn and
-    no longer listed, had this change drop `ProtectHome=read-only` so that a worker can write its
-    home, as #216 asked. A consistency read found that dropping it would not let the worker write
-    its home: the worker's home is `/var/lib/igor-worker-<role>-<rank>` under #175
-    and #174, which `ProtectHome=` does not touch and `ProtectSystem=strict` keeps read-only, and
-    #175's unit already adds that home to `ReadWritePaths=`. So the decision is withdrawn and the
-    unit keeps the line. *Recommended:* tell #216 that #175's `ReadWritePaths=` meets its need.
+  - *With #216, open until #216 is told:* #216 asked this change to drop `ProtectHome=read-only`
+    from `deploy/igor.service`, so that a worker can write its home. The agent coordinating this
+    work made decision 60 to drop it on 2026-10-24 and withdrew the decision the same day, so it
+    is no longer listed. `ProtectHome=` makes only `/home`, `/root` and `/run/user` read-only,
+    and the worker's home is `/var/lib/igor-worker-<role>-<rank>`: #175 puts it there, and #174
+    resets that home before each model step. `ProtectSystem=strict` keeps `/var/lib` read-only,
+    so dropping the line would change nothing; #175's unit already adds that home to
+    `ReadWritePaths=`, which is what makes it writable. So `deploy/igor.service` keeps the line.
+    The agent revising this change is to tell #216 that #175's `ReadWritePaths=` already meets
+    its need.
   - *From the same read, for the next revision:* a catch-up that keeps a person's label leaves
     its rank's message holding the item, so after the pull request closes that rank re-works it
     with no contest. *A claim that cannot be kept is given back, out loud* says a stood-down
