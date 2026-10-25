@@ -2,7 +2,10 @@
 
 Adam decided 1 to 52 on 2026-10-13, 2026-10-17, 2026-10-18, 2026-10-19 and 2026-10-21, and
 rewrote some of them on 2026-10-24, each marked with that date, such as 22 and 49. On 2026-10-24
-he also approved 53, 54, 56 and 57, which this change drew up, and made 55 and 58.
+he also approved 53, 54, 56 and 57, which this change drew up, and made 55 and 58; 59 was
+decided that day by the agents coordinating this work, under the rule Adam set, outside this
+repository, for which questions they may settle without him, and stands as decided until he says
+otherwise.
 `design.md` gives the reasoning for each. Decisions 39 to 52 are his answers of 2026-10-21.
 This change drew up 45 to 48 from what other changes reported to it, and Adam confirmed them that
 day. This change drew up 53, 54, 56 and 57 from consistency reads on 2026-10-24, and Adam approved
@@ -29,7 +32,8 @@ them that day. Where a decision replaces an earlier one, the earlier one is rewr
    a failed verification, setting an item down after a repeated failure before the worker
    (#173), and answering a stop remove the shared label only when the holder does them; any
    other rank drops out silently. A stop on a handed-over item is answered only by the holder,
-   and other ranks ignore it. Decision 42 lists the one exception.
+   and other ranks ignore it. Decision 42 is the first listed exception, and decision 28's stop
+   on an item no message holds the second.
 
 **Rank**
 
@@ -137,7 +141,8 @@ them that day. Where a decision replaces an earlier one, the earlier one is rewr
 28. **Readings of earlier decisions that Adam confirmed, needing no approval.** Round one's two rules on checkpoint gaps, a checkpoint at least every
     two poll intervals and a stand-down at one missed heartbeat where gaps were longer, are
     removed: the heartbeat timer of decision 17 stops a stood-down worker whatever the gap. A stop on a
-    hand-over nobody has claimed is answered by the first rank to reach it. A single-quoted
+    hand-over nobody has claimed is answered by the first rank to reach it, the second listed
+    exception to decision 6. A single-quoted
     value in the role's environment file cannot hold a single quote. A key that file sets takes
     the place of the same key in the environment. A verification more than one poll interval
     late works nothing, even for the rank that holds the item, and gives the claim back as
@@ -201,7 +206,7 @@ them that day. Where a decision replaces an earlier one, the earlier one is rewr
 41. **The window in which this change cites rules not yet in force is accepted.** Issue #204
     archives #82 and #173 after this change, so this change cites #82's restart policy and
     #173's set-down before either is in force. Until #82 archives, the in-force unit restarts a process that exits 0.
-42. **A process whose claim message failed to post removes the label it set: the one listed
+42. **A process whose claim message failed to post removes the label it set: the first listed
     exception to decision 6,** because no holder exists and the label is its own. It applies
     where the process's test finds no claim message that counts. This change bounds it: the
     process sends the removal only while less than half a settle interval has passed since it
@@ -351,6 +356,12 @@ them that day. Where a decision replaces an earlier one, the earlier one is rewr
     heartbeat, rather than until it restarts. A stale heartbeat can still bring a second issue,
     which Adam accepts as rare, as he does a second reply to a mention.
 
+**Decided on 2026-10-24 by the coordinating agents, under Adam's rule for questions they may
+settle**
+
+59. **A refused line of `/etc/igor/<role>.env` is named by its line number only.** Task 1.6's
+    message had named the line's key, which could print part of a secret: where a stray single quote inside a multi-line value ends it early, the value's remaining lines are read as lines of their own, and one such as `AbCd12==` reads as a key `AbCd12` with a value that fails the check. So the message now names only the number.
+
 **Still open:**
 
 - **Measurements the requirements rest on:** requests per cycle per rank against the App's rate
@@ -413,8 +424,8 @@ them that day. Where a decision replaces an earlier one, the earlier one is rewr
 - **For the next revision, from the same read:** whether a rank whose message stopped counting,
   or that stood down after its worker ended, may still publish, which #153's post-worker steps
   also meet; #150's actionable approval past gate one, which decision 34 would have start a
-  worker, and #150 archiving after this change with no leave to cite it ahead; #173's exception to the holder rule in the claim window, beside decision 42's "one
-  listed exception"; #175's and this change's circular credit for where trees live and who
+  worker, and #150 archiving after this change with no leave to cite it ahead; #173's exception to the holder rule in the claim window, beside the two this change
+  lists; #175's and this change's circular credit for where trees live and who
   removes them; decision 37's rule, in two proposals and no spec; the rewording of #101's
   watermark sentence in this change's copy; a test for removing a gone run's lock file; which run's mark counts where two `igor run`s share rank 0; the `--poll` flag,
   which overrides the role's poll interval and escapes the settle check; rationale, task numbers
@@ -427,18 +438,35 @@ them that day. Where a decision replaces an earlier one, the earlier one is rewr
   held by another Igor, each rank reaching it would post the one comment the in-force rules
   allow; nothing yet restricts the comment to one rank.
 - **From the consistency read of this revision, 2026-10-24:**
-  - *For Adam:* a refusal of a line in `/etc/igor/<role>.env` names the line and its key, as
-    task 1.6's message is written. Inside a malformed multi-line value, such as a private key in
-    double quotes, a line like `AbCd12==` reads as an environment key, so the refusal would print
-    part of the private key. *Recommended:* name the line number only, rewording task 1.6's message to drop
-    `<KEY>`.
-  - *For Adam:* #216 expects this change's unit edit to drop `ProtectHome=read-only`, so that
-    workers can write the home; tasks 1.3 and 1.8 do not. *Recommended:* this change takes it,
-    in task 1.8.
   - *With #173:* #173's proposal still says a process whose claim failed in the window holds
     nothing, which decision 46 replaced; #173 adds a further exception to the holder rule, in the
     claim window; and the reread and unreadable-claim rule, with near-identical scenarios, is
     stated in both changes, so one should own it and the other cite it.
+  - *For Adam:* decision 60, made on 2026-10-24 under his rule for agents and now withdrawn and
+    no longer listed, had this change drop `ProtectHome=read-only` so that a worker can write its
+    home, as #216 asked. A consistency read found that dropping it would not let the worker write
+    its home: the worker's home is `/var/lib/igor-worker-<role>-<rank>` under #175
+    and #174, which `ProtectHome=` does not touch and `ProtectSystem=strict` keeps read-only, and
+    #175's unit already adds that home to `ReadWritePaths=`. So the decision is withdrawn and the
+    unit keeps the line. *Recommended:* tell #216 that #175's `ReadWritePaths=` meets its need.
+  - *From the same read, for the next revision:* a catch-up that keeps a person's label leaves
+    its rank's message holding the item, so after the pull request closes that rank re-works it
+    with no contest. *A claim that cannot be kept is given back, out loud* says a stood-down
+    process stays silent because a sibling may have taken the item, which the stand-down rule
+    rules out. Decision 6 has only the holder answer a stop, but the in-force *What follows a
+    stop is read from the tracker* still has every rank answer it, and no `MODIFIED` block
+    changes that; likewise the in-force *An issue created from chat points back to the chat*
+    promises no second issue, which decision 58 accepts, and lets a second rank post the link
+    twice. Also open: what counts as a line for the `Igor-` indenting; #173's and this change's
+    rules on a message that posted but does not count, on who posts the set-down, and on what
+    "several processes" means; the `role-config` scenario of a poll interval above the maximum,
+    which exits 78 where #208 has the process start instead on an older commit that passed;
+    #189's checks, which stop only at the checkpoint interval; where the indenting runs relative
+    to #153's signing; `directed-interaction`'s proposal, which restates availability without
+    "not stood down" and leaves rank 0 out of the order; and overlaps with #99, #106, #175 and
+    #216 that the conflicts listed above name only in part. The criteria for detecting a loss,
+    a serving rank's missing file or a counter lower under the same id, are a choice no decision
+    lists.
   - *With #228:* the `stuck-conditions` requirement on the probe lapse cites a 5-minute clock
     skew that #228 assumes; that figure, and #228's account of this change's decision 22, are in
     #228's revision pushed after this one.

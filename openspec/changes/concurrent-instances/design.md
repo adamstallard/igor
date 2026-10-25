@@ -175,11 +175,13 @@ shared `/etc/igor/env`, the seat tokens every role reads, stays a systemd `Envir
 so a check in Igor came too late to stop it.
 
 **Every value in the role's file is single-quoted or plain** (Adam, 2026-10-17; plain values,
-round two; the parser in Igor, round three). A line is blank, a `#` comment, or `KEY=value`. A
+round two; the parser in Igor, round three; the refusal's wording, decision 59 of the proposal,
+made by the coordinating agents on 2026-10-24). A line is blank, a `#` comment, or `KEY=value`. A
 plain value uses only `[A-Za-z0-9_./:@-]`, so a path or an App ID needs no quotes. A
 single-quoted value is everything between its two quotes, as written, and may span lines, as a
-private key does. Igor refuses to start on any other line, naming the line and the key but never
-the value. Two forms judged by their characters alone keep the parser from having to work out
+private key does. Igor refuses to start on any other line, naming its number and nothing of its
+content. Naming the key, as the message once did, could print part of a secret: where a stray single quote inside a multi-line value ends it early, the value's remaining lines are read as lines of their own, and one such as `AbCd12==` reads as a key `AbCd12` with a value that fails the check (proposal, decision 59). The two forms, single-quoted and plain, judged by their
+characters alone keep the parser from having to work out
 what a shell would have done; with no shell, a single quote inside a value has no way to be
 written, and the shell's `'it'\''s'` is refused like any other form. A key the file sets takes
 the place of the same key in the environment Igor started with, as the shell's `set -a; .` did.
@@ -699,7 +701,8 @@ and re-checking after the removal, which the report from #173 suggested. A messa
 finds was posted before the removal, so it no longer counts, and the re-check cannot make it
 count again.
 
-**A failed post's label is the one exception** (Adam, 2026-10-21, decision 42). A process that set
+**A failed post's label is the first listed exception** (Adam, 2026-10-21, decision 42); the
+second is a stop on an item no claim message holds, answered by the process that reaches it. A process that set
 the label and whose claim message failed to post has no message to hold by, so the holder rule
 alone would leave the label on an item nobody holds, which the next cycle claims anyway. Adam
 decided the process removes the label it set, as a listed exception. With no message of its own,

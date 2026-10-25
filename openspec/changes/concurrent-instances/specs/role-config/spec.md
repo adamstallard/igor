@@ -257,7 +257,8 @@ single-quoted or plain. A value is single-quoted when it starts with `'` and end
 written; it may span lines, as a private key does, and cannot itself hold a single quote. A quote
 the file never closes is refused. A value is plain when every character in it is a
 letter, a digit, or one of `_ . / : @ -`. `igor serve` SHALL refuse to start on any other line,
-naming the line and its key, and never the value. A plain value SHALL hold at least one
+naming its line number and nothing of its content, since any line of the file may be part of a
+secret (proposal, decision 59). A plain value SHALL hold at least one
 character. Before it builds the path, `igor serve` SHALL check that the role name is one
 `role-config` accepts, so that the path names a file in `/etc/igor/`. A key the file sets SHALL take the place of
 the same key in the environment `igor serve` started with.
@@ -265,13 +266,21 @@ the same key in the environment `igor serve` started with.
 #### Scenario: A double-quoted value is refused
 
 - **WHEN** `/etc/igor/backend.env` holds the line `GITHUB_APP_ID="123"`
-- **THEN** `igor serve backend-1` refuses to start, naming that line and `GITHUB_APP_ID`
-- **AND** the refusal does not print the value
+- **THEN** `igor serve backend-1` refuses to start, naming that line's number
+- **AND** the refusal prints nothing of the line
 
 #### Scenario: An unquoted value with other characters is refused
 
 - **WHEN** `/etc/igor/backend.env` holds the line `TOKEN=ab$cd`
-- **THEN** `igor serve backend-1` refuses to start, naming that line and `TOKEN`, and not the value
+- **THEN** `igor serve backend-1` refuses to start, naming that line's number and printing
+  nothing of the line
+
+#### Scenario: A line after a stray quote is refused without printing it
+
+- **WHEN** `/etc/igor/backend.env` holds a single-quoted private key with a stray `'` inside it,
+  so that a later line of the key, such as `AbCd12==`, is read as a line of its own
+- **THEN** `igor serve backend-1` refuses to start on the first line that does not parse,
+  naming its number and printing nothing of the line
 
 #### Scenario: Single-quoted and plain values start
 
@@ -288,7 +297,8 @@ the same key in the environment `igor serve` started with.
 #### Scenario: A quote that never closes is refused
 
 - **WHEN** `/etc/igor/backend.env` holds `TOKEN='abc` and no later `'`
-- **THEN** `igor serve backend-1` refuses to start, naming that line and `TOKEN`, and not the value
+- **THEN** `igor serve backend-1` refuses to start, naming the number of the line with the
+  opening quote and printing nothing of it
 
 #### Scenario: The file's value takes the place of the environment's
 

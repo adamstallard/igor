@@ -45,17 +45,20 @@
       reads a credential, and sets each key it holds in its own environment, in place of the
       same key it started with. It refuses to start on any line that is not blank, a `#`
       comment, or `KEY=value` with a single-quoted or plain value, as `role-config` defines
-      them, never printing the value. The message is the first below, as written, or the
-      second, as written, for a line with no `KEY=` at its start:
+      them, printing nothing of the line but its number (proposal, decision 59). The message is
+      the first below, as written, for a line that starts with `KEY=`, an unclosed quote's
+      included, or the second, as written, for a line with no `KEY=` at its start:
 
       ```text
-      /etc/igor/<role>.env line <n>: the value of <KEY> must be in single quotes, as <KEY>='...', or use only letters, digits and _ . / : @ -. Igor reads this file itself and takes no other form.
+      /etc/igor/<role>.env line <n>: a value must be in single quotes, as KEY='...', or use only letters, digits and _ . / : @ -. Igor reads this file itself and takes no other form.
       /etc/igor/<role>.env line <n>: each line must be blank, a # comment, or KEY=value.
       ```
 - [ ] 1.7 Tests for 1.5 and 1.6: a double-quoted value, an unquoted value holding `$` or a
       backtick, a plain path, a single-quoted value holding `$` taken as written, and a
       single-quoted private key across several lines are each judged as `role-config` says, and
-      the refusal in 1.6 never holds the value
+      the refusal in 1.6 holds nothing of the line but its number, including for a line of a
+      private key that a stray `'` left outside its value; and a name with no rank is refused as
+      1.5 says
 - [ ] 1.8 `deploy/igor.service` sets `StateDirectory=igor`, and working trees are made under
       `<state dir>/trees`, where the state directory is as #216 (`lore-search`, its decision 105)
       defines it: `$STATE_DIRECTORY`, which `StateDirectory=igor` sets, and otherwise
@@ -352,17 +355,20 @@
       post removes that label where its test finds no claim message that counts. It checks the
       time before sending the removal: it sends it only while less than half a settle interval
       has passed since it started to set the label, by its own monotonic clock, and otherwise
-      sends none and leaves the label. This is the one listed exception to
-      4.21 (Adam, 2026-10-21)
+      sends none and leaves the label. This is the first listed exception to
+      4.21 (Adam, 2026-10-21); 4.22's stop on an item no claim message holds is the second
 - [ ] 4.27 Each process keeps, from its start, the shortest poll interval it has applied, and,
       per sibling, the longest interval it has seen that sibling's heartbeat declare in a write:
       a heartbeat whose counter changed since the last read. It forgets every sibling's
       declarations when it detects a loss or rollback of the state branch: a serving rank's file it
-      had read is missing, not a run's, which a run removes as it exits, or a sibling file's counter is lower than the one last read. It counts a sibling
+      had read is missing, not a run's, which a run removes as it exits or a serving process
+      removes once it counts the run gone, or a sibling file's counter
+      is lower than the one last read under the same process id; a new id is a restart, not a
+      loss. It counts a sibling
       gone after three of the longest of its own current interval and the intervals it keeps for
       that sibling, or after three of the maximum poll interval, 30 minutes, where it keeps none; it stands down after two of its
       shortest applied interval; it writes its heartbeat every half of its own current interval.
-      A restart starts all of it afresh. Tests: a process that saw a sibling declare 20 minutes
+      The process's own restart starts all of it afresh. Tests: a process that saw a sibling declare 20 minutes
       counts it gone only after 60 minutes; one on 10 minutes that saw only 10, after 30; one on
       20 minutes that saw only 10, after 60; a process
       that has just started, or has just found a sibling's file missing, counts in the maximum
@@ -433,7 +439,7 @@
       environment file. Say this about the file, as written:
 
       ```text
-      Write each value in /etc/igor/<role>.env in single quotes, as KEY='value', or plain, using only letters, digits and _ . / : @ -. Igor reads this file itself, takes a single-quoted value exactly as written, and refuses to start on any other line, naming its key but never its value. A single-quoted value may span lines, as a private key does, but cannot hold a single quote.
+      Write each value in /etc/igor/<role>.env in single quotes, as KEY='value', or plain, using only letters, digits and _ . / : @ -. Igor reads this file itself, takes a single-quoted value exactly as written, and refuses to start on any other line, naming its line number and nothing of its content. A single-quoted value may span lines, as a private key does, but cannot hold a single quote.
       ```
 - [ ] 6.2 `docs/deployment.md` already says `TimeoutStopSec` bounds how long shutdown waits and
       not whether the item finishes. Add what follows for ranks: an item that outlives it is

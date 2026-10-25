@@ -214,7 +214,7 @@ stood down for missed heartbeats says nothing, since a sibling may already have 
 over (*A retired rank does not hold its items forever*). A process whose claim message does not hold the item says
 nothing, since the claim is another rank's (*Only the rank holding a claim gives it back*). The scenarios
 below that give a claim back describe the holder; a process whose claim message failed to post
-removes the label only as *Only the rank holding a claim gives it back* allows in its one
+removes the label only as *Only the rank holding a claim gives it back* allows in its first
 exception.
 
 A run that finishes SHALL release its claim too, leaving its artifact in place and the item open,
@@ -232,8 +232,8 @@ a hand-over the Igor has not answered.
 **Where the release does not succeed either**, the Igor SHALL say that instead of saying it
 released. The item still carries the Igor's name, so a message asserting release would be false
 where somebody is looking; what is said SHALL name the item as still held and SHALL name the one
-action that frees it. A process whose claim message failed to post holds nothing, so this
-paragraph and the scenarios *A claim that could not be announced is given back* and *A claim
+action that frees it. A process whose claim message failed to post holds nothing unless its
+test, #173's read of the item's claim messages, finds the message landed after all, so this paragraph and the scenarios *A claim that could not be announced is given back* and *A claim
 that could not be verified is given back and withdrawn*, below, are about the holder: such a process
 gives the claim back as *Only the rank holding a claim gives it back* says.
 
@@ -1033,10 +1033,11 @@ itself read and applied:
   declared in a heartbeat this process saw written since the later of its own start and the last
   loss or rollback of the state branch it detected.
   A heartbeat is *seen written* when its counter changes between two reads. A process detects a
-  loss or rollback when a serving rank's file it had read is missing, or any sibling's counter
-  is lower than the one last read; a run's file that goes missing is a run that exited or was
-  counted gone, not a loss. Where the process has seen no such declaration from the sibling, it SHALL
-  measure them as `role-config`'s maximum poll interval (Adam, 2026-10-24).
+  loss or rollback when a serving rank's file it had read is missing, or any sibling's counter,
+  under the same process id, is lower than the one last read, a new id being a restart and not a
+  loss; a run's file that goes missing is a run that exited or was
+  counted gone, not a loss. Where the process has seen no such declaration from the sibling, it SHALL measure
+  those three intervals as `role-config`'s maximum poll interval (Adam, 2026-10-24).
 - **Stand-down:** a process SHALL measure each of the two poll intervals after which it stands
   down as the shortest poll interval it has applied since it started.
 
@@ -1044,8 +1045,8 @@ A process SHALL write its heartbeat every half of its own current poll interval.
 SHALL wait on, ask or signal another to settle which interval applies.
 
 Declarations keep recovery fast while the state branch holds; the maximum keeps a loss, a
-rollback or a restart from taking a live rank's claim. After any of those, until that sibling's
-next heartbeat lands, a process counts in the maximum, so it adopts the sibling's claims only
+rollback or a process's own restart from taking a live rank's claim. After any of those, until a
+sibling's next heartbeat lands, the process counts that sibling in the maximum, so it adopts the sibling's claims only
 after 90 minutes.
 
 #### Scenario: A sibling that declared a longer interval is waited for
