@@ -31,8 +31,11 @@
       to the longer of twice that deadline and the deadline plus 5 minutes (proposal, decision 9).
       Do task 4.1, the measurement of an append to the state branch (the git branch the log is
       written to), before this one, since the deadline is set from it
-- [ ] 2.3 The read in 2.1 reads every partition fresh, bypassing `readLog`'s cache of past days; where any partition's read fails, it fails as a whole, rather than return a
-      shorter log that looks whole, and the caller voids its rows
+- [ ] 2.3 The read in 2.1 reads every partition from yesterday on fresh, by the reader's clock and
+      a later day's included, bypassing `readLog`'s cache of past days, which may still serve
+      earlier days; where any partition's read fails,
+      it fails as a whole, rather than return a shorter log that looks whole, and the caller
+      voids its rows
 - [ ] 2.4 Every path that appended a probe row and takes no item appends a void row naming it: a
       row that does not decide, a row that decides for one key and not another, a read that
       fails, and a lost claim. The code already voids on a lost claim
@@ -54,3 +57,8 @@
 - [ ] 4.2 Measure whether a read through GitHub's contents API returns every write another client
       has landed, which the probe settle interval assumes; where it does not, report it to Adam
       before 2.1 ships
+- [ ] 4.3 Once 4.1 sets the append deadline, check that each lapse bound, `SWEEP_AFTER_MS` and
+      #179's 90 minutes after the latest keepalive, still exceeds by 5 minutes the longest a
+      live Igor's probe row can go before the run row that ends it or its first keepalive,
+      counting one probe settle interval per key and `work-claiming`'s settle interval for the
+      claim; report to Adam where one does not

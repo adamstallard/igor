@@ -18,8 +18,10 @@ The terms, as this requirement uses them:
 - A **void row** names a probe row's identifier, and says that the probe row will produce no run.
 - A probe row **ends** with a run row for its item written after it, with a void row naming it, or
   when it **lapses**: when the log shows its Igor can no longer be working it. Whatever rule decides
-  a lapse SHALL be one every Igor in the scope judges alike from the log, such as a row's age
-  against a bound every Igor shares. Where the rule compares a timestamp in the log with a
+  a lapse SHALL be one every Igor in the scope judges from the log, such as a row's age against a
+  bound every Igor shares. Igors whose clocks differ may disagree on a row near its bound; that
+  delays a probe but takes no item twice, since an Igor that still counts the row as holding
+  takes no item. Where the rule compares a timestamp in the log with a
   reader's own clock, its bound SHALL exceed the longest a live Igor's row can go without
   whatever keeps it from lapsing, such as a run that has not ended, by at least an assumed
   maximum clock skew between the Igors' hosts of 5 minutes, so that no Igor reads a live
@@ -35,37 +37,33 @@ The terms, as this requirement uses them:
   midnight it can differ, since a row stamped just before midnight goes to the earlier day's
   partition even when the store accepts it after a row in the later day's. Timestamps never
   order rows.
-- A row has **landed** once the store has accepted it.
+- **The store** is the host that holds the state branch; it accepts or refuses each append to the
+  log. A row has **landed** once the store has accepted it.
 - The **append deadline** is how long an Igor waits for a probe row's append, including any
   retries of it, before it treats the append as failed. No other append to the log has one.
 - The **probe settle interval** is the longer of twice the append deadline and the append
-  deadline plus 5 minutes, the clock skew between hosts this requirement assumes. At midnight a
-  slow host's clock can file a row begun up to 5 minutes after an Igor's own row landed in the
-  earlier day's partition, ahead of it; that row lands within the deadline, so it has landed once
-  the deadline plus 5 minutes have passed. It is not the
-  settle interval of `role-config`.
+  deadline plus 5 minutes, the clock skew between hosts this requirement assumes, since at midnight
+  a slow host's clock can file a row begun after an Igor's own row landed in the earlier day's
+  partition, ahead of it. It is not the settle interval of `role-config`.
 
 The append deadline and the probe settle interval SHALL be fixed in Igor's code, not configured.
 This is an exception to `role-config`'s *Timing values are configurable with stated defaults*,
-an exception #179's copy of that requirement names as well. An Igor's probe settle interval has to outlast every
-other Igor's append deadline, not only its own.
+which #179's copy of that requirement names among its exceptions.
 
 The rules:
 
 - **An Igor that finds the probe due SHALL append a probe row**, and SHALL take no item until a later
   read decides.
 - **That read SHALL be made once the probe settle interval has passed since its row landed**, and
-  SHALL show every row the store had accepted by then, with no part of the log served from an
-  earlier read.
+  SHALL show every row the store had accepted by then. Every partition from yesterday on, by the
+  reader's clock, SHALL be read fresh, a later day's included where another host has written one;
+  an earlier day's, which no row can still reach, may come from a cache.
 - **The probe row that decides is the oldest that has not ended**, among the probe rows for the key
   that are newer than the condition's last occurrence, in storage order. The Igor whose row that
   is SHALL take the item, unless one of the rules below stops it.
 - **An item that would probe several conditions SHALL probe them one at a time, in the order of
   their keys.** The Igor SHALL append its probe row for the next key only once its row for the
-  previous key decides, and SHALL take the item only once its row decides for every key. Because
-  every Igor bids in the same order, of the Igors whose items probe the same two keys only the one
-  whose row holds the scope for the first bids for the second, so no two of them can each hold
-  one key and void both without end.
+  previous key decides, and SHALL take the item only once its row decides for every key.
 - **An Igor that appended a probe row and takes no item SHALL append a void row naming it.** That
   covers losing to an older row, a read that fails, a row that decides for one key and not another,
   and a claim lost to somebody else.

@@ -76,7 +76,10 @@ probe row's append, and no other, gets a deadline (proposal, decision 10). The d
 append's retries, once #179's retry of a conflicted write is built, and the probe settle interval
 is the longer of twice the deadline and the deadline plus 5 minutes (proposal, decision 9). An append
 past its deadline is treated as failed: its Igor takes no item and voids the row. The read that
-decides bypasses the cache of past days (task 2.3), so a late row in yesterday's file is read. The
+decides reads every partition from yesterday on fresh (task 2.3), so a late row in yesterday's
+file is read. A row lands in the partition of the day its writer's clock gives it, within its
+deadline and so within minutes, so no partition from before yesterday can take a new row; the
+cache, which saves a request per day of history (`docs/architecture.md`), still serves those. The
 gap is a write the store accepts after its client gave up on it. Only at midnight can such a write
 land ahead of a row already read as deciding, and it then gives a second probe. Clock skew gives
 no second gap: a slow host's clock can stamp a row it begins up to 5 minutes after another Igor's row landed with a time before midnight, filing it in the earlier day's partition, ahead of that row; such a row lands within the deadline, so it has landed once the deadline plus 5 minutes have passed. Closing the gap means
@@ -102,10 +105,11 @@ for. That is argued, not checked.
   moved since. It decides in one step, with no settle interval and no midnight gap. Rejected for
   two reasons. Every write to the state branch moves that commit, run rows and discovery marks of
   every role included, so on a busy fleet a probe append is refused for reasons unrelated to it
-  and retried, each retry re-reading whether the probe is still due. And correctness would rest
-  on one store's compare-and-set. `work-claiming`'s scenario *No dependence on conditional writes*,
-  in force on `main`, rules that out for claims, and the log should stay movable to a store
-  that has no compare-and-set, though no change plans such a move. It is the alternative to revisit if the
+  and retried, each retry re-reading whether the probe is still due. `appendRecord` already
+  writes a day's partition back with a compare-and-set on the file, and retries a conflict by
+  reading the partition again; this change makes no conditional write of its own. A conditional
+  append from the deciding read would be conditional on the whole log, so every conflict would
+  mean making the deciding read again, not just the partition's. It is the alternative to revisit if the
   midnight gap turns out to matter.
 - **A lock file per condition**, created only if absent. It is condition state stored apart from
   the log, which the in-force *A condition's scope is its cure's scope* forbids ("No condition

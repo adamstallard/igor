@@ -24,8 +24,14 @@
    have failed.** A row nobody is working would otherwise hold the scope until it lapses.
 5. **An item that would probe several conditions probes them one at a time, in key order, and is
    taken only where its rows decide for all of them** (Adam, 2026-10-24, replacing bids for every
-   key at once); its rows are otherwise all voided. Bidding for every key at once let two Igors
-   each win one key and void both without end; bidding in one shared order leaves only the
+   key at once). Adam's words were "one condition at a time, the one whose key sorts first",
+   which could also mean that an item probes only its first-sorting condition. The agent
+   coordinating this work for Adam confirmed the same day the reading taken here: the Igor
+   appends a probe row for each key in turn, each only once its row for the previous key
+   decides. Where a row does not decide, the Igor voids every row it appended for the item,
+   those that had decided included, as decision 4 voids a row that does not decide. With bids
+   for every key at once, two Igors could each win one key, void both, bid again at their next
+   item, and collide the same way without end; bidding in one shared order leaves only the
    holder of the first key bidding for the second.
 6. **A lapse is judged alike by every Igor in the scope, from the log.** Otherwise Igors disagree on
    the oldest unended row. This change decides only that property; it does not choose the lapse
@@ -73,16 +79,27 @@
   whether to accept it. If Adam rejects it, the exception goes, and the requirement then has to
   cover that write too, which needs a mechanism such as the conditional append decision 2
   rejects.
-- **Fixes the authors still owe, found by a consistency read on 2026-10-24.** None is a
+- **To settle with other changes:**
+  - #171 keeps the in-force scenario *A probe is taken once*. Its "a row saying it is taking the
+    probe" is, in this change's terms, a bid that may lose, so the scenario should say so. #171's
+    copy is where to reword it, and the request to #171 has yet to be made.
+  - #179's `work-discovery` retries, until it lands, every conflicted write to a state file that
+    several processes write, and names no exception for a probe row's append, which this change
+    gives up on at its deadline; #179 should name it.
+  - Between this change's archive and #179's, the in-force `role-config` still says every
+    interval is configurable, contradicting this change's fixed timings. #179's copy of that
+    requirement already names them and replaces it whole when #179 archives; the contradiction
+    between the two archives is accepted, since nothing is built from the specs in between.
+- **Fixes the authors still owe, found by consistency reads on 2026-10-24.** None is a
   decision, and none blocks review of the rules:
-  - The in-force scenario *A probe is taken once* speaks of "a row saying it is taking the
-    probe", which this change's terms make a bid; the wording should say so.
-  - Decision 2's rejection of the conditional append cites a compare-and-set that
-    `appendRecord`'s own write already relies on, so its reason needs restating. The rejection
-    stands: #179 retries `appendRecord`'s compare-and-set, while a conditional append from the
-    deciding read could not be retried without losing the read it is conditional on.
   - Nobody has measured that GitHub's contents API returns every write another client had
     landed; the settle interval assumes it, and task 4.2 measures it.
+  - Both lapse bounds count from the probe row's time. Before any run row or keepalive is
+    written, an Igor waits one probe settle interval per key and then `work-claiming`'s settle
+    interval for its claim, which uses up part of each bound's margin; whether each bound keeps its 5 minutes of margin once task
+    4.1 sets the deadline is unchecked, and task 4.3 checks it.
+  - That bidding for several keys in one order always lets some Igor win every key it bids for
+    is argued in `design.md`, not checked: the model has one condition.
 
 ## Why
 
@@ -103,7 +120,8 @@ is claimed and a worker spent against a fault that is probably still there. Adam
 - An Igor whose row does not decide, whose read fails, whose claim is lost, or whose append failed
   takes no item and voids its row. An item that would probe several conditions bids for them one at
   a time, in key order, and is taken only where its rows decide for all of them.
-- A probe row's append gets a deadline, and the read that decides bypasses the cache of past days
+- A probe row's append gets a deadline, and the read that decides reads every partition from
+  yesterday on fresh
   and fails where any partition read fails.
 - `model/` holds the TLA+ model and its configurations, and CI runs them.
 
@@ -117,7 +135,8 @@ is claimed and a worker spent against a fault that is probably still there. Adam
 
 - **Code:** `probeRunning` and `conditionOf` in `src/conditions.ts`; `probe` in `src/wiring.ts`
   and its callers in `src/serve.ts` and `src/cli.ts`; `appendRecord` and `readLog` in
-  `src/state.ts`, for the append deadline and a read that bypasses the cache of past days.
+  `src/state.ts`, for the append deadline and a read of every partition from yesterday on that
+  bypasses the cache.
 - **Other changes:** cites only requirements already in force, adds one no other change cites, and
   modifies none, so `openspec archive` puts no constraint on its place.
   [#204](https://github.com/adamstallard/igor/issues/204), which states the whole archive order,
