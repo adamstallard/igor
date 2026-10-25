@@ -14,11 +14,12 @@
       (the token-free `sudo -n -u <worker> true` before a spawn or a kill), under a cure key
       scoped to the instance, `igor@<role>-<rank>`; a cure key is the key `condition-backoff`
       (#101) records a failure under. #101's code on `main` has scopes for a role, a seat and an
-      Igor; add the instance scope. A condition it opens stops only that instance taking new
-      items, and the instance's next spawn that succeeds, the probe's, clears the condition. The
-      Igor does not exit on it (#82). Test: one refused spawn stops nothing; a second stops that
-      instance and no other rank of the role; the probe's successful spawn clears it (proposal,
-      decisions 31 and 53; Adam, 2026-10-24)
+      Igor; add the instance scope, as `stuck-conditions`' *A failed worker spawn is a condition
+      on its instance* states it. Each run row names its instance, and the stop names the
+      sudoers line for `igor-worker-<role>-<rank>` as the cure. The Igor does not exit when the
+      condition opens (#82). Build after Adam's review of that requirement, since the key's shape
+      and its clearing are questions in the proposal's *Still open*. Tests: one per scenario of
+      that requirement (proposal, decisions 31 and 53; Adam, 2026-10-24)
 - [ ] 0.4 If #137 (`carry-what-a-tree-holds`) has archived, build 3.3's publishing of a changed
       link as a link, and 3.1's publishing of a changed gitlink as a pointer. If not, build both
       stops, file an issue asking whichever of #137 and this change archives second to replace

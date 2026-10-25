@@ -306,8 +306,8 @@
     hosts run it, would stop every rank on every host for one host's broken sudoers line; and
     #101 clears that scope only when an App token is minted again, which fixing sudoers does not
     do. #101's conditions name a role, a seat or an Igor. This change therefore specifies the
-    instance scope and its clearing in a delta to `stuck-conditions`, not yet written (Still
-    open), and builds them in task 0.3. The Igor does not exit when the condition opens (#82).
+    instance scope and its clearing in a `stuck-conditions` delta, *A failed worker spawn is a
+    condition on its instance*, and builds them in task 0.3. The Igor does not exit when the condition opens (#82).
 32. **The Igor may stage more than once, but every staging follows the kill and the checks, and
     both trailers bind the last staging** (Adam, 2026-10-19). Before each staging, every model
     step started so far has exited, the Igor has killed every process the worker user owns, and
@@ -372,8 +372,8 @@ Decisions 41 and 43 to 48 are Adam's, made on 2026-10-21. So are three extension
 agent's consistency read of this change added to his decisions, which he kept: in decision 41, the groups and sockets
 of point 3 and the refusal of a secret under 8 characters; and in decision 43, the
 `fs.suid_dumpable` check.
-Decision 42 is a mechanism proposed for 41's first point, and decision 49 refines decision 48;
-both wait for his approval.
+Decision 42 is a mechanism proposed for 41's first point, and waits for his approval; decision
+49 refines decision 48, and he approved it on 2026-10-24.
 
 41. **A worker gets a secret only through the Igor, which registers every secret it hands
     over** (Adam, 2026-10-21). Registering means calling `rememberSecret`, so that #217's
@@ -507,8 +507,8 @@ both wait for his approval.
     registers the whole proxy URL, which is long enough to register even where `<user>@<host>`
     is under 8 characters. *Rejected:* failing each run, which a short proxy password would
     do without end.
-49. **Two refinements of decision 48** (proposed by this change's author on 2026-10-24, for
-    Adam's approval). An empty password (`user:@host`, as curl writes it for a Negotiate proxy)
+49. **Two refinements of decision 48** (proposed by this change's author and approved by Adam,
+    2026-10-24). An empty password (`user:@host`, as curl writes it for a Negotiate proxy)
     counts as no password, as #217 treats it, since refusing it would refuse every Negotiate
     proxy. And the start check's refusal for a metadata endpoint reached through the proxy
     names the variable that holds the proxy URL, never the URL, whose user info is a secret,
@@ -526,7 +526,8 @@ both wait for his approval.
     Decision 48 keeps such a URL from refusing the start; this decision also keeps it from
     failing each run. #217 registers the name bound to its host, as `<user>@<host>`, so the rule
     that fails a run rather than hand over a secret under 8 characters does not apply to it.
-    It stands whatever Adam decides on decision 49, whose scenario covers this case too.
+    Decision 49's scenario, *A proxy user name with no password is registered with its host*,
+    covers this case too.
 52. **Before each `sudo` that passes the worker user a secret, the Igor runs
     `sudo -n -u <worker user> true`** (Adam, 2026-10-24). Sudo's documentation says it writes a
     command it refuses to the journal with the variables it would have passed, so a refused
@@ -555,17 +556,27 @@ on another change, or on this change's next revision.
 
 - **Decision 42 waits for Adam's approval.** If he turns it down, the uid firewall rule it
   rejects is the alternative.
-- **Decision 49 waits for Adam's approval too,** though the spec already states it: an empty
-  proxy password is not refused, and the refusal for a metadata endpoint names the variable,
-  not the URL. If he turns it down, those two passages go, with the scenario *A proxy user name
-  with no password is registered with its host*.
+- **The `stuck-conditions` delta waits for Adam's review.** *A failed worker spawn is a
+  condition on its instance* states decision 31 and makes choices no decision lists: a failed
+  spawn means `sudo` refused or the process could not start, never the worker's exit status; the
+  condition opens at #101's recurrence threshold; each run row names its instance, so a probe's
+  run can clear it; the stop names the sudoers line as the cure; and a check refused later in
+  the probe's run, after the spawn that cleared the condition, starts a new count. #171's copy
+  of *A condition clears by not recurring* says an item meets the condition where its run records
+  the same key again, which would read that run as meeting it instead; to settle with #171.
+  Two questions for Adam, each with a recommendation:
+  - *The key's shape.* `igor@<role>-<rank>` names the process that met the fault, where every
+    other cure key names what a person changes, and #101's code reads a key of no known shape as
+    naming no scope, so task 0.3 extends that code to read whichever shape is chosen. *Recommended:* `instance:<role>-<rank>:sudoers`, which names the cure and
+    has the `<scope>:<name>:<setting>` shape #101's code parses.
+  - *Clearing without a probe item.* The token-free check observes the sudoers line without
+    spending an item. *Recommended:* the instance clears its condition at the start of a cycle
+    where the check passes, as an App credential clears when a token is minted again, so a
+    fixed sudoers line costs no cooldown.
 - **From a third consistency read on 2026-10-24.** Decision 52 rests on sudo logging a refused
   command with the variables it would have passed, which task 6.12 measures; if it does not,
   the check before a spawn guards nothing, though decision 53's check before a kill still
-  tells a refusal from a `pkill` that found no process. Decision 31's instance scope and its clearing by
-  a later successful spawn need a delta to `stuck-conditions`, the capability where #101's
-  conditions are specified. Adam approved decision 31; the agent revising this change is to
-  write the delta, and Adam reviews it then.
+  tells a refusal from a `pkill` that found no process.
 - **Other findings of the 2026-10-24 consistency read, for this change's authors:**
   - From a second consistency read on 2026-10-24, after the first one listed above: no release
     removes the `<tree>-prompt` directory, so a long-running `igor serve` leaves one per run
@@ -853,6 +864,9 @@ None.
   tree* and *Igor forwards the termination it is sent* kill by worker user under `serve`; and
   *A base change is undone only where the resolution says so* lets the outbox hold the index
   copy, readable by the worker's group (decision 36).
+- `stuck-conditions`: one requirement added, *A failed worker spawn is a condition on its
+  instance*: the instance scope, its cure key, and how its condition opens and clears
+  (decision 31).
 
 ## Impact
 
@@ -865,4 +879,6 @@ None.
   the live `/usage` read (decision 40).
 - `deploy/igor.service`, `Dockerfile` (#192), `deploy/docker-compose.yml`, a new `deploy/sudoers.example`,
   `docs/deployment.md`, and a paragraph in `docs/architecture.md` §6.3.2.
+- `src/conditions.ts`, for the instance scope and its cure text, and the run row in
+  `src/budget.ts`, which names its instance (task 0.3).
 - `igor doctor` (#113) gains no check (Adam, 2026-10-11); design.md says why.

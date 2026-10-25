@@ -18,11 +18,8 @@ four `sudo` calls pass a secret: the worker's spawn, each later `claude -p` star
 worker's tree, each of #189's checks, and the start check's probe of the metadata endpoint
 through a proxy. The start check's probe runs before any run exists, so a refused check there
 SHALL refuse the start with status 78 rather than fail a run, and nothing is recorded under the
-cure key. A failed spawn of the worker,
-and any other refused check, SHALL be recorded under a `condition-backoff` (#101) cure key
-scoped to the instance, `igor@<role>-<rank>`. A first occurrence of that key stops nothing, and a recurrence opens a condition that stops
-that instance taking new items. The probe item #101's cooldown then lets through spawns the
-worker, and that spawn, when it succeeds, clears the condition. Every other `claude -p` the Igor starts with the
+instance's cure key. A failed spawn of the worker, and any other refused check, SHALL be recorded as
+`stuck-conditions`' *A failed worker spawn is a condition on its instance* says. Every other `claude -p` the Igor starts with the
 worker's tree as its working directory SHALL run as that user as well, such as #153's bug hunt
 and prose pass. No prose or bug-hunter script SHALL run as that user: the Igor runs them as the
 service user (*The Igor stages only after its checks, and #153's trailers bind the last staging*). No
@@ -1127,14 +1124,13 @@ Execution SHALL run the worker in its own process group. Under `igor run` it SHA
 group, so that the subprocesses the worker spawned in that group die with it. Under `igor serve`
 it SHALL instead kill every process the worker user owns (*A kill, a release and a sweep reach
 what the worker owns*). A group or a worker user with no process left SHALL NOT make cleanup
-fail. Under `igor serve` the kill SHALL first run `sudo -n -u <worker user> true`: a refused
-`sudo` and a `pkill` that found no process both exit with status 1, so without the check a
-refused kill would read as a clean one. A refused check SHALL fail the run before the Igor reads
-or stages anything from the worker's tree or outbox, and SHALL be recorded under the instance's
-cure key, as a refused check before a spawn is. At process exit the check SHALL run
-synchronously, like the kill, and a refusal there SHALL be written to standard error only, since
-no run is left to fail and an `exit` handler cannot wait for the append to the state branch's
-execution log that recording takes.
+fail. Under `igor serve` the kill SHALL first run `sudo -n -u <worker user> true` (proposal,
+decision 53). A refused check SHALL fail the run before the Igor reads or stages anything from
+the worker's tree or outbox, SHALL skip the kill, which the same sudoers line would refuse, and
+SHALL be recorded as `stuck-conditions`' *A failed worker spawn is a condition on its instance*
+says. At process exit the check SHALL run synchronously, like the kill, and a refusal there SHALL
+be written to standard error only. An `exit` handler cannot wait, and at exit no run is left to
+fail.
 
 A kill that reaches only the worker leaves a build, a test run or a script writing to a working
 tree that is about to be released and swept. The tool window exists because such a subprocess
