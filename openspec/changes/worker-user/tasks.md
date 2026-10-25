@@ -10,16 +10,19 @@
       `design.md`, including any that contradicts it, and change the design before the code where
       one does. Done on 2026-10-18: `design.md`, *Measurements*. 6.2 changed the kill (proposal,
       decision 27) and 6.5 the sudoers file (decision 28).
-- [ ] 0.3 Record a `sudo` spawn failure of the worker, and a refused check of 5.8's or 4.1's
-      (the token-free `sudo -n -u <worker> true` before a spawn or a kill), under a cure key
-      scoped to the instance, `igor@<role>-<rank>`; a cure key is the key `condition-backoff`
-      (#101) records a failure under. #101's code on `main` has scopes for a role, a seat and an
-      Igor; add the instance scope, as `stuck-conditions`' *A failed worker spawn is a condition
-      on its instance* states it. Each run row names its instance, and the stop names the
-      sudoers line for `igor-worker-<role>-<rank>` as the cure. The Igor does not exit when the
-      condition opens (#82). Build after Adam's review of that requirement, since the key's shape
-      and its clearing are questions in the proposal's *Still open*. Tests: one per scenario of
-      that requirement (proposal, decisions 31 and 53; Adam, 2026-10-24)
+- [ ] 0.3 Record a `sudo` spawn failure of the worker, and a refused token-free
+      `sudo -n -u <worker> true` check, before a spawn, a later `claude -p`, one of #189's checks
+      or a kill (5.8 and 4.1), except the one before the metadata probe and the one at process
+      exit, under the cure key
+      `instance:<role>-<rank>:sudoers`; a cure key is the key `condition-backoff` (#101) records
+      a failure under. #101's code on `main` has scopes for a role, a seat and an Igor; add the
+      instance scope, as `stuck-conditions`' *A failed worker spawn is a condition on its
+      instance* states it. Each run row, in `src/budget.ts`, names its instance. While the condition is open, the
+      instance runs the check at each cycle's start, takes no probe item, and appends a condition
+      row only where a passing check clears the condition. The stop names
+      the sudoers line for `igor-worker-<role>-<rank>` as the cure. The Igor does not exit when
+      the condition opens (#82). Tests: one per scenario of that requirement (proposal, decisions
+      31 and 53; Adam, 2026-10-24)
 - [ ] 0.4 If #137 (`carry-what-a-tree-holds`) has archived, build 3.3's publishing of a changed
       link as a link, and 3.1's publishing of a changed gitlink as a pointer. If not, build both
       stops, file an issue asking whichever of #137 and this change archives second to replace

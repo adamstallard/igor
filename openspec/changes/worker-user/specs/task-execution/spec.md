@@ -56,8 +56,8 @@ system's file permissions are the barrier that holds whatever the worker runs.
   is about to spawn a worker
 - **THEN** its `sudo -n -u igor-worker-<role>-<rank> true`, which carries no secret, is refused,
   and the Igor fails the run without spawning, so no journal line holds the seat token
-- **AND** where the refusal recurs, that instance takes no new item, while the role's other
-  ranks go on, until the probe item #101's cooldown lets through spawns its worker successfully
+- **AND** where refusals reach #101's recurrence threshold, that instance takes no new item
+  while the role's other ranks go on, until its check at the start of a cycle passes
 
 #### Scenario: A check before one of #189's checks is refused
 

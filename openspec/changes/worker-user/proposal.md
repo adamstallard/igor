@@ -296,13 +296,21 @@
     *Rejected:* `GIT_CONFIG_*` in the worker's environment, which #156 forbids.
 
 31. **A failed `sudo` spawn of the worker is recorded under a cure key scoped to its instance,
-    `igor@<role>-<rank>`, and a condition it opens clears on that instance's next spawn that
-    succeeds** (Adam, 2026-10-24, replacing the key scoped to the whole Igor he approved on
-    2026-10-19). A cure key, in `condition-backoff` (#101, merged), is the key a failure is
-    recorded under; a first occurrence stops nothing, and a recurrence opens a condition on the
-    key's scope. Once the instance stops, #101's cooldown lets one probe item through, and that
-    probe's spawn is the one that can succeed and clear it. A key scoped to an item would fail
-    every item in turn. A key scoped to the whole Igor, which is one role however many ranks and
+    `instance:<role>-<rank>:sudoers`, and a condition it opens clears at the start of a cycle
+    where the instance's token-free check passes** (Adam, 2026-10-24, replacing the key scoped to
+    the whole Igor he approved on 2026-10-19; the key's shape and the clearing by the check were
+    decided under Adam's standing filter for such questions the same day, refining "clears on
+    that instance's next spawn that succeeds"). The token-free check is decision 52's
+    `sudo -n -u <worker user> true`, which passes no secret. The key names the cure, a sudoers
+    line, and has the `<scope>:<name>:<setting>` shape #101's code parses, with a new `instance`
+    prefix. A role's ranks are unique across hosts under #179, so each key names one process.
+    The check looks at the cure directly, as minting a token again does for an App credential's
+    condition; so no cooldown is waited and no probe item is taken. A cure key, in
+    `condition-backoff` (#101, merged), is the key a failure is recorded under. A first
+    occurrence stops nothing; once occurrences under one key reach #101's recurrence threshold,
+    spawn failures and refused checks counted together, a condition opens on the key's scope. A
+    key scoped to an item would count each item's failures apart, so no condition would ever
+    open, and every item would fail in turn. A key scoped to the whole Igor, which is one role however many ranks and
     hosts run it, would stop every rank on every host for one host's broken sudoers line; and
     #101 clears that scope only when an App token is minted again, which fixing sudoers does not
     do. #101's conditions name a role, a seat or an Igor. This change therefore specifies the
@@ -372,8 +380,8 @@ Decisions 41 and 43 to 48 are Adam's, made on 2026-10-21. So are three extension
 agent's consistency read of this change added to his decisions, which he kept: in decision 41, the groups and sockets
 of point 3 and the refusal of a secret under 8 characters; and in decision 43, the
 `fs.suid_dumpable` check.
-Decision 42 is a mechanism proposed for 41's first point, and waits for his approval; decision
-49 refines decision 48, and he approved it on 2026-10-24.
+Decision 42 is a mechanism proposed for 41's first point, and decision 49 refines decision 48;
+he approved both on 2026-10-24.
 
 41. **A worker gets a secret only through the Igor, which registers every secret it hands
     over** (Adam, 2026-10-21). Registering means calling `rememberSecret`, so that #217's
@@ -413,8 +421,8 @@ Decision 42 is a mechanism proposed for 41's first point, and waits for his appr
     person's own user and can prevent none of these, so the requirement states that limit
     without binding it, and `igor run`'s notice says so (task 5.4). The Igor's own part, that
     it registers every secret it hands over and passes no agent socket, holds in both modes.
-42. **The unit sets `IPAddressDeny=169.254.169.254 fd00:ec2::254`** (proposed 2026-10-21, for
-    Adam to approve). systemd applies `IPAddressDeny=` to the unit's whole control group, which a
+42. **The unit sets `IPAddressDeny=169.254.169.254 fd00:ec2::254`** (proposed 2026-10-21 and
+    approved by Adam, 2026-10-24). systemd applies `IPAddressDeny=` to the unit's whole control group, which a
     process started through `sudo` stays in unless sudo's PAM stack moves it out, so one line
     covers the Igor, the worker and everything the worker runs, with no host step. It blocks the
     Igor too, which needs no cloud credential. A seat's `token_command` that read a cloud secret
@@ -539,8 +547,9 @@ Decision 42 is a mechanism proposed for 41's first point, and waits for his appr
     #189's checks, and the start check's probe of the metadata endpoint through a proxy, the
     last two getting the proxy password. The start check's probe runs before any run exists, so
     a refused check there refuses the start with status 78, as decision 23 says, and records
-    nothing. Any other refused check counts as a failed `sudo` spawn under decision 31: the instance's cure key opens a condition on the instance when the refusal recurs, and a
-    later spawn that succeeds clears it.
+    nothing. Any other refused check counts as a failed `sudo` spawn under decision 31: the instance's cure
+    key opens a condition on the instance when the refusal recurs, and a passing check at a
+    cycle's start clears it.
 53. **Every kill under `igor serve` runs the same check first, though a kill passes no secret**
     (proposed by this change's author and approved by Adam, 2026-10-24). The kill is `sudo ... pkill`,
     and a refused `sudo` and a `pkill` that found no process both exit with status 1, so
@@ -554,25 +563,18 @@ Decision 42 is a mechanism proposed for 41's first point, and waits for his appr
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement,
 on another change, or on this change's next revision.
 
-- **Decision 42 waits for Adam's approval.** If he turns it down, the uid firewall rule it
-  rejects is the alternative.
 - **The `stuck-conditions` delta waits for Adam's review.** *A failed worker spawn is a
   condition on its instance* states decision 31 and makes choices no decision lists: a failed
   spawn means `sudo` refused or the process could not start, never the worker's exit status; the
-  condition opens at #101's recurrence threshold; each run row names its instance, so a probe's
-  run can clear it; the stop names the sudoers line as the cure; and a check refused later in
-  the probe's run, after the spawn that cleared the condition, starts a new count. #171's copy
-  of *A condition clears by not recurring* says an item meets the condition where its run records
-  the same key again, which would read that run as meeting it instead; to settle with #171.
-  Two questions for Adam, each with a recommendation:
-  - *The key's shape.* `igor@<role>-<rank>` names the process that met the fault, where every
-    other cure key names what a person changes, and #101's code reads a key of no known shape as
-    naming no scope, so task 0.3 extends that code to read whichever shape is chosen. *Recommended:* `instance:<role>-<rank>:sudoers`, which names the cure and
-    has the `<scope>:<name>:<setting>` shape #101's code parses.
-  - *Clearing without a probe item.* The token-free check observes the sudoers line without
-    spending an item. *Recommended:* the instance clears its condition at the start of a cycle
-    where the check passes, as an App credential clears when a token is minted again, so a
-    fixed sudoers line costs no cooldown.
+  condition opens at #101's recurrence threshold; each run row, the line the Igor appends to the
+  execution log for every run, names its instance, so #101 reads a clean run of that instance as
+  one that did not meet the condition, and failures with clean runs between them are not a
+  recurrence in a row; the stop names the sudoers line as the cure; and
+  a condition row is appended only where the check clears the condition, as #171 does for its
+  read-cleared conditions, which clear on a passing read and stop nothing by themselves. #82's and #208's *An open condition never ends a running service*, and
+  #216's *Every open condition is readable without naming a role*, list the conditions that
+  clear without a probe, and this one is missing from both lists; the agent revising this change
+  is to report it to those changes.
 - **From a third consistency read on 2026-10-24.** Decision 52 rests on sudo logging a refused
   command with the variables it would have passed, which task 6.12 measures; if it does not,
   the check before a spawn guards nothing, though decision 53's check before a kill still
@@ -879,6 +881,6 @@ None.
   the live `/usage` read (decision 40).
 - `deploy/igor.service`, `Dockerfile` (#192), `deploy/docker-compose.yml`, a new `deploy/sudoers.example`,
   `docs/deployment.md`, and a paragraph in `docs/architecture.md` §6.3.2.
-- `src/conditions.ts`, for the instance scope and its cure text, and the run row in
-  `src/budget.ts`, which names its instance (task 0.3).
+- `src/conditions.ts`, for the instance scope, its cure text and its clearing by a passing
+  check, and the run row in `src/budget.ts`, which names its instance (task 0.3).
 - `igor doctor` (#113) gains no check (Adam, 2026-10-11); design.md says why.
