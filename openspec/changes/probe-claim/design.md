@@ -72,20 +72,28 @@ immediately. At midnight a row can land ahead of one already read, so the read w
 interval: `NoSettle.cfg` shows the second probe without it.
 
 **The settle interval, and its one gap.** The interval only has to outlast an append, so each
-append gets a deadline that covers its retries, and the probe settle interval is longer. An append
+probe row's append, and no other, gets a deadline (proposal, decision 10). The deadline covers the
+append's retries, once #179's retry of a conflicted write is built, and the probe settle interval
+is the longer of twice the deadline and the deadline plus 5 minutes (proposal, decision 9). An append
 past its deadline is treated as failed: its Igor takes no item and voids the row. The read that
 decides bypasses the cache of past days (task 2.3), so a late row in yesterday's file is read. The
 gap is a write the store accepts after its client gave up on it. Only at midnight can such a write
-land ahead of a row already read as deciding, and it then gives a second probe. Closing it means
+land ahead of a row already read as deciding, and it then gives a second probe. Clock skew gives
+no second gap: a slow host's clock can stamp a row it begins up to 5 minutes after another Igor's row landed with a time before midnight, filing it in the earlier day's partition, ahead of that row; such a row lands within the deadline, so it has landed once the deadline plus 5 minutes have passed. Closing the gap means
 taking the log's order from the state branch's commit history rather than its files, which is a
 larger change than the race it would close. Whether to accept the gap is the proposal's first open
 question.
 
 **One item, several conditions.** An item can probe a role's condition and a seat's at once, and
-`probe` in `src/wiring.ts` appends one probe row per key. The Igor takes the item only where its
-row decides for every key, and otherwise voids all of them. A row that decides for one key and is
-voided leaves that key's probe due again, and the next item the scope takes probes it, so the
-cost is a delay, not an extra item.
+`probe` in `src/wiring.ts` appends one probe row per key at once. Bidding for every key at once
+lets two Igors each win one key, void both, and repeat without end. So the Igor bids for the keys
+one at a time, in key order, bidding for the next only once its row for the previous decides, and
+takes the item only where its row decides for every key (proposal, decision 5). Every Igor bids in
+that one order, so of the Igors whose items probe both keys, only the one holding the first bids
+for the second. An Igor whose item probes only the second key can still win the second key from
+that holder, and then takes its own item. Where items probe different but overlapping sets of
+keys, the one order works as locks taken in one fixed order do: some Igor wins every key it bids
+for. That is argued, not checked.
 
 ### Rejected
 
@@ -183,8 +191,10 @@ change edits it.
   configured for its own role, and the probe lapses once 90 minutes pass with no such row, three times #179's
   30-minute maximum poll interval, the longest any role may set: an Igor that misses three of its keepalives in a row is treated as no longer working the item. The probe settle interval is unrelated to the keepalive: it is derived from the append deadline, not from any poll interval, and is not #179's claim settle interval.
 - **The in-force scenario *A probe is taken once*** (under *A condition's scope is its cure's
-  scope*), and #171's copy of it, stay true under this change: no other Igor takes a probe item
-  until the probe's outcome is in. This change defines that outcome, which includes a void row and
+  scope*), and #171's copy of it, keep their meaning under this change: no other Igor takes a
+  probe item until the probe's outcome is in. The row they call "a row saying it is taking the
+  probe" is now a bid that may lose. Rewording it belongs in #171's copy, since editing
+  it here would collide with that copy, as described next. This change defines that outcome, which includes a void row and
   a lapse, and leaves the scenario as it is. Editing it would mean modifying that requirement,
   which #171 also replaces whole, so whichever archived second would have to carry the other's
   text.

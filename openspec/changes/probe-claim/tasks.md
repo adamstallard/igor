@@ -21,14 +21,18 @@
 
 ## 2. Taking the probe
 
-- [ ] 2.1 After appending its probe rows, the caller waits the probe settle interval, reads the log
-      again, and takes the item only where the row holding the scope is its own for every key it
-      probed
-- [ ] 2.2 Give `appendRecord` an append deadline that bounds the whole append, retries included
-      where #179's retry has landed, and set the probe settle interval above it. Make task 4.1's
-      measurement of an append to the state branch, the git branch the log is written to, first,
-      since the deadline is set from it
-- [ ] 2.3 The read in 2.1 reads every partition fresh, bypassing `readLog`'s cache of past days
+- [ ] 2.1 After appending its probe row, the caller waits the probe settle interval, reads the log
+      again, and goes on only where the row holding the scope is its own. An item that would probe
+      several keys bids for them one at a time, in key order, appending the next key's row only
+      once the previous one decides, and is taken only where its row decides for every key; change
+      `probe` in `src/wiring.ts`, which appends every key's row at once (proposal, decision 5)
+- [ ] 2.2 Give a probe row's append, and no other append, a deadline that bounds the whole
+      append, retries included where #179's retry has landed, and set the probe settle interval
+      to the longer of twice that deadline and the deadline plus 5 minutes (proposal, decision 9).
+      Do task 4.1, the measurement of an append to the state branch (the git branch the log is
+      written to), before this one, since the deadline is set from it
+- [ ] 2.3 The read in 2.1 reads every partition fresh, bypassing `readLog`'s cache of past days; where any partition's read fails, it fails as a whole, rather than return a
+      shorter log that looks whole, and the caller voids its rows
 - [ ] 2.4 Every path that appended a probe row and takes no item appends a void row naming it: a
       row that does not decide, a row that decides for one key and not another, a read that
       fails, and a lost claim. The code already voids on a lost claim
@@ -47,3 +51,6 @@
 
 - [ ] 4.1 Measure how long an append to the state branch takes, retries included, to choose the
       append deadline, and record the figure in `design.md`
+- [ ] 4.2 Measure whether a read through GitHub's contents API returns every write another client
+      has landed, which the probe settle interval assumes; where it does not, report it to Adam
+      before 2.1 ships

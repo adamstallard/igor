@@ -2,11 +2,14 @@
 
 ### Requirement: Exactly one Igor takes a due probe, decided by the log after it writes
 
-Where a condition's probe is due, an Igor SHALL take the probe item only when the execution log,
-read again after its own probe row has landed, shows that row deciding. Every other Igor in the
-scope SHALL take no item for that probe, except in the midnight case below, which this
-requirement does not cover, and a due probe SHALL eventually be taken by one Igor
-while any Igor in the scope keeps running.
+Where a condition's probe is due, because its cooldown has passed with no probe row holding the
+scope, an Igor SHALL take the probe item only when the execution log, read again after its own
+probe row has landed, shows that row deciding (defined below). Every other Igor in the scope SHALL
+take no item for that probe, except where, at midnight, a write the store accepts after its Igor
+gave up on it lands ahead of a row already read as deciding, which this requirement does not
+cover. A due probe SHALL eventually be taken
+by one Igor while any Igor in the scope keeps running, once appends stop failing, passing their
+deadline or landing ahead at midnight, and reads stop being served stale.
 
 The terms, as this requirement uses them:
 
@@ -33,10 +36,19 @@ The terms, as this requirement uses them:
   partition even when the store accepts it after a row in the later day's. Timestamps never
   order rows.
 - A row has **landed** once the store has accepted it.
-- The **append deadline** is how long an Igor waits for an append, retries included, before it
-  treats the append as failed.
-- The **probe settle interval** is longer than the append deadline. It is not the claim settle
-  interval of `role-config`.
+- The **append deadline** is how long an Igor waits for a probe row's append, including any
+  retries of it, before it treats the append as failed. No other append to the log has one.
+- The **probe settle interval** is the longer of twice the append deadline and the append
+  deadline plus 5 minutes, the clock skew between hosts this requirement assumes. At midnight a
+  slow host's clock can file a row begun up to 5 minutes after an Igor's own row landed in the
+  earlier day's partition, ahead of it; that row lands within the deadline, so it has landed once
+  the deadline plus 5 minutes have passed. It is not the
+  settle interval of `role-config`.
+
+The append deadline and the probe settle interval SHALL be fixed in Igor's code, not configured.
+This is an exception to `role-config`'s *Timing values are configurable with stated defaults*,
+an exception #179's copy of that requirement names as well. An Igor's probe settle interval has to outlast every
+other Igor's append deadline, not only its own.
 
 The rules:
 
@@ -48,8 +60,12 @@ The rules:
 - **The probe row that decides is the oldest that has not ended**, among the probe rows for the key
   that are newer than the condition's last occurrence, in storage order. The Igor whose row that
   is SHALL take the item, unless one of the rules below stops it.
-- **An Igor that probes several conditions with one item SHALL take it only where its row decides for
-  every one of them.**
+- **An item that would probe several conditions SHALL probe them one at a time, in the order of
+  their keys.** The Igor SHALL append its probe row for the next key only once its row for the
+  previous key decides, and SHALL take the item only once its row decides for every key. Because
+  every Igor bids in the same order, of the Igors whose items probe the same two keys only the one
+  whose row holds the scope for the first bids for the second, so no two of them can each hold
+  one key and void both without end.
 - **An Igor that appended a probe row and takes no item SHALL append a void row naming it.** That
   covers losing to an older row, a read that fails, a row that decides for one key and not another,
   and a claim lost to somebody else.
@@ -117,9 +133,11 @@ because two processes of one role can pick the same item.
 
 #### Scenario: One item probing two conditions
 
-- **WHEN** an Igor's item would probe both a role's condition and a seat's, and its row decides for
-  the role's key but not the seat's
-- **THEN** it takes no item, and voids both rows
+- **WHEN** an Igor's item would probe both a role's condition and a seat's, and the role's key
+  sorts first
+- **THEN** it appends its probe row for the role's key, and appends one for the seat's key only
+  once that row decides
+- **AND** where its seat row then does not decide, it takes no item and voids both rows
 
 #### Scenario: A probe row nobody is taking does not hold the scope
 
@@ -127,6 +145,17 @@ because two processes of one role can pick the same item.
   other Igors' probe rows are still in the log
 - **THEN** none of those rows holds the scope, because each was voided by the Igor that wrote it,
   and the next item may probe
+
+#### Scenario: An append past its deadline counts as failed
+
+- **WHEN** an Igor's probe-row append has not landed by the append deadline
+- **THEN** it takes no item, and appends a void row naming the row it tried to write
+
+#### Scenario: Every Igor waits the same probe intervals
+
+- **WHEN** two Igors in a scope run roles whose configurations set different intervals
+- **THEN** both use the same append deadline and probe settle interval, the ones Igor's code
+  fixes
 
 #### Scenario: A row whose Igor died lapses
 
@@ -137,5 +166,5 @@ because two processes of one role can pick the same item.
 #### Scenario: A due probe is taken
 
 - **WHEN** a probe is due and an Igor in the scope keeps running
-- **THEN** one Igor takes the probe item, after however many appends are lost, late or read stale,
-  so long as their number is finite
+- **THEN** one Igor takes the probe item, once appends stop failing, passing their deadline or
+  landing ahead at midnight, and reads stop being served stale

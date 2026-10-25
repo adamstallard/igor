@@ -4,12 +4,12 @@
 
 1. **Adopt *Exactly one Igor takes a due probe, decided by the log after it writes*** as a new
    `stuck-conditions` requirement. It adds to the in-force probe rules and modifies none of them.
-2. **The first probe row the log accepted decides, read again after a settle interval.** An Igor
+2. **The oldest unended probe row decides, in the order a fresh read of the log returns rows, read again after a settle interval.** An Igor
    that finds the probe due appends its probe row, waits until any append that could land ahead
    of it has landed, reads the log again, and takes the item only when its own row is the oldest
    probe row that has not ended. This is #226's suggested fix with two corrections: a void names
    its row rather than its item (decision 3), and the read waits a settle interval rather than
-   come at once (decision 2). It orders by
+   come at once (this decision). It orders by
    the store's sequence and uses no conditional write, as `work-claiming` already requires of
    claims, and lets the earliest row decide, as #179 does among one role's processes. *Rejected:* a conditional append from the read that decided,
    because every write to the state branch, by any role, would refuse a pending probe append; a lock
@@ -22,8 +22,11 @@
    end its item's probe.
 4. **Every Igor whose row does not decide voids it, and so does one whose append failed or may
    have failed.** A row nobody is working would otherwise hold the scope until it lapses.
-5. **An item that probes several conditions is taken only where its rows decide for all of them**,
-   and its rows are otherwise all voided.
+5. **An item that would probe several conditions probes them one at a time, in key order, and is
+   taken only where its rows decide for all of them** (Adam, 2026-10-24, replacing bids for every
+   key at once); its rows are otherwise all voided. Bidding for every key at once let two Igors
+   each win one key and void both without end; bidding in one shared order leaves only the
+   holder of the first key bidding for the second.
 6. **A lapse is judged alike by every Igor in the scope, from the log.** Otherwise Igors disagree on
    the oldest unended row. This change decides only that property; it does not choose the lapse
    rule. The code on `main` lapses a row older than `SWEEP_AFTER_MS`, the worker's run ceiling
@@ -43,6 +46,22 @@
    the hosts' clocks agree within 5 minutes, as NTP keeps them. Hosts further apart are outside
    what the requirement covers; the model holds no clocks.
 
+9. **The append deadline and the probe settle interval are fixed in code** (Adam, 2026-10-24),
+   an exception to `role-config`'s rule that every interval is configurable. An Igor's probe settle interval has to outlast every other Igor's append deadline, not only its own; were either configurable, one Igor's settle interval could end while another's append is still within its deadline. The deadline is set from this change's task 4.1, a
+   measurement of an append. The settle interval is the longer of twice the deadline and the
+   deadline plus 5 minutes (Adam, 2026-10-24, amending "twice the deadline"): twice is a margin
+   chosen because a probe is rare, so the wait costs little. The 5 minutes cover the clock skew
+   the requirement assumes: at midnight a slow host's clock can stamp a row it begins up to 5 minutes after another Igor's row landed with a time before midnight, filing it in the earlier day's partition, ahead of that row; such a row lands within the deadline, so it has landed once the deadline plus 5 minutes have passed.
+10. **The append deadline applies to probe rows only** (Adam, 2026-10-24). Every other append
+    to the log, a void row's included, has no deadline; once #179 archives, its rule that a
+    conflicted state write is retried until it succeeds applies to them, and it is met once
+    #179's code, which builds that retry, is built. Until then, a void row whose append fails is not retried, and its probe row holds the scope until
+    it lapses.
+11. **This change stays second in #204's archive order** (Adam, 2026-10-24). Issue #204 sets
+    the order in which open changes archive. First is #101, already archived, so this change is
+    the first still open, and so this fix to a rule in force waits behind no change it does not
+    depend on.
+
 **Still open:**
 
 - **Whether to accept the midnight gap.** A probe-row write the store accepts after its Igor gave up
@@ -50,31 +69,20 @@
   probe (`design.md`, *The settle interval, and its one gap*). *Recommended:* accept it, since it
   needs a write the store accepts after its deadline, at midnight, while two Igors race for one
   probe. Revisit the conditional append if it is ever seen.
-- **The append deadline and the probe settle interval.** *Recommended:* fix both in code rather
-  than configure them, with the deadline set from the measurement of `tasks.md`'s task 4.1 and
-  the settle interval twice the deadline. Any interval longer than the deadline meets the
-  requirement; twice is a margin chosen because a probe is rare, so the wait costs little.
-- **Found by a consistency read on 2026-10-24.** For Adam, each with a recommendation:
-  - Fixing the append deadline and settle interval in code, as recommended above, needs an
-    exception to `role-config`'s rule that every interval is configurable. *Recommended:* add
-    that exception to this change.
-  - The append deadline on every `appendRecord` call puts a deadline on every writer of the
-    log, a choice the decisions do not list, and collides with #179's rule that a conflicted
-    state write is retried until it succeeds. *Recommended:* put the deadline on probe-row
-    appends only.
-  - This change's place in #204's archive order, second, is the authoring agent's choice, which
-    #204 says Adam may move. *Recommended:* keep it.
-  For this change's authors, none blocking review of the rules:
+- **The midnight gap is written into the requirement's scope** while the item above asks
+  whether to accept it. If Adam rejects it, the exception goes, and the requirement then has to
+  cover that write too, which needs a mechanism such as the conditional append decision 2
+  rejects.
+- **Fixes the authors still owe, found by a consistency read on 2026-10-24.** None is a
+  decision, and none blocks review of the rules:
   - The in-force scenario *A probe is taken once* speaks of "a row saying it is taking the
     probe", which this change's terms make a bid; the wording should say so.
-  - The requirement states liveness from "due", which `design.md` calls vacuous, while the
-    model proves it from the cooldown, and "due" is defined nowhere.
-  - The rejection of the conditional append cites a compare-and-set that `appendRecord`'s own
-    write already relies on.
-  - A failed partition read returns a shorter log that looks whole, so the deciding read never
-    learns that it failed, and decides on a log missing rows instead of voiding its row.
+  - Decision 2's rejection of the conditional append cites a compare-and-set that
+    `appendRecord`'s own write already relies on, so its reason needs restating. The rejection
+    stands: #179 retries `appendRecord`'s compare-and-set, while a conditional append from the
+    deciding read could not be retried without losing the read it is conditional on.
   - Nobody has measured that GitHub's contents API returns every write another client had
-    landed; the settle interval assumes it.
+    landed; the settle interval assumes it, and task 4.2 measures it.
 
 ## Why
 
@@ -93,9 +101,10 @@ is claimed and a worker spent against a fault that is probably still there. Adam
   probe row landed, shows its row as the oldest unended probe row since the last occurrence.
 - A probe row carries an identifier, and a void row ends only the row it names.
 - An Igor whose row does not decide, whose read fails, whose claim is lost, or whose append failed
-  takes no item and voids its row. An item probing several conditions is taken only where its rows
-  decide for all of them.
-- Appends get a deadline, and the read that decides bypasses the cache of past days.
+  takes no item and voids its row. An item that would probe several conditions bids for them one at
+  a time, in key order, and is taken only where its rows decide for all of them.
+- A probe row's append gets a deadline, and the read that decides bypasses the cache of past days
+  and fails where any partition read fails.
 - `model/` holds the TLA+ model and its configurations, and CI runs them.
 
 ## Capabilities
