@@ -311,7 +311,9 @@
       also runs the check that 5.8 runs before a spawn, `sudo -n -u <worker> true`, though a kill
       passes no secret: a refused `sudo` exits 1, as `pkill` does when no process is left to
       kill, so the check is how the two are told apart. No process left is not an error; a
-      refused check fails the run before anything is read or staged. Under `run` the kill stays a kill of the
+      refused check fails the run before anything is read or staged and is recorded under the
+      instance's cure key (0.3); in the `exit` handler the
+      check runs synchronously too, and a refusal is written to standard error only. Under `run` the kill stays a kill of the
       worker's process group.
 - [ ] 4.2 `ClonedTree.release()` and the startup sweep first run
       `sudo -n -u <worker> -- rm -rf -- <tree> <outbox>`, then the Igor's own removal of the
@@ -495,7 +497,11 @@
 - [ ] 5.8 Before each `sudo` that passes the worker a secret, the worker's spawn and each later
       `claude -p` in its tree, the Igor runs
       `sudo -n -u <worker user> true`, and where that is refused, fails the run without the spawn
-      (proposal, decision 52). Test: with the worker's sudoers line removed after the start
+      (proposal, decision 52). #189's checks and the start check's probe through a proxy run the
+      same check. A refusal before the probe refuses the start with status 78 and records
+      nothing; any other refusal fails the run and is recorded under the instance's cure key
+      (0.3).
+      Test: with the worker's sudoers line removed after the start
       check, the run fails, no worker is spawned, and the token appears in no journal line
 
 ## 6. Measurements

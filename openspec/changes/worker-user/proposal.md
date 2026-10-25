@@ -305,8 +305,9 @@
     every item in turn. A key scoped to the whole Igor, which is one role however many ranks and
     hosts run it, would stop every rank on every host for one host's broken sudoers line; and
     #101 clears that scope only when an App token is minted again, which fixing sudoers does not
-    do. #101's conditions name a role, a seat or an Igor, so the instance scope and its clearing
-    are this change's to build (task 0.3). The Igor does not exit when the condition opens (#82).
+    do. #101's conditions name a role, a seat or an Igor. This change therefore specifies the
+    instance scope and its clearing in a delta to `stuck-conditions`, not yet written (Still
+    open), and builds them in task 0.3. The Igor does not exit when the condition opens (#82).
 32. **The Igor may stage more than once, but every staging follows the kill and the checks, and
     both trailers bind the last staging** (Adam, 2026-10-19). Before each staging, every model
     step started so far has exited, the Igor has killed every process the worker user owns, and
@@ -329,11 +330,12 @@
     `seat-budget` lets a seat name no token, and an organization with no seats run on the ambient
     login, until #171 removes both; it archives after this change in #204's order. What is built
     follows decision 21, so the disagreement is in the spec text only.
-35. **Citations ahead of #204's order are accepted** (Adam, 2026-10-19). This change archives
+35. **Citations ahead of #204's order are accepted** (Adam, 2026-10-19; extended to all seven changes on 2026-10-24). This change archives
     eighth in #204's order, after #120, #137 and #217, whose requirements it cites, but it cites text
     that #174, #171, #179, #82, #208, #153 and #189 add later. #189, #137 and #120 had no place
     in #204's order before; they now have one, so the order says when each requirement this
-    change cites comes into force.
+    change cites comes into force. Issue #204 first recorded this permission for #189 alone;
+    Adam confirmed on 2026-10-24 that it covers all seven.
 36. **The outbox holds the index copy, and the worker's group reads it** (Adam, 2026-10-19). A
     `MODIFIED` block on the in-force *A base change is undone only where the resolution says so*,
     which wanted the outbox empty when the worker starts and writable by the worker alone, lets
@@ -526,26 +528,30 @@ both wait for his approval.
     that fails a run rather than hand over a secret under 8 characters does not apply to it.
     It stands whatever Adam decides on decision 49, whose scenario covers this case too.
 52. **Before each `sudo` that passes the worker user a secret, the Igor runs
-    `sudo -n -u <worker user> true`** (Adam, 2026-10-24). Sudo writes a command it refuses to
-    the journal with the variables it would have passed, so a refused spawn would log the seat
-    token or the proxy password. Where a sudoers line was removed or edited after the start
+    `sudo -n -u <worker user> true`** (Adam, 2026-10-24). Sudo's documentation says it writes a
+    command it refuses to the journal with the variables it would have passed, so a refused
+    spawn would log the seat token or the proxy password; task 6.12 measures that. Where a sudoers line was removed or edited after the start
     check, the check is refused instead, carrying no secret, and the Igor fails the run without
     spawning. A line broken in the milliseconds between the check and the spawn would still log
     the secret; that window is accepted. The `sudo` calls that pass a secret, and so get the
     check, are four: the worker's spawn, each later `claude -p` in the worker's tree, each of
     #189's checks, and the start check's probe of the metadata endpoint through a proxy, the
-    last two getting the proxy password. A refused check counts as a failed `sudo` spawn under
-    decision 31: its cure key opens a condition on the instance when the refusal recurs, and a
+    last two getting the proxy password. The start check's probe runs before any run exists, so
+    a refused check there refuses the start with status 78, as decision 23 says, and records
+    nothing. Any other refused check counts as a failed `sudo` spawn under decision 31: the instance's cure key opens a condition on the instance when the refusal recurs, and a
     later spawn that succeeds clears it.
 53. **Every kill under `igor serve` runs the same check first, though a kill passes no secret**
-    (this change's addition on 2026-10-24, for Adam to confirm). The kill is `sudo ... pkill`,
+    (proposed by this change's author and approved by Adam, 2026-10-24). The kill is `sudo ... pkill`,
     and a refused `sudo` and a `pkill` that found no process both exit with status 1, so
     without the check a refused kill would read as a clean one and the Igor would read and stage
     the tree while worker processes still run. A refused check fails the run and is recorded as
-    decision 31 records a failed spawn.
+    decision 31 records a failed spawn. At process exit the check runs synchronously, like the
+    kill, and a refusal there is written to standard error only: no run is left to fail, and an
+    `exit` handler cannot wait for the append to the state branch's execution log that recording
+    takes.
 
-**Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
-or on another change.
+**Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement,
+on another change, or on this change's next revision.
 
 - **Decision 42 waits for Adam's approval.** If he turns it down, the uid firewall rule it
   rejects is the alternative.
@@ -553,15 +559,13 @@ or on another change.
   proxy password is not refused, and the refusal for a metadata endpoint names the variable,
   not the URL. If he turns it down, those two passages go, with the scenario *A proxy user name
   with no password is registered with its host*.
-- **Decision 53 waits for Adam's approval.**
 - **From a third consistency read on 2026-10-24.** Decision 52 rests on sudo logging a refused
   command with the variables it would have passed, which task 6.12 measures; if it does not,
   the check before a spawn guards nothing, though decision 53's check before a kill still
-  tells a refusal from an empty kill. The instance scope of decision 31 needs a
-  `stuck-conditions` delta stating it, which this change's authors are to write before Adam
-  approves the change. And decision 35 claims Adam's leave to cite, ahead of #204's archive
-  order, requirements of seven changes that archive later, where issue #204 records that leave
-  for #189 alone; Adam is to confirm which is right.
+  tells a refusal from a `pkill` that found no process. Decision 31's instance scope and its clearing by
+  a later successful spawn need a delta to `stuck-conditions`, the capability where #101's
+  conditions are specified. Adam approved decision 31; the agent revising this change is to
+  write the delta, and Adam reviews it then.
 - **Other findings of the 2026-10-24 consistency read, for this change's authors:**
   - From a second consistency read on 2026-10-24, after the first one listed above: no release
     removes the `<tree>-prompt` directory, so a long-running `igor serve` leaves one per run

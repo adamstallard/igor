@@ -386,8 +386,11 @@ link, and reading one would follow the link.
   by user left nothing. The Igor makes it on every kill, before every reset of the worker's home
   (#174's decision 13), once the last model step exits, after #189's checks, and before a
   release. Each instance has its own worker user and runs one worker at a time, so the kill
-  reaches no other instance. At process exit the call is synchronous (`spawnSync`), because an
-  `exit` handler cannot wait.
+  reaches no other instance. Each kill first runs `sudo -n -u <worker> true` (proposal, decision
+  53), because a refused `sudo` and a `pkill` that found no process both exit with status 1. A
+  refused check fails the run and is recorded under the instance's cure key. At process exit the
+  check and the kill are both synchronous (`spawnSync`), because an `exit` handler cannot wait,
+  and a refused check there goes to standard error only.
 - **Release:** `sudo -n -u <worker> -- rm -rf -- <tree> <outbox>` first. That removes everything
   the worker owns and the Igor's files in directories the worker can write. Then the Igor's own
   `rm` removes the rest, and the git directory, which only the Igor can write. The second pass
