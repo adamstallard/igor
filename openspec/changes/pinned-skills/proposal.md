@@ -280,7 +280,8 @@
 
 36. **Where no seat may be probed at start, the startup check spends the seat the gate
     chooses** (Adam, 2026-10-24). A seat due a probe may be held off by #143's hourly limit, for
-    up to an hour, or by its back-off after a failed probe, for up to five hours. Where some seat
+    up to an hour, or by #143's back-off on that seat after a probe that received no
+    `rate_limit_event`, which lasts up to five hours. Where some seat
     may be probed, the check is that seat's probe. Where none may, the check makes its call on
     the seat the budget gate chooses, the same as where no seat is due a probe at all, rather
     than wait for a held-off seat. Where the gate has no seat to spend either, as with a single
@@ -300,17 +301,20 @@
     (Adam, 2026-10-24). A session log copy is the copy of a model step's Claude Code session log that
     decision 33 makes before the worker's home is reset. An
     execution is flagged where #216 puts a flagged hold on its item, and its copies go only when
-    #216 deletes that execution's files: at `igor release`, the command that lifts the hold, or,
-    for an execution whose process stopped before it ended, when a later rank or `igor run` on
-    the same host deletes them, as #216's `work-triage` requires. When any execution
-    of an item ends, flagged or not, Igor deletes in its own state directory the copies of every
-    execution of the item that started earlier and left no flagged hold, including one whose
-    process stopped before it ended. So the latest execution's copies stay, beside any flagged
-    execution's. Each host deletes only its own
-    copies, and where the item never runs on that host again, they stay. A run #216 calls
-    flagged but that stops without asking a question leaves no hold, so under this definition
-    its copies count as unflagged; that is this change's reading of #216's rule that such a
-    run's words are kept in logs "as for any run".
+    #216's `work-triage` deletes that execution's files, on any release of the hold: `igor
+    release`, the command that lifts it, or an edit to the item by someone with write access.
+    When any execution of an item ends, flagged or not, Igor deletes in its own state directory
+    the copies of every earlier execution of the item that meets all three of these: it started
+    before the one that just ended; it has ended, or its process has stopped; and it left no
+    flagged hold. The second condition matters because #216 lets two executions of one item run
+    at once, and an earlier one still running may yet be flagged. So an item keeps the copies of
+    its latest execution, of any execution still running, and of any flagged one. Each host
+    deletes only its own copies, and where the item never runs on that host again, they stay.
+    #216 marks some executions flagged that stop without asking a question, and those put no
+    flagged hold on their item, so under this definition their copies count as unflagged. #216
+    keeps such an execution's transcript "as for any run", that is, under the same rule as any
+    unflagged execution's, which this matches (Adam, 2026-10-24, confirming this change's
+    reading).
 39. **The `igor run` check's two directories go under Igor's state directory** (Adam,
     2026-10-24), as #216 defines it. The system's temporary directory is one other users of the
     host can write, and #143 keeps its probe's directories out of it too.

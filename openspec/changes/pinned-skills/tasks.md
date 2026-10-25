@@ -169,13 +169,15 @@
       exists and holds the log; a log replaced by a link to a file only Igor can read is not
       copied, and the record says so
 - [ ] 2.9 When any execution of a work item ends, flagged or not, delete in this host's state
-      directory the session log copies of every execution of the item that started before it and
-      left no #216 flagged hold, one whose process stopped before it ended included; leave a
-      flagged execution's copies to #216's deletion of that run's files (proposal, decision 38).
+      directory the session log copies of every execution of the item that started before it,
+      has ended or whose process has stopped, and left no #216 flagged hold, so never one still
+      running; leave a flagged execution's copies to #216's deletion of that execution's files
+      (proposal, decision 38).
       Tests: after an unflagged execution and then a flagged one of the same item, the first's
       copies are gone and the second's remain; after a flagged execution and then an unflagged
       one, the flagged one's copies remain; after an execution whose process was killed and then
-      an unflagged one, the killed one's copies are gone
+      an unflagged one, the killed one's copies are gone; with an earlier execution still
+      running when a later one ends, the earlier one's copies remain
 
 ## 3. Startup check
 

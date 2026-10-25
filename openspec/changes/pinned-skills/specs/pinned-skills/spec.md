@@ -180,7 +180,7 @@ from one plugin directory the server names*). The next `igor run` of the role re
 its start, with the crashed run's trees. The rule, and the lock that tells a run that an earlier
 run of its role is gone, are #179's (`concurrent-instances`) *The sweep removes trees by rank,
 never by age*; the home and plugin directory it removes are the ones this capability defines.
-`igor run --plan` SHALL remove nothing.
+#179's rule already has `igor run --plan` remove nothing.
 
 Before every model step Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
@@ -302,12 +302,12 @@ directory, before the next reset of that home. The steps are the worker, the mod
 runs after it, and #189's second run of the worker after a failed check.
 
 An execution is flagged where #216 puts a flagged hold on its item. A flagged execution's copies
-SHALL be deleted only where #216 deletes that execution's files: by `igor release` of the hold,
-or, for an execution whose process stopped before it ended, by a later rank or `igor run` on the
-same host, as #216's `work-triage` requires. When an execution of a
-work item ends, flagged or not, Igor SHALL delete, in its own state directory, the copies of
-every execution of the same item that started before it and left no flagged hold, including one
-that never ended because its process stopped (Adam, 2026-10-24). Copies in another host's state
+SHALL be deleted only when #216's `work-triage` has Igor delete that execution's files, as on any
+release of its hold, whether by `igor release` or by an edit to the item from someone with write
+access. When an execution of a work item ends, flagged or not, Igor SHALL delete, in its own state
+directory, the copies of every execution of the same item that meets all three of these: it
+started before the one that just ended; it has ended, or its process has stopped; and it left no
+flagged hold (Adam, 2026-10-24). Copies in another host's state
 directory stay until an execution of the item ends on that host, and where the item never runs
 there again, they stay. Igor's state directory
 is the directory on each host where Igor keeps its files, which #216 defines in its `graceful-handoff` requirement *A handoff states what was done, what remains, and who could continue*.
@@ -334,6 +334,18 @@ record may name a copy Igor has deleted.
 - **WHEN** an execution of an item ends unflagged, and a later execution of the same item ends,
   flagged or not
 - **THEN** Igor deletes the first execution's log copies, and keeps the later one's
+
+#### Scenario: A run #216 flags that asks no question counts as unflagged
+
+- **WHEN** #216 marks an execution as flagged in its own sense, the execution stops without asking
+  a question, so #216 puts no flagged hold on its item, and a later execution of the item on the
+  same host ends
+- **THEN** Igor deletes the first execution's log copies, as for any unflagged execution
+
+#### Scenario: A running execution's log copies stay
+
+- **WHEN** two executions of one item run at once on one host, and the later one ends first
+- **THEN** Igor keeps the earlier execution's log copies, since it is still running
 
 #### Scenario: A crashed execution's log copies go when the next execution ends
 
@@ -521,7 +533,8 @@ checked, and the check still passes on the list alone.
 
 #### Scenario: Under igor serve, a seat in back-off is not waited for
 
-- **WHEN** `igor serve` starts, one seat is in #143's five-hour back-off after a failed probe, and
+- **WHEN** `igor serve` starts, one seat is in #143's back-off of up to five hours after a probe that received no
+  `rate_limit_event`, and
   another seat has an unexpired reading
 - **THEN** the check spends the seat the gate chooses, without waiting out the back-off
 
