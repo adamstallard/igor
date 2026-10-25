@@ -262,9 +262,11 @@ and Igor passes them explicitly:
    `<state directory>/plugin/<role>-<run>`, where the state directory is the one decision 32
    names. It holds `.claude-plugin/plugin.json`, as
    `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`, and
-   under `skills/` one link per skill the role's `skills` list names (proposal, decision 37), to
-   the entry's resolved path. Where the role lists none of the installed skills, no directory is
-   built and the run loads no skills, as where `~/.claude/skills` holds none. Linking only the
+   under `skills/` one link to the entry's resolved path for each installed skill that the
+   role's `skills` list names or that Igor's own code runs (proposal, decision 37). Today Igor's
+   code runs only spec-trace. Where no installed skill is named by the list or run by Igor's
+   code, no directory is built and the run loads no skills, as where `~/.claude/skills` holds
+   none. Linking only the
    listed skills keeps a skill that acts with the person's own credentials, such as one that
    posts to chat, out of a worker whose role does not ask for it; on a server, by contrast,
    `/opt/igor/skills` holds only the pinned shared skills, which act with no one's credentials. Each link then points
@@ -281,7 +283,8 @@ plugin directory whose entry is in no clone, such as the copied `manage-skills` 
 its commit reported as not checked. As the run starts, before the startup
 check, it prints a line saying it loaded the person's skills, naming `~/.claude/skills`.
 
-Where `~/.claude/skills` is missing or holds no skill the role lists, the run loads none: no call
+Where `~/.claude/skills` is missing or holds no skill the role lists or Igor's own code runs,
+the run loads none: no call
 carries `--plugin-dir`, no startup check is made, and the run says so as it starts, naming
 `skills_dir` and `~/.claude/skills`. #153 refuses a role that lists a skill not installed, in every command that runs a model
 step, a dry run included, so such a run starts only for a role whose `skills` list is empty.
@@ -408,8 +411,8 @@ How the reset works:
   of their own home, as on Linux, is out of the worker's reach because `HOME` is the run's home.
 - **What it deletes that Igor reads:** the worker's session log, under `~/.claude/projects/`.
   `projects/` cannot be kept out of the reset, since Claude Code's memory for a project lives
-  there too. So when the worker exits, Igor copies the log into its state directory, before any
-  reset, and the execution record points at the copy (Adam, 2026-10-19). It redacts the copy as
+  there too. So when each model step in the worker's home exits, Igor copies its log into its
+  state directory, before the next reset (proposal, decision 33), and the execution record points at the copy (Adam, 2026-10-19). It redacts the copy as
   it writes it, with #217's `redact` (Adam, 2026-10-21; proposal, decision 29): a worker that
   runs `env` prints its seat's token into the log.
 - **What persists:** everything else in the home: `~/.gitconfig`, where #175's start check sets

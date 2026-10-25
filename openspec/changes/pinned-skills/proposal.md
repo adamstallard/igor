@@ -147,11 +147,12 @@
       assembles one for the run in its state directory, such as
       `<state directory>/plugin/<role>-<run>`: a `plugin.json` naming the plugin `igor`, and
       under `skills/` one link per entry of `~/.claude/skills` that holds a `SKILL.md` and that
-      the role's `skills` list names (decision 37), to that entry's resolved path. For that run, this directory is `skills_dir`: every call that
+      the role's `skills` list names or Igor's own code runs (decision 37), to that entry's
+      resolved path. For that run, this directory is `skills_dir`: every call that
       carries `--plugin-dir` names it, the startup check checks it, and #153's check of a
       role's skill names reads it. The run removes it when it ends.
-    - **Where `~/.claude/skills` holds no skill the role lists,** whether it holds none at all or
-      only skills the role does not list: the run loads no skills. No call
+    - **Where `~/.claude/skills` holds no skill the role lists or Igor's own code runs,** whether
+      it holds none at all or only other skills: the run loads no skills. No call
       carries `--plugin-dir`, no startup check is made, and the run says as it starts that the
       skills were not loaded, naming `skills_dir` and `~/.claude/skills`. Under #153, every command that runs a model step
       refuses a role that lists a skill it does not load, so such a run starts only for a role
@@ -287,16 +288,29 @@
     scenario *No seat to spend, no check yet*
     says.
 
-37. **Where `skills_dir` does not exist, `igor run` links only the skills the role lists**
-    (Adam, 2026-10-24). Its plugin directory holds a link for each of the person's installed
-    skills that the role's `skills` list (#153) names, and none for the rest, so a skill that acts
+37. **Where `skills_dir` does not exist, `igor run` links only the skills the role lists and
+    those Igor's own code runs** (Adam, 2026-10-24). Its plugin directory holds a link for each
+    of the person's installed skills that the role's `skills` list (#153) names, or that is one
+    on the list of skills whose scripts Igor's own code runs, whatever the role. Igor's code holds
+    that list, which today names only spec-trace, whose checker #190 runs, and a change that runs
+    another skill's script for every role adds that skill to it. It links none of the rest, so a skill that acts
     with the person's own credentials, such as one that posts to chat, loads into a worker only
     where the role asks for it.
-38. **A session log copy is kept no longer than #216 keeps a flagged execution's** (Adam,
-    2026-10-24). A session log copy is the copy of a model step's Claude Code session log that
-    decision 33 makes before the worker's home is reset. #216 keeps a flagged execution's copies
-    until `igor release` of the execution's hold deletes them. How long a copy from an execution
-    that ends unflagged is kept, which no release reaches, is open (*Still open*).
+38. **An unflagged execution's session log copies last until the item's next execution ends**
+    (Adam, 2026-10-24). A session log copy is the copy of a model step's Claude Code session log that
+    decision 33 makes before the worker's home is reset. An
+    execution is flagged where #216 puts a flagged hold on its item, and its copies go only when
+    #216 deletes that execution's files: at `igor release`, the command that lifts the hold, or,
+    for an execution whose process stopped before it ended, when a later rank or `igor run` on
+    the same host deletes them, as #216's `work-triage` requires. When any execution
+    of an item ends, flagged or not, Igor deletes in its own state directory the copies of every
+    execution of the item that started earlier and left no flagged hold, including one whose
+    process stopped before it ended. So the latest execution's copies stay, beside any flagged
+    execution's. Each host deletes only its own
+    copies, and where the item never runs on that host again, they stay. A run #216 calls
+    flagged but that stops without asking a question leaves no hold, so under this definition
+    its copies count as unflagged; that is this change's reading of #216's rule that such a
+    run's words are kept in logs "as for any run".
 39. **The `igor run` check's two directories go under Igor's state directory** (Adam,
     2026-10-24), as #216 defines it. The system's temporary directory is one other users of the
     host can write, and #143 keeps its probe's directories out of it too.
@@ -324,21 +338,11 @@
   - **Permission to cite #216 ahead.** #204 places #216 after this change, and decision 21's
     permission to cite changes that archive later names #171, #82, #179 and #153, but not #216.
     *Recommendation:* extend decision 21 to #216, as decision 32 already assumes.
-- **How long an unflagged execution's session log copies are kept, for Adam** (third read,
-  2026-10-24). Decision 38 ties retention to #216's, which ends only with a release, and an
-  unflagged execution has none. Deleting its copies when it ends would leave the execution
-  record pointing at nothing (decisions 26 and 29). *Recommendation:* keep them until the next
-  execution of the same work item ends, so each item keeps its latest logs.
-- **Skills Igor's own code runs, for Adam** (same read). Under `igor run` without `skills_dir`,
-  decision 37 links only the skills the role lists, but #190 runs spec-trace's script from
-  `skills_dir` whether or not a role lists it, so #190's *Spec scenarios* row in the pull request
-  body would read `not checked` for most roles, the outcome decision 27 installed spec-trace to
-  prevent. *Recommendation:* also link
-  every skill Igor's own code runs, such as spec-trace.
 - **For #153 to amend, reported** (same read): #153's `role-config` delta says a role's
   `skills` list does not decide what loads, and its scenario has `igor run` load every
-  installed skill, where decision 37 has the list decide what `igor run` links. Nothing here
-  waits on it.
+  installed skill, where decision 37 has the list decide what `igor run` links. #190's
+  `task-execution` delta states the same rule and needs the same amendment. Nothing here waits
+  on either.
 - **Findings of the 2026-10-24 consistency read, for this change's authors:**
   - Under #153 the one model step with a resumed call is the step that writes a post where no
     worker run came before it, such as a reply to a mention. *Every model step in the worker's
@@ -469,13 +473,14 @@ replaces it.
   builds a plugin directory for the run from the skills the person installed (decision 20).
 - **Every `claude -p` Igor spawns carries `--plugin-dir <skills_dir>`**: the worker, triage, and
   every later step, never with `--bare`. The usage read is one exception (decision 10); an
-  `igor run` that finds no skills at all is the other (decision 20).
+  `igor run` that finds no skill the role lists or Igor's own code runs is the other (decision
+  20).
   Each skill loads as `igor:<name>`, and the worker invokes it through the Skill tool. A skill
   named the same in the home directory loads under its own name beside it; one in the worked
   repository does not load (decision 8). Every skill installed under `skills_dir` loads for
   every role; a role's `skills` list (#153) decides which skills its worker is told to use and
   whose results Igor's code verifies, and, under `igor run` without `skills_dir`, which of the
-  person's installed skills are linked (decision 37).
+  person's installed skills are linked, beside the skills Igor's own code runs (decision 37).
 - **No call loads the worked repository's settings** (decision 8), **and every model step in
   the worker's home starts from a reset `~/.claude` and `~/.claude.json`** (decisions 9 and
   31). With a

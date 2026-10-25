@@ -61,8 +61,11 @@
       run in its state directory, such as `<state directory>/plugin/<role>-<run>`: a
       `.claude-plugin/plugin.json` of
       `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`,
-      and under `skills/` one symbolic link per entry the role's `skills` list (#153) names, to
-      its resolved path, and none for an entry the role does not list (proposal, decision 37). That directory is the
+      and under `skills/` one symbolic link, to its resolved path, per entry the role's `skills`
+      list (#153) names or that Igor's own code runs, and none for any other entry (proposal,
+      decision 37). The skills Igor's own code runs are a list in Igor's code, holding only
+      spec-trace. Test: with `spec-trace` installed and not
+      listed, it is linked; with `slack-post` installed and not listed, it is not. That directory is the
       run's `skills_dir` for every rule here, and the run removes it when it ends, on an error
       too. It prints this as it starts, where `<configured path>` is `/opt/igor/skills` or the
       path `IGOR_SKILLS_DIR` names, not the assembled directory (may be reworded):
@@ -76,12 +79,12 @@
       reworded, keeping what it says):
 
       ```
-      ! neither <configured path> nor ~/.claude/skills holds a skill, so this run loads no skills
+      ! neither <configured path> nor ~/.claude/skills holds a skill this role uses, so this run loads no skills
       ```
 
       Tests: `serve` refuses with that path named and exits 78; `run` with a person's
-      `~/.claude/skills` holding two linked skills assembles a directory whose `skills/` links
-      to their resolved paths, every call carries `--plugin-dir` naming it (#175's task 1.10 has removed the usage read),
+      `~/.claude/skills` holding two linked skills the role lists assembles a directory whose `skills/` links
+      to their resolved paths, every call but the usage read carries `--plugin-dir` naming it,
       the startup check runs against it, and it is gone once the run ends; `run` with neither
       prints the second fenced line above, and no call's arguments carry `--plugin-dir`
 
@@ -165,10 +168,14 @@
       the worker exits and a later call resets the home, the record names a file that still
       exists and holds the log; a log replaced by a link to a file only Igor can read is not
       copied, and the record says so
-- [ ] 2.9 Add no deletion of session log copies of your own: #216's `igor release` deletes a
-      flagged execution's, and how long an unflagged execution's are kept waits on Adam
-      (proposal, decision 38 and *Still open*). Test: a flagged execution's copies are still
-      there after it ends
+- [ ] 2.9 When any execution of a work item ends, flagged or not, delete in this host's state
+      directory the session log copies of every execution of the item that started before it and
+      left no #216 flagged hold, one whose process stopped before it ended included; leave a
+      flagged execution's copies to #216's deletion of that run's files (proposal, decision 38).
+      Tests: after an unflagged execution and then a flagged one of the same item, the first's
+      copies are gone and the second's remain; after a flagged execution and then an unflagged
+      one, the flagged one's copies remain; after an execution whose process was killed and then
+      an unflagged one, the killed one's copies are gone
 
 ## 3. Startup check
 
