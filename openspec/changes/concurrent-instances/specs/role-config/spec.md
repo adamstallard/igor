@@ -97,18 +97,33 @@ that identity's credentials, naming any variable that is missing.
 ### Requirement: Timing values are configurable with stated defaults
 
 Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
-value someone guesses differently each time: a **settle interval** of 10 seconds before a claim
+value someone guesses differently each time. The exceptions are the maximum poll interval, the
+three derived timings below, and two timings of #228 (`probe-claim`) that its `stuck-conditions`
+requirement *Exactly one Igor takes a due probe, decided by the log after it writes* fixes in
+code: the append deadline, how long an Igor waits for a probe row to land, and the probe settle
+interval it waits before reading who decides. The defaults are: a **settle interval** of 10 seconds before a claim
 is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
 interval** SHALL be configurable too, with a default of 10 minutes.
 
 The settle interval SHALL be shorter than the poll interval. A configuration that sets it as long
 or longer is refused, naming both values.
 
-These are starting points to tune against observation, not derived values, and SHALL be
+Igor SHALL have a *maximum poll interval* of 30 minutes, three times the default, fixed in Igor
+and not configurable, so that every process of a role assumes the same maximum (Adam,
+2026-10-24). It is derived from the default rather than tuned. A configuration that sets a poll
+interval above it SHALL be refused when it loads, naming the value and the maximum, and so SHALL
+`igor serve`'s `--poll` option given a value above it; a process refusing to start for either
+exits with status 78.
+`work-claiming`'s *A heartbeat declares its process's poll interval* says how a process uses the
+maximum.
+
+These defaults, unlike the maximum, are starting points to tune against observation, not derived values, and SHALL be
 recorded as such rather than presented as considered.
 
 Three timings are the exception: each SHALL follow the role's poll interval, with no setting of
-its own: the *abandonment bound*, three intervals; the heartbeat period, half an interval; and
+its own: the *abandonment bound*, three intervals, each measured as `work-claiming`'s *A
+heartbeat declares its process's poll interval* says, so up to three of the maximum after a
+restart or a lost state branch; the heartbeat period, half an interval; and
 the stand-down threshold, two intervals. `work-claiming` states the rule each belongs to.
 Changing the poll interval scales all three together. Where a process's poll interval has changed
 since it started, `work-claiming`'s *A heartbeat declares its process's poll interval* says which
@@ -130,6 +145,12 @@ interval each counts in.
 - **WHEN** a role sets its poll interval to 4 minutes
 - **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, and it
   stands down after 8 minutes without writing one
+
+#### Scenario: A poll interval above the maximum is refused
+
+- **WHEN** a role sets its poll interval to 45 minutes
+- **THEN** the configuration is refused, naming 45 minutes and the maximum of 30, and a process
+  starting on it exits with status 78
 
 #### Scenario: A settle interval as long as the poll interval is refused
 
@@ -186,7 +207,8 @@ Every process `igor serve` runs SHALL be named `<role>-<rank>`, with the rank al
 instance is `igor@<role>-<rank>`, such as `igor@generalist-2`, and it starts
 `igor serve <role>-<rank>`. The rank SHALL be the last dash-separated part of the name, so a
 role's name may itself contain dashes. `igor serve` given a name whose last dash-separated part
-is not a whole number from 1 SHALL refuse to start, saying the name is `<role>-<rank>`. The
+is not a whole number from 1 written in decimal with no leading zero SHALL refuse to start,
+as for `02`, saying the name is `<role>-<rank>`, so each rank has one spelling. The
 role's GitHub App identity SHALL be the same for every rank: no rank has an App of its own.
 
 A role's name SHALL match `[a-z][a-z0-9-]*`: a lowercase letter, then lowercase letters, digits
@@ -209,6 +231,11 @@ Loading the configuration SHALL refuse any other role name, naming the role.
 - **WHEN** `igor serve generalist` starts
 - **THEN** it refuses to start, saying the name is `<role>-<rank>`, such as `generalist-1`
 
+#### Scenario: A rank with a leading zero is refused
+
+- **WHEN** `igor serve generalist-02` starts
+- **THEN** it refuses to start, saying the name is `<role>-<rank>`
+
 #### Scenario: A role name outside the allowed characters is refused
 
 - **WHEN** the role file `roles/Front.End.yaml` is loaded
@@ -230,7 +257,9 @@ single-quoted or plain. A value is single-quoted when it starts with `'` and end
 written; it may span lines, as a private key does, and cannot itself hold a single quote. A quote
 the file never closes is refused. A value is plain when every character in it is a
 letter, a digit, or one of `_ . / : @ -`. `igor serve` SHALL refuse to start on any other line,
-naming the line and its key, and never the value. A key the file sets SHALL take the place of
+naming the line and its key, and never the value. A plain value SHALL hold at least one
+character. Before it builds the path, `igor serve` SHALL check that the role name is one
+`role-config` accepts, so that the path names a file in `/etc/igor/`. A key the file sets SHALL take the place of
 the same key in the environment `igor serve` started with.
 
 #### Scenario: A double-quoted value is refused

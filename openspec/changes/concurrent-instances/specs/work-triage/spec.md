@@ -30,6 +30,13 @@ the Igor's own two-gate artifact. Over such a pull request the holder resumes th
 worker, as #150 says, rather than carrying on with a catch-up that changes nothing. A pull request
 that still merges and carries no such review stays worker-free.
 
+#### Scenario: A restarted holder triages its unchanged pull request once
+
+- **WHEN** rank 1 restarts while it holds an item whose pull request, the Igor's own, still
+  merges and has not changed
+- **THEN** rank 1 triages the item once after its start, and passes it over with no triage call
+  at later cycles until the item or its pull request changes
+
 #### Scenario: Item with an open linked artifact skipped
 
 - **WHEN** an item already has work in flight against it

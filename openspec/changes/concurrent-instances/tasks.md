@@ -165,10 +165,16 @@
       wrote: write, triage, maintain or admin. Record the result in `design.md`. It is for
       information only: decision 30's accepted risk stands whatever it shows (Adam, 2026-10-21)
 - [ ] 2.20 Trailers are read only from lines beginning with `Igor-` at their first character, and
-      before posting text a worker or a model composed, the bot indents by one space each line of
-      it that begins with `Igor-`, before #153 signs it (decision 53). Test: a mention reply whose model text ends in
+      before posting any comment other than a claim message, the bot indents by one space each
+      line of it that begins with `Igor-`, composed or interpolated, before #153 signs it
+      (decisions 53 and 57). Test: a mention reply whose model text ends in
       `Igor-Rank: 1` and `Igor-Supersedes: 2` is posted with both lines indented, and no process
       reads it as a claim message
+- [ ] 2.21 A process counts its role as run by several processes while any other process's
+      heartbeat file, a serving rank's or a run's, is on the state branch and not gone, as well
+      as while its roster declares several ranks (decision 56). Test: with the roster grown from
+      `[1]` to `[1, 2]` and rank 1 still on the old one, rank 1 contests a hand-over once rank 2's
+      file is there
 
 ## 3. Contention
 
@@ -189,6 +195,11 @@
 - [ ] 3.5 Tests for 3.4: the owner posts and the others post nothing; a busy owner leaves the
       item to the next available rank, which posts at once; two ranks that both post resolve by
       the earliest claim message
+- [ ] 3.6 Only the first available rank in a chat message's order, by 3.1's hash of the
+      message's id, creates an issue from it; with no rank available, the message waits for the
+      next cycle (proposal, decision 58). Tests: of two available ranks reading one message, only
+      its owner creates the issue; with the owner's heartbeat showing it unavailable, the next
+      rank creates it
 
 ## 4. Recovery
 
@@ -203,7 +214,8 @@
       process chose at random when it started, a counter it increments on each write, and
       whether the process is available: free, with no claim in hand and not stood down, and with
       a seat it can spend by #143's *A role has a seat it can spend when the gate would choose one
-      now*, and the poll interval the process applies. It holds no time. Each process keeps in memory, per sibling, the id and counter it last read from the
+      now*, the poll interval the process applies, and the state-directory id of the state
+      directory it uses, read as #216 defines it, or none where it reads none (decision 55). It holds no time. Each process keeps in memory, per sibling, the id and counter it last read from the
       sibling's file and when, by its own clock, it last saw them change. A claim is adoptable
       once three poll intervals, as 4.27 measures them, have passed since then, or since this
       process started if later. A missing file does not change
@@ -230,9 +242,13 @@
       (no live rank's claim is taken) and a restart while a file is missing (the clock starts
       again); and that the abandonment bound never shortens a run: a run longer than
       three poll intervals keeps its rank counted
-- [ ] 4.9 A `condition-backoff` probe records its rank, and lapses when that rank is gone,
-      three poll intervals without its heartbeat changing, instead of after `SWEEP_AFTER_MS`. PR #101 builds `condition-backoff` and is not
-      merged: whichever of #101 and this build lands second makes this edit
+- [ ] 4.9 While it works a `condition-backoff` probe item, the process that took the probe
+      appends a keepalive row to the execution log every poll interval, naming its probe row; a
+      probe lapses once 90 minutes, three of the maximum poll interval, pass since its latest
+      keepalive row, or since its probe row where it has none, instead of after `SWEEP_AFTER_MS`
+      (decision 22). #101's code is on `main`, so this change's build makes the edit. Tests: a
+      probe worked for three hours with keepalives does not lapse; a probe whose rank crashed
+      lapses after 90 minutes for a process of another role
 - [ ] 4.10 A process's first heartbeat lands before its first cycle
 - [ ] 4.11 A process reads its role's heartbeat files before choosing each candidate and again
       before verifying a claim, all of them with their contents in one request, such as one
@@ -303,8 +319,8 @@
       reads the item's claim messages (#173's test): another process's message counting means
       silence; its own message holding means a withdrawal, out loud, whose removal follows a
       fresh read of the heartbeat files and claim messages and happens only where its own
-      message still holds the item; no message counting means out loud with the label left,
-      except as 4.26 says; a failed read means nothing now and a reread at the next cycle's
+      message still holds the item; no message counting means out loud, with #173's refusal and
+      the label left, except as 4.26 says; a failed read means nothing now and a reread at the next cycle's
       start, or before `igor run` exits, which decides the same way. A reread that fails again
       is #173's unreadable claim: it counts one `tracker` failure toward the item's breaker, and
       gives the claim back with the refused run's post, or at the third in a row sets the item
@@ -338,15 +354,25 @@
       has passed since it started to set the label, by its own monotonic clock, and otherwise
       sends none and leaves the label. This is the one listed exception to
       4.21 (Adam, 2026-10-21)
-- [ ] 4.27 Each process keeps, from its start, the shortest poll interval it has applied, and, per
-      sibling, the longest interval that sibling's heartbeat file has declared to it. It counts a
-      sibling gone after three of the longest of its own current interval and that sibling's
-      declared ones, and stands down after two of its shortest applied interval; it writes its
-      heartbeat every half of its own current interval. A restart starts both afresh. Tests: a
-      process on a 10-minute interval counts gone a sibling that declared 20 minutes only after
-      60 minutes; a process that started on 10 minutes and applied 20 stands down after 20
-      minutes; with the two ranks on different intervals, the one that stops writing heartbeats
-      has stood down before the other counts it gone (Adam, 2026-10-21)
+- [ ] 4.27 Each process keeps, from its start, the shortest poll interval it has applied, and,
+      per sibling, the longest interval it has seen that sibling's heartbeat declare in a write:
+      a heartbeat whose counter changed since the last read. It forgets every sibling's
+      declarations when it detects a loss or rollback of the state branch: a serving rank's file it
+      had read is missing, not a run's, which a run removes as it exits, or a sibling file's counter is lower than the one last read. It counts a sibling
+      gone after three of the longest of its own current interval and the intervals it keeps for
+      that sibling, or after three of the maximum poll interval, 30 minutes, where it keeps none; it stands down after two of its
+      shortest applied interval; it writes its heartbeat every half of its own current interval.
+      A restart starts all of it afresh. Tests: a process that saw a sibling declare 20 minutes
+      counts it gone only after 60 minutes; one on 10 minutes that saw only 10, after 30; one on
+      20 minutes that saw only 10, after 60; a process
+      that has just started, or has just found a sibling's file missing, counts in the maximum
+      until that sibling's next heartbeat lands, and so counts it gone only after 90 minutes; a process that started on 10
+      minutes and applied 20 stands down after 20 minutes (Adam, 2026-10-21 and 2026-10-24)
+- [ ] 4.28 Loading the configuration refuses a poll interval above the maximum of 30 minutes,
+      naming the value and the maximum, and so does `igor serve --poll` given a value above it;
+      a process refusing to start for either exits with status 78.
+      The maximum is a constant in Igor, not a setting. Test: a role setting 45 minutes is
+      refused with both values named
 
 ## 5. State
 
@@ -367,8 +393,9 @@
       reduce reconsideration without governing it*, which lists every reason a cycle that stops
       early holds its mark back, a stand-down among them through this change's `MODIFIED` block on that
       requirement. Build the hold-back for a stand-down as that rule holds it back for an
-      exhausted budget. The block is copied from #101 at `de95fa7`; before archiving, check it
-      against #101 as merged and carry over any change #101 made since
+      exhausted budget. #101 is merged and archived; the block matches its in-force text apart
+      from the stand-down and the rewording of #101's watermark sentence that the proposal's *Still
+      open* lists
 - [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark
 - [ ] 5.8 Tests: a crash between triage and the claims leaves the items above the mark; a crashed
       rank's claim below every mark is taken over

@@ -232,7 +232,10 @@ a hand-over the Igor has not answered.
 **Where the release does not succeed either**, the Igor SHALL say that instead of saying it
 released. The item still carries the Igor's name, so a message asserting release would be false
 where somebody is looking; what is said SHALL name the item as still held and SHALL name the one
-action that frees it.
+action that frees it. A process whose claim message failed to post holds nothing, so this
+paragraph and the scenarios *A claim that could not be announced is given back* and *A claim
+that could not be verified is given back and withdrawn*, below, are about the holder: such a process
+gives the claim back as *Only the rank holding a claim gives it back* says.
 
 **A failure of the surface is not a failure of the item.** Where a run ends this way because a
 tracker or host did not answer, that SHALL be distinguishable from a refusal about the item
@@ -398,6 +401,27 @@ apart by who added the label, read from the issue's events.
 
 ## ADDED Requirements
 
+### Requirement: A chat message becomes an issue at the first available rank in its order
+
+Where several processes run a role, only the first available rank in a chat message's order of
+ranks, which *Contention is resolved before a claim, not after it* computes from the message's
+id, SHALL create an issue from the message, each rank judging availability by its own heartbeat
+read. With no rank available, the message SHALL wait for the next cycle. Every rank still reads
+the channel. A heartbeat read that is stale can let two ranks each judge themselves first and
+open two issues; that rare duplicate is accepted.
+
+#### Scenario: One rank creates the issue
+
+- **WHEN** ranks 1 and 2 of a role both read a chat message asking for an issue, and the
+  message's hash makes rank 2 its owner
+- **THEN** only rank 2 creates the issue, and rank 1 creates none
+
+#### Scenario: An unavailable owner passes the message on
+
+- **WHEN** a chat message's hash makes rank 2 its owner, and rank 2's heartbeat shows it is not
+  available, as when it has stood down, or has crashed and rank 1 now counts it gone
+- **THEN** rank 1, next in the message's order, creates the issue
+
 ### Requirement: A claim names the process that took it
 
 A claim message SHALL carry the rank of the process that posted it, whether or not the role runs
@@ -412,10 +436,11 @@ nor erase one. Hiding or unhiding a comment, or reacting to it, is not an edit, 
 still counts.
 
 A claim message's trailers SHALL be read only from lines that begin with `Igor-` at the line's
-first character. Before the role's bot account posts any text a worker or a model composed, the
-Igor SHALL indent by one space each line of that text that begins with `Igor-`, before the text
-is signed where `signed-publishing` (#153) signs it, so that no
-comment but a claim message carries a line read as a trailer.
+first character. Before the role's bot account posts any comment other than a claim message,
+the Igor SHALL indent by one space each line of it that begins with `Igor-`, whether a worker or
+a model composed the line or the Igor interpolated it from a path, a login or a title, and
+before the text is signed where `signed-publishing` (#153) signs it, so that no comment but a
+claim message carries a line read as a trailer.
 
 An edit or a deletion of the holder's claim message while it works the item makes the item read
 as unclaimed, and a sibling may then claim and work it too. That risk is accepted: only a person
@@ -423,15 +448,25 @@ with maintain or admin access to the repository can edit or delete the bot's com
 2.19 measures. It stays accepted whatever that measurement shows (Adam, 2026-10-21).
 
 A role runs several processes when the roster, which `role-config` specifies, declares more
-than one rank for it. It also runs several processes, to a deciding process, while an `igor
-run`'s heartbeat file is on the state branch and that process does not count the run gone. So
-after a process starts, any run's file makes the role count as run by several processes for at
-least three poll intervals. `igor run` always
+than one rank for it. It also runs several processes, as the process deciding sees it, while a heartbeat file of another
+process of the role, a serving rank's or an `igor run`'s, is on the state branch and that
+process does not count it gone, so a rank that has not yet applied a roster that grew still
+contests a hand-over. A process counts no sibling gone until it has watched it for three poll
+intervals after its own start, so after a process starts, any sibling's file makes the role count
+as run by several processes for at least three poll intervals, and, where it has seen no
+declaration from that sibling, for three of the maximum poll interval. `igor run` always
 counts its role as run by several processes. Whether several processes run a role decides
 whether a hand-over is contested (*A person can direct an Igor through the holder field*) and
 which give-backs end in silence (*A claim that cannot be kept is given back, out loud*). The rank SHALL be given to the process when it is started, never
 discovered or counted, as the last part of its name, `<role>-<rank>`, which `role-config`
 specifies.
+
+#### Scenario: A rank on the old roster still contests a hand-over
+
+- **WHEN** the roster grows from `[1]` to `[1, 2]`, rank 2 starts on the new roster and writes its
+  heartbeat, and rank 1 has not yet applied the new roster when a person adds the label
+- **THEN** rank 1 counts the role as run by several processes, from rank 2's heartbeat file, and
+  contests the hand-over rather than start work without the settle interval
 
 #### Scenario: A sibling's claim is not the Igor's own
 
@@ -744,8 +779,11 @@ it is past the bound.
 Every process SHALL run a timer of its own, apart from its cycle and from any worker, that fires
 every half poll interval. At each firing it SHALL write a heartbeat: it overwrites a file of its
 own on the state branch, named by its role and rank, and for `igor run` its run id, holding an id the process chose when it
-started, a counter it increments on each write, whether the process is available, and the poll
-interval the process applies. Its first
+started, a counter it increments on each write, whether the process is available, the poll
+interval the process applies, and the *state-directory id* of the state directory the process
+uses, as `graceful-handoff`'s *A handoff states what was done, what remains, and who could
+continue* (#216, `lore-search`) defines it, or no id where the process reads none in its state directory (Adam,
+2026-10-24). No rule of this change reads the state-directory id. Its first
 heartbeat SHALL land before its first cycle. A heartbeat file SHALL hold no time that any process
 compares.
 
@@ -805,7 +843,7 @@ is the one exception, and takes effect all the same, as `seat-budget`'s *A remov
 always takes effect* (#171) says.
 That condition is #208's `lore:config:<role>`, shared by the role, which opens and clears as
 `lore-pull`'s *A lore read at each cycle start applies what passes and refuses what fails* (#208)
-says; in short, a passing read of a commit older than the refused one clears nothing. A later read that passes SHALL
+says. A later read that passes SHALL
 take effect. A failing check SHALL NOT
 make the process exit.
 
@@ -967,6 +1005,13 @@ make the process exit.
 - **THEN** it goes on under the last configuration that passed, except that the removed seat is
   gone from it, and the condition names the failing file and check
 
+#### Scenario: A heartbeat names its state directory
+
+- **WHEN** rank 2 of `backend` writes its heartbeat, and its state directory holds the
+  state-directory id `k3m9q2x7`
+- **THEN** `heartbeats/backend-2.json` records `k3m9q2x7` beside its id, counter, availability and
+  poll interval
+
 #### Scenario: A heartbeat replaces only its own rank's
 
 - **WHEN** two ranks of one role write heartbeats at the same time, and the state branch rejects
@@ -980,24 +1025,49 @@ Ranks apply lore commits independently, so two ranks of one role can run on diff
 intervals at once. The gone verdict and the stand-down are counted by two different processes,
 and must agree whatever interval each applies: a process SHALL have stood down and stopped its
 worker before any sibling counts it gone. So each heartbeat SHALL declare the poll interval its
-process applies when it writes it, and each process SHALL count in the safer interval, by what it
-has itself read and applied:
+process applies when it writes it, and each process SHALL count as follows, by what it has
+itself read and applied:
 
 - **Gone:** a process SHALL measure each of the three poll intervals after which it counts a
-  sibling gone as the longest of its own current poll interval and every interval that sibling's
-  file has declared to it since this process started.
+  sibling gone as the longest of its own current poll interval and every interval that sibling
+  declared in a heartbeat this process saw written since the later of its own start and the last
+  loss or rollback of the state branch it detected.
+  A heartbeat is *seen written* when its counter changes between two reads. A process detects a
+  loss or rollback when a serving rank's file it had read is missing, or any sibling's counter
+  is lower than the one last read; a run's file that goes missing is a run that exited or was
+  counted gone, not a loss. Where the process has seen no such declaration from the sibling, it SHALL
+  measure them as `role-config`'s maximum poll interval (Adam, 2026-10-24).
 - **Stand-down:** a process SHALL measure each of the two poll intervals after which it stands
   down as the shortest poll interval it has applied since it started.
 
 A process SHALL write its heartbeat every half of its own current poll interval. No process
 SHALL wait on, ask or signal another to settle which interval applies.
 
+Declarations keep recovery fast while the state branch holds; the maximum keeps a loss, a
+rollback or a restart from taking a live rank's claim. After any of those, until that sibling's
+next heartbeat lands, a process counts in the maximum, so it adopts the sibling's claims only
+after 90 minutes.
+
 #### Scenario: A sibling that declared a longer interval is waited for
 
-- **WHEN** rank 1 runs on a poll interval of 10 minutes, and since rank 1 started rank 2's
-  heartbeat file has declared 20 minutes
+- **WHEN** rank 1 runs on a poll interval of 10 minutes, and since rank 1 started it has seen
+  rank 2's heartbeat written declaring 20 minutes
 - **THEN** rank 1 counts rank 2 gone only once 60 minutes have passed without rank 2's heartbeat
   changing
+
+#### Scenario: A process on the longer interval counts in its own
+
+- **WHEN** rank 1 runs on a poll interval of 20 minutes, and since rank 1 started it has seen
+  rank 2's heartbeat written only declaring 10 minutes
+- **THEN** rank 1 counts rank 2 gone only once 60 minutes have passed without rank 2's heartbeat
+  changing, three of its own interval
+
+#### Scenario: A process that has seen no declaration counts in the maximum
+
+- **WHEN** rank 1 has just started, or has just found a sibling's file missing after the state
+  branch was lost, and has not yet seen rank 2's heartbeat written
+- **THEN** rank 1 counts rank 2 gone only once 90 minutes, three of the 30-minute maximum, have
+  passed without rank 2's heartbeat changing
 
 #### Scenario: A process that moved to a longer interval stands down by the shorter
 
@@ -1005,6 +1075,14 @@ SHALL wait on, ask or signal another to settle which interval applies.
   sets 20 minutes
 - **THEN** it writes its heartbeat every 10 minutes, and stands down after 20 minutes without
   writing one, not 40
+
+#### Scenario: A watcher that lost a declaration still finds the sibling stood down
+
+- **WHEN** the lore head has moved to 20 minutes and back to 10; rank 2 started on 20 and
+  applied nothing since, while rank 1 ran on 10; rank 2 stops writing heartbeats; and the state
+  branch is lost and rank 1 restarts, so it has seen no declaration from rank 2
+- **THEN** rank 2 stands down and its timer stops its worker after 40 minutes, before rank 1
+  counts it gone after 90, so only one process works the item
 
 #### Scenario: Ranks on different poll intervals keep one worker per item
 
@@ -1030,13 +1108,13 @@ A process whose claim message fails to post, or whose verification read fails, S
 the item's claim messages, which #173 calls the rank's test. Where another process's claim
 message counts, it drops out silently. Where its own message holds the item, it holds the item,
 and gives the claim back out loud as #173 says, which removes the label: a *withdrawal*.
-Immediately before removing the label, it SHALL read the heartbeat files and the item's claim
-messages again, and SHALL remove the label only where its own message still holds the item and
-no other process's message counts. Where no claim message counts, it gives the claim back out
-loud too. Under the exception below it removes the label and posts #173's refusal, the post a
-refused run makes when it gives the claim back to be tried again next cycle. Otherwise it leaves
-the label and posts that the item is still held, as *A claim that cannot be kept is given back,
-out loud* requires of a release that did not happen. Where that read of the claim messages fails too, it removes
+Immediately before removing the label, and before posting the give-back, it SHALL read the
+heartbeat files and the item's claim messages again, and SHALL remove the label and post the
+give-back only where its own message still holds the item and no other process's message
+counts; where that read finds another process's message counting, it drops out silently. Where no claim message counts, it gives the claim back out
+loud too, with #173's refusal, the post a refused run makes when it gives the claim back to be
+tried again next cycle. Under the exception for a claim message that failed to post, below, it also removes the label; otherwise it leaves
+the label (Adam, 2026-10-24, following #173's decision 41). Where that read of the claim messages fails too, it removes
 nothing and posts nothing, and SHALL read them again at its next cycle's start, or before it exits
 for `igor run`, as #173 has it. A process with a reread pending makes it before its cycle
 chooses any candidate. Otherwise, finding its own rank's message holding the item, it would
@@ -1054,8 +1132,9 @@ Because only a process whose own message holds the item withdraws, and its fresh
 the label on where a later message counts, a withdrawal releases no claim that verified after
 its test, as #173's decision 29 requires. `design.md` gives the reasoning.
 
-**The one listed exception to the holder rule** (Adam, 2026-10-21): a process that set the
-role's label in this claim, whose claim message failed to post, SHALL remove that label where its
+**Two exceptions to the holder rule are listed.** The second, below, is a stop on an item no
+claim message holds, answered by the process that reaches it. **The first** (Adam, 2026-10-21):
+a process that set the role's label in this claim, whose claim message failed to post, SHALL remove that label where its
 test finds no claim message on the item that counts, since no holder exists and the label is its
 own. It SHALL send the removal only while less than half a settle interval has passed since it
 started to set the label, by its own monotonic clock, and SHALL NOT send it later. Later than

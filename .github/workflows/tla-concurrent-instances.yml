@@ -7,6 +7,12 @@
 #   needs is a constant in the model, and each file in model/negative/ turns
 #   one of those rules off. TLC must find a violation there; a file that
 #   passes means the model does not show that rule is needed.
+# - ConcurrentInstancesPollSkewFull.cfg is not listed: it is too large for
+#   a job, so it runs locally, and design.md records how far it got and,
+#   once it ends, whether it passed. The split PollSkew configurations below
+#   cover smaller combinations of its faults in CI: one crash rather than
+#   two, each split fixing the one rank that may miss heartbeats or crash,
+#   and a crash and a lost branch together only with one missed heartbeat.
 # - No job runs model/findings/. Each file there finds a violation the rules
 #   do not prevent, recorded for the repository's owner to decide on; it
 #   keeps finding it until the spec's rules change.
@@ -57,6 +63,12 @@ jobs:
           - ConcurrentInstancesTwoRuns.cfg
           - ConcurrentInstancesTwoRunsGiveBacks.cfg
           - ConcurrentInstancesPollSkew.cfg
+          - ConcurrentInstancesPollSkewLoss.cfg
+          - ConcurrentInstancesPollSkewLoss1.cfg
+          - ConcurrentInstancesPollSkewCrash.cfg
+          - ConcurrentInstancesPollSkewCrash1.cfg
+          - ConcurrentInstancesPollSkewCrashLoss.cfg
+          - ConcurrentInstancesPollSkewCrashLoss1.cfg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1

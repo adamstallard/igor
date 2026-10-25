@@ -114,14 +114,18 @@
 (* processes run on different commits at once. The lore head, the newest  *)
 (* commit of the lore repository's branch, may drop a rank (`Retire`) or  *)
 (* double the poll interval (`ChangePoll`); a process applies the head,   *)
-(* or keeps what it had, at each cycle start. With the poll interval able *)
-(* to change, time is counted in the shorter interval. Each heartbeat     *)
-(* declares its process's interval (`decl`). A process counts a sibling   *)
-(* gone after three of the longest of its own interval and those the      *)
-(* sibling has declared to it since it started (`seenDecl`), stands down  *)
-(* after two of the shortest it has applied since it started (`minLen`),  *)
-(* and writes a heartbeat every half of its own; one write lands per      *)
-(* shorter interval either way (`WriteHeartbeat`).                         *)
+(* or keeps what it had, at each cycle start; the head may change back.  *)
+(* With the poll interval able to change, time is counted in the shorter  *)
+(* interval. Each heartbeat declares its process's interval (`decl`). A    *)
+(* process counts a sibling gone after three of the longest of its own     *)
+(* interval and the intervals it saw the sibling declare in a write since  *)
+(* it started and since the last loss or rollback (`seenDecl`), or three   *)
+(* of the maximum poll interval (`CeilLen`) where it saw none. It stands   *)
+(* down after two of the shortest interval it has applied since it started *)
+(* (`minLen`). It writes a heartbeat every half of its own interval, and   *)
+(* one write lands per shorter interval: on the shorter interval two       *)
+(* writes count as one, and on the longer each write counts                *)
+(* (`WriteHeartbeat`).                                                     *)
 (*                                                                         *)
 (* A person may edit a claim message (`EditMsg`), and an edited message   *)
 (* counts for nothing, so an edit removes it from the messages that       *)
@@ -151,7 +155,15 @@ CONSTANTS
     MaxFails,          \* claims given back before the worker starts, for a
                        \* reason other than losing
     MaxEdits,          \* claim messages people may edit
-    MaxPollChanges,    \* times the lore head's poll interval changes: 0 or 1
+    MaxPollChanges,    \* times the lore head's poll interval changes: 0, 1
+                       \* or 2, the second changing it back
+    StartLen,          \* the head's poll interval when every process starts:
+                       \* 1, or 2 as after a change made before they started
+    CeilLen,           \* the maximum poll interval a configuration may set,
+                       \* at least every interval the configuration uses
+    MissOnly,          \* 0, or the one process that may miss heartbeats, to
+                       \* split a configuration too large for one CI job
+    CrashOnly,         \* 0, or the one process that may crash, likewise
     \* The rules. Each is TRUE in the change as specified.
     CounterLiveness,   \* a watcher judges a heartbeat by whether its counter
                        \* changed; FALSE: by whether its time is later than
@@ -219,13 +231,21 @@ CONSTANTS
     RereadKeepsLabel,  \* a reread that fails again, an unreadable claim,
                        \* gives the claim back or sets the item down and
                        \* leaves the label; FALSE: it removes the label
-    DeclaredInterval   \* a heartbeat declares its process's poll interval; a
+    DeclaredInterval,  \* a heartbeat declares its process's poll interval; a
                        \* process counts a sibling gone after three of the
                        \* longest of its own interval and those the
                        \* sibling's file has declared to it since it
                        \* started, and stands down after two of the shortest
                        \* interval it has applied since it started; FALSE:
                        \* each counts in its own current interval
+    Ceiling            \* a watcher holding no declaration from a sibling,
+                       \* written since it started and since the last loss
+                       \* or rollback of the state branch, counts in the
+                       \* maximum poll interval, and a loss clears what
+                       \* it saw; FALSE: it counts in the longest of its
+                       \* own interval, what the file says now and what
+                       \* it saw the sibling's file declare in a write,
+                       \* kept across a loss
 
 Items == 1..NItems
 
@@ -248,8 +268,12 @@ Me(p) == IF IsRun(p) /\ ~RunIds THEN 0 ELSE p
 
 \* Time is counted in the shorter poll interval; a process on the longer
 \* one has plen = 2. Counts are capped where no threshold reads beyond.
-MaxLen == IF MaxPollChanges > 0 THEN 2 ELSE 1
-Cap == Bound * MaxLen
+MaxLen == IF MaxPollChanges > 0 \/ StartLen = 2 THEN 2 ELSE 1
+Cap == Bound * (IF CeilLen > MaxLen THEN CeilLen ELSE MaxLen)
+\* Declarations are tracked wherever two intervals can differ, the maximum
+\* counted among them.
+Tracked == DeclaredInterval /\ (MaxLen > 1 \/ CeilLen > 1)
+ASSUME CeilLen >= MaxLen
 
 \* The states between setting the label and verifying, and the withdrawal
 \* after the test. "postnew" is a "post" whose process set the label in
@@ -283,8 +307,10 @@ VARIABLES
     spanned,   \* spanned[r]: r is on the longer poll interval, and an
                \* interval has ended since r set the label for the claim
                \* in hand
-    seenDecl,  \* seenDecl[r][q]: the longest poll interval q's file has
-               \* declared to r since r started, 0 for none; DeclaredInterval
+    seenDecl,  \* seenDecl[r][q]: the longest poll interval r saw q's file
+               \* declare in a write, since r started and, under Ceiling,
+               \* since the last loss (LoseBranch clears it); 0 for none;
+               \* DeclaredInterval
     minLen,    \* minLen[r]: the shortest poll interval r has applied since it
                \* started; DeclaredInterval
     \* state branch
@@ -353,11 +379,18 @@ ReadNow(r) == IF WatchAdvance THEN watch[r]
 View(r) == IF ReReadHeartbeats THEN ReadNow(r) ELSE seen[r]
 
 \* Process q's heartbeat file has gone unchanged, as r watched it, for
-\* three poll intervals: the longest of r's own and those q's file has
-\* declared to r, or under ~DeclaredInterval r's own.
+\* three poll intervals: under Ceiling, the longest of r's own and those q
+\* declared in a write r saw since the later of r's start and the last
+\* loss, or else the maximum;
+\* under ~Ceiling, the longest of r's own, what q's file says now and what
+\* r saw q's file declare in a write, kept across a loss; under
+\* ~DeclaredInterval, r's own.
 HbGone(r, q) ==
-    LET len == IF DeclaredInterval
-                 THEN Max({plen[r], decl[q], seenDecl[r][q]}) ELSE plen[r]
+    LET len == IF ~DeclaredInterval THEN plen[r]
+               ELSE IF Ceiling
+                 THEN IF seenDecl[r][q] # 0 THEN Max({plen[r], seenDecl[r][q]})
+                                           ELSE CeilLen
+                 ELSE Max({plen[r], decl[q], seenDecl[r][q]})
     IN  q # r /\ View(r)[q] >= Bound * len
 
 \* What a claim message names, q, is gone to process r: past the bound, or
@@ -370,8 +403,8 @@ Gone(r, q) ==
        \/ IF q = 0 THEN \A p \in Runs : HbGone(r, p) ELSE HbGone(r, q)
 
 \* A process stands down when it has failed to write its heartbeat for
-\* StandDownAt poll intervals, the shortest it has applied since it started,
-\* or under ~DeclaredInterval its own, whether or not its rank is still in
+\* StandDownAt poll intervals, each the shortest it has applied since it
+\* started, or under ~DeclaredInterval its own, whether or not its rank is still in
 \* the roster.
 StandLen(r) == IF DeclaredInterval THEN minLen[r] ELSE plen[r]
 StoodDown(r) == StandDownOnMisses /\ missed[r] >= StandDownAt * StandLen(r)
@@ -525,16 +558,16 @@ Init ==
     /\ missed = [r \in Procs |-> 0]
     /\ reread = [r \in Procs |-> 0]
     /\ rv = [r \in Procs |-> Roster]
-    /\ plen = [r \in Procs |-> 1]
+    /\ plen = [r \in Procs |-> StartLen]
     /\ spanned = [r \in Procs |-> FALSE]
     /\ seenDecl = [r \in Procs |-> [q \in Procs |-> 0]]
-    /\ minLen = [r \in Procs |-> 1]
+    /\ minLen = [r \in Procs |-> StartLen]
     /\ hbAge = [q \in Procs |-> 0]
     /\ mark = [k \in Ranks |-> NoMark]
     /\ hbAvail = [q \in Procs |-> IF IsRun(q) THEN "none" ELSE "available"]
-    /\ decl = [q \in Procs |-> IF IsRun(q) THEN 0 ELSE 1]
+    /\ decl = [q \in Procs |-> IF IsRun(q) THEN 0 ELSE StartLen]
     /\ roster = Roster
-    /\ pollHead = 1
+    /\ pollHead = StartLen
     /\ label = [i \in Items |-> FALSE]
     /\ msgs = [i \in Items |-> <<>>]
     /\ upd = [i \in Items |-> i]
@@ -904,7 +937,7 @@ NextCycle(r) ==
     /\ \E nv \in {rv[r], roster}, nl \in {plen[r], pollHead} :
           /\ rv' = [rv EXCEPT ![r] = nv]
           /\ plen' = [plen EXCEPT ![r] = nl]
-          /\ minLen' = IF DeclaredInterval /\ MaxPollChanges > 0
+          /\ minLen' = IF Tracked
                          THEN [minLen EXCEPT ![r] = Min({minLen[r], nl})]
                          ELSE minLen
     /\ UNCHANGED <<up, seen, watch, alive, cand, cur, markPend, markReady,
@@ -982,7 +1015,7 @@ WriteHeartbeat(r) ==
                    THEN [hbAvail EXCEPT ![r] = IF Busy(r) THEN "unavailable"
                                                           ELSE "available"]
                    ELSE hbAvail
-    /\ IF DeclaredInterval /\ MaxPollChanges > 0
+    /\ IF Tracked
          THEN /\ decl' = [decl EXCEPT ![r] = plen[r]]
               /\ seenDecl' = [x \in Procs |->
                                [seenDecl[x] EXCEPT ![r] = Max({@, plen[r]})]]
@@ -1009,6 +1042,7 @@ WriteHeartbeat(r) ==
 Tick ==
     /\ LET M == {r \in Procs : up[r] /\ ~beat[r]}
        IN  /\ misses + Cardinality(M) <= MaxMisses
+           /\ MissOnly = 0 \/ M \subseteq {MissOnly}
            /\ misses' = misses + Cardinality(M)
     /\ \A r \in Procs : (up[r] /\ MustHaveHalted(r)) => ~Busy(r)
     /\ VerifyWithinPoll =>
@@ -1041,7 +1075,7 @@ NextSecond ==
 \* dies with it, and so does everything it held in memory, a pending
 \* reread included.
 Crash(r) ==
-    /\ up[r] /\ crashes < MaxCrashes
+    /\ up[r] /\ crashes < MaxCrashes /\ (CrashOnly = 0 \/ r = CrashOnly)
     /\ up' = [up EXCEPT ![r] = FALSE]
     /\ pc' = [pc EXCEPT ![r] = "down"]
     /\ cand' = [cand EXCEPT ![r] = <<>>]
@@ -1072,7 +1106,7 @@ Start(r) ==
     /\ rv' = [rv EXCEPT ![r] = roster]
     /\ plen' = [plen EXCEPT ![r] = pollHead]
     /\ seenDecl' = [seenDecl EXCEPT ![r] = [q \in Procs |-> 0]]
-    /\ minLen' = IF DeclaredInterval /\ MaxPollChanges > 0
+    /\ minLen' = IF Tracked
                    THEN [minLen EXCEPT ![r] = pollHead] ELSE minLen
     /\ UNCHANGED <<seen, cand, cur, polled, markPend, markReady, reread,
                    spanned, branchVars, loreVars, trackerVars, behind,
@@ -1130,14 +1164,22 @@ LoseBranch ==
     /\ \/ NItems > 1 /\ hbAvail' = [q \in Procs |-> "none"]
        \/ UNCHANGED hbAvail
     /\ hbAge' = IF WatchAdvance THEN hbAge ELSE [q \in Procs |-> Cap]
-    /\ IF DeclaredInterval /\ MaxPollChanges > 0
+    /\ IF Tracked
          THEN \/ decl' = [q \in Procs |-> 0]
               \/ decl' = [q \in Procs |-> IF decl[q] = 0 THEN 0 ELSE 1]
               \/ UNCHANGED decl
          ELSE UNCHANGED decl
+    \* Under Ceiling every process forgets the declarations it saw, as a
+    \* running one would on detecting the loss by a missing serving rank's
+    \* file or a counter that went back. The model clears them for all on
+    \* every loss, where a real process clears them only on detecting it;
+    \* design.md, *What the model assumes*, covers a rollback that leaves a
+    \* counter where the watcher last read it.
+    /\ seenDecl' = IF Tracked /\ Ceiling
+                     THEN [x \in Procs |-> [q \in Procs |-> 0]] ELSE seenDecl
     /\ losses' = losses + 1
     /\ UNCHANGED <<up, pc, seen, cand, cur, polled, markPend, markReady, beat,
-                   missed, reread, rv, plen, seenDecl, minLen, spanned,
+                   missed, reread, rv, plen, minLen, spanned,
                    loreVars, trackerVars, behind, crashes, stops, misses,
                    handovers, retires, clockSteps, prs, fails, edits,
                    pollChanges, wrote>>
