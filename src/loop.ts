@@ -1067,12 +1067,20 @@ export async function planCycle(
   const limit = options.limit ?? 10
   const quiet = await loadDeferrals(deps.destination)
   const window = stopWindow(now, role.cooldownMinutes)
-  // Both gates, stops and then deferrals, read an item's comments through one fetch, reaching back
-  // as far as either asks about for that item. Where the tracker will not answer for an item, the
-  // stop gate's rule wins over the deferral gate's. The stop gate reads first and holds that item
-  // and every item after it for this cycle, so the item never reaches the deferral gate, which
-  // keeps an item it cannot read and would have let it be worked. The cost is one cycle of delay
-  // on those items.
+  // The stop gate and then the deferral gate read each item's comments through one fetch per item,
+  // reaching back as far as either gate asks about for that item, so an item both gates ask about
+  // costs one tracker request rather than two.
+  //
+  // When that fetch fails, the stop gate decides what happens. It skips the item and every item
+  // after it in age order for this cycle, asking the tracker nothing more, and marks each `held`
+  // so the discovery watermark stays below it and the next cycle reads it again. The deferral gate
+  // never sees the item. Had it seen it, it would have let the item be worked, because it drops
+  // only an item whose comments it can read.
+  //
+  // The cost of sharing: the deferral gate can reach further back, to when the item was handed
+  // back, so its read is the one more likely to fail. With a fetch per gate, the stop gate's
+  // shorter read could succeed where only the deferral gate's failed; with one shared fetch, both
+  // fail, and the item waits a cycle.
   const comments = oneFetchPerItem(deps.tracker, (c) => {
     const entry = quiet.items[c.id]
     // A deferral record reaches back to when the item was handed back. One whose fingerprint no
