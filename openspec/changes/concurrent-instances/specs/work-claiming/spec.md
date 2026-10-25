@@ -85,7 +85,9 @@ back, and changes nothing else.
 
 Where the other holder is a process of the Igor's own role, standing down SHALL leave the holder
 field as it is, such as the role's label on GitHub, and SHALL post nothing, since the field is the
-winner's too, as *Only the rank holding a claim gives it back* says.
+winner's too, as *Only the rank holding a claim gives it back* says. Where several processes run
+the role and no claim message counts, the label SHALL likewise stay, except as that requirement's
+first listed exception allows, since the process cannot tell that no rank holds the item.
 
 The re-read SHALL come within one poll interval of the claim message. A process that reaches it
 later SHALL NOT work the item, even where it reads its own message as holding it. It gives the
@@ -125,7 +127,8 @@ the claim saw lifted. For a handed-over item the stop stands.
 
 #### Scenario: Losing Igor removes itself from a list
 
-- **WHEN** an Igor loses a claim on a holder field that holds a list
+- **WHEN** an Igor loses a claim to another party on a holder field that holds a list, and no
+  other process of its own role shares its entry
 - **THEN** it removes its own entry and leaves every other holder in place
 
 #### Scenario: A process that loses to its own role keeps the label on the item
@@ -210,9 +213,10 @@ failed — the Igor SHALL release the claim and say so on the item. It SHALL NOT
 holding the claim in silence.
 
 Where several processes run one role, two cases end in silence instead. A process that has
-stood down for missed heartbeats says nothing, since a sibling may already have taken the item
-over (*A retired rank does not hold its items forever*). A process whose claim message does not hold the item says
-nothing, since the claim is another rank's (*Only the rank holding a claim gives it back*). The scenarios
+stood down for missed heartbeats says nothing: its claim stays in place until a sibling counts it gone, and that sibling takes the item over and says so (*A retired rank does not hold its items forever*). A process that finds another process's claim message holding the
+item says nothing, since the claim is that rank's (*Only the rank holding a claim gives it
+back*); one that finds no claim message holding the item gives it back out loud, as that
+requirement says. The scenarios
 below that give a claim back describe the holder; a process whose claim message failed to post
 removes the label only as *Only the rank holding a claim gives it back* allows in its first
 exception.
@@ -232,10 +236,11 @@ a hand-over the Igor has not answered.
 **Where the release does not succeed either**, the Igor SHALL say that instead of saying it
 released. The item still carries the Igor's name, so a message asserting release would be false
 where somebody is looking; what is said SHALL name the item as still held and SHALL name the one
-action that frees it. A process whose claim message failed to post holds nothing unless its
-test, #173's read of the item's claim messages, finds the message landed after all, so this paragraph and the scenarios *A claim that could not be announced is given back* and *A claim
-that could not be verified is given back and withdrawn*, below, are about the holder: such a process
-gives the claim back as *Only the rank holding a claim gives it back* says.
+action that frees it. This paragraph and the scenarios *A claim that could not be announced is given back* and *A
+claim that could not be verified is given back and withdrawn*, below, are about the holder. A
+process whose claim message failed to post is the holder only where its test, #173's read of
+the item's claim messages, finds the message landed after all; otherwise it holds nothing, and
+it gives the claim back as *Only the rank holding a claim gives it back* says.
 
 **A failure of the surface is not a failure of the item.** Where a run ends this way because a
 tracker or host did not answer, that SHALL be distinguishable from a refusal about the item
@@ -264,13 +269,13 @@ caller that must tell them apart cannot do it from a thrown error alone.
 
 #### Scenario: A claim that could not be announced is given back
 
-- **WHEN** a claim is recorded and the message announcing it fails
+- **WHEN** one process runs the role, a claim is recorded, and the message announcing it fails
 - **THEN** the claim is released and the run is refused
 - **AND** the item is not left held with nothing said
 
 #### Scenario: A claim that could not be verified is given back and withdrawn
 
-- **WHEN** a claim was announced and verifying it fails
+- **WHEN** one process runs the role, a claim was announced, and verifying it fails
 - **THEN** the claim is released, the announcement is withdrawn on the item, and the run is refused
 
 #### Scenario: A release that did not take is said so
@@ -315,8 +320,8 @@ caller that must tell them apart cannot do it from a thrown error alone.
 
 #### Scenario: A rank that does not hold the item gives nothing back
 
-- **WHEN** several processes run one role, and a process whose claim message does not hold the
-  item cannot go on with its claim
+- **WHEN** several processes run one role, and a process that finds another process's claim
+  message holding the item cannot go on with its claim
 - **THEN** it removes nothing and posts nothing on the item
 
 ### Requirement: An item handed to an Igor waits for work already in flight
@@ -399,6 +404,207 @@ apart by who added the label, read from the issue's events.
   issue's events show that Igor added the label itself
 - **THEN** the settle interval resolves the claim
 
+### Requirement: What follows a stop is read from the tracker, not from a second command
+
+After a stop, eligibility SHALL be determined by the tracker's state rather than by any
+distinct pause or resume verb. A stop releases the claim by removing this Igor from the holder
+field: its `igor:<role>` label on GitHub, or itself as delegate on Linear. What the item then
+shows decides what happens next, by the rules for items someone else holds and for a person
+directing an Igor.
+
+A stop cancels a hand-over. Only a new hand-over restores it: on GitHub, the label removed and
+added again. A go-ahead, or the cooldown running out, lifts the stop for work found by the
+Igor's own search, and never restores a hand-over the stop cancelled.
+
+A go-ahead is read for whom it is meant as a stop is. A bare go-ahead lifts the stop for every
+Igor on the item. A go-ahead that names Igors, as "go ahead @igor-backend", SHALL lift it only for
+the Igors it names, and SHALL NOT lift it for an Igor it does not name. A name that is no Igor's
+counts as no name, as in a stop, so "carry on, @alice approved it" lifts the stop for every Igor.
+
+Where the names are unclear, a go-ahead errs the other way from a stop, because lifting a stop by
+mistake costs more than leaving one in place. A go-ahead with no Igor's name straight after the
+phrase SHALL count the mentions later on its opening line, and a list of names that runs straight
+on into a word SHALL lose its last name, whichever of the two the go-ahead reads. Whether a
+go-ahead names an Igor is read before that loss, so one whose only Igor is the name it loses lifts
+the stop for no Igor. A name the tracker cannot resolve counts as an Igor's.
+
+The later mentions SHALL NOT be read past a line break that the opening punctuation or the list's
+last separator crossed, so "go ahead:" followed by "thanks @igor-backend" on the next line is a
+bare go-ahead and lifts the stop for every Igor (decided by Adam, 2026-10-13). This is the one
+place a go-ahead does not err toward lifting fewer stops: "go ahead:" on its own line is usually
+meant for everyone, and a mention on the next line belongs to another sentence.
+
+Where a stop is said on an item a person handed to the Igor while no run of the Igor is active
+on it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field
+and post a stop receipt, so that an item showing the Igor in its holder field is always one
+handed to it. Where several processes run the Igor's role, only the rank whose claim message
+holds the item answers the stop, or, where no claim message counts, the process that reaches the
+item, as *Only the rank holding a claim gives it back* says; every other
+rank ignores it.
+
+On GitHub, when an Igor finds its `igor:<role>` label gone, it SHALL read the latest
+`unlabeled` event for that label from the issue's events. If that event's actor is the Igor's
+own bot account, the removal was the Igor's own release. If the actor is anyone else, the
+removal is a stop by that person: the Igor SHALL halt, and its stop receipt SHALL name them.
+These two cases are exhaustive, because an Igor that loses a race removes only its own label,
+never another Igor's. Where several processes run one role, they share one label, and a rank
+removes it only as *Only the rank holding a claim gives it back* allows; a removal by the role's
+own bot account is then a release by one of its ranks, and SHALL NOT halt a worker another rank
+is running.
+
+#### Scenario: A human takes the item
+
+- **WHEN** a human assigns themselves after stopping an Igor
+- **THEN** the item is not reclaimed by the Igor
+- **AND** this holds whether the holder field is an `igor:` label or Linear's delegate,
+  because an item assigned to a person is not claimed unless it names this Igor
+
+#### Scenario: Nobody takes the item
+
+- **WHEN** an item is stopped and left unassigned, with nothing in its holder field
+- **THEN** it becomes eligible again after a cooldown
+- **AND** it is not permanently removed from the pool
+
+#### Scenario: Explicit go-ahead short-circuits the cooldown
+
+- **WHEN** someone signals on the surface that work may resume
+- **THEN** the item becomes eligible immediately
+
+#### Scenario: A bare go-ahead lifts the stop for every Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead"
+  without naming anyone
+- **THEN** the stop is lifted for both Igors
+
+#### Scenario: A go-ahead that names an Igor lifts the stop only for that one
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @igor-backend"
+- **THEN** the stop is lifted for the backend Igor
+- **AND** the frontend Igor stays stopped until the cooldown runs out or a go-ahead meant for it
+
+#### Scenario: A go-ahead whose name comes later on its line
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead and pick it back up, @igor-backend"
+- **THEN** the stop is lifted for the backend Igor only
+
+#### Scenario: A go-ahead on its own line is bare
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead:" with
+  "thanks @igor-backend" on the next line
+- **THEN** the stop is lifted for both Igors
+
+#### Scenario: A go-ahead whose list runs on into the next clause
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @igor-backend, @igor-frontend keep waiting"
+- **THEN** the stop is lifted for the backend Igor only
+
+#### Scenario: A go-ahead whose run-on list loses its only Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @alice, @igor-frontend keep waiting", and `@alice` is a person
+- **THEN** the stop is lifted for neither Igor
+
+#### Scenario: A go-ahead that names only a person lifts the stop for every Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "carry on, @alice approved it", and `@alice` is a person
+- **THEN** the stop is lifted for both Igors
+
+#### Scenario: Handing the item back to the Igor is a go-ahead
+
+- **WHEN** a person who stopped an Igor later delegates the Linear issue to it again, or adds
+  its `igor:<role>` label to the GitHub issue again
+- **THEN** the Igor treats the item as directed to it, without waiting the cooldown
+
+#### Scenario: A lifted stop does not restore a hand-over
+
+- **WHEN** a person hands an issue to an Igor, somebody stops it, and the stop is later lifted
+  by a go-ahead or by the cooldown running out
+- **THEN** the hand-over stays cancelled
+- **AND** only removing the `igor:<role>` label and adding it again hands the issue over again
+
+#### Scenario: A stop while nothing runs takes the label off
+
+- **WHEN** somebody stops an Igor on an issue whose `igor:<role>` label a person added, while no
+  run of that Igor is active on it
+- **THEN** on its next cycle the Igor removes the label and posts a stop receipt
+
+#### Scenario: A hand-over after a stop lets the Igor's own catch-up run
+
+- **WHEN** a person stops an Igor, then adds its `igor:<role>` label again while the Igor's own pull
+  request on that issue no longer merges
+- **THEN** the Igor brings that pull request up to date without waiting the cooldown
+
+#### Scenario: A person removing the label is a stop that names them
+
+- **WHEN** an Igor working a GitHub issue finds its `igor:<role>` label gone, and the latest
+  `unlabeled` event for that label was made by anyone other than the Igor's own bot account
+- **THEN** the Igor halts as for any stop
+- **AND** its stop receipt names whoever removed the label
+
+#### Scenario: The Igor's own removal is its release
+
+- **WHEN** an Igor finds its `igor:<role>` label gone, and the latest `unlabeled` event for that
+  label was made by the Igor's own bot account
+- **THEN** the removal is the Igor's own release, and it posts no stop receipt
+
+#### Scenario: No second verb exists
+
+- **WHEN** a party wishes to pause rather than stop
+- **THEN** they issue a stop
+- **AND** resumption follows from tracker state, with no separate pause command defined
+
+### Requirement: An issue created from chat points back to the chat
+
+Where an Igor creates an issue because a person instructed it in chat, the issue's description
+SHALL link the chat message that asked for the work, and MAY also quote it, so that whoever
+reads the issue sees where the request came from. After creating the issue, the Igor SHALL post
+a message in that chat with a link to the issue. The issue is created on the claiming tracker,
+and any claim on it is taken there.
+
+Before creating an issue from a chat message, the Igor SHALL look on the claiming tracker for
+an issue that already links that message, and SHALL create none if one exists. This check, not
+any record of which messages were handled, is what prevents a duplicate issue: such a record
+only saves work, and losing it costs API calls, never a second issue. Where several processes run
+the role, only the rank *A chat message becomes an issue at the first available rank in its
+order* names makes the check, creates the issue and posts its link, and a
+stale heartbeat can let two ranks each do so, a rare second issue that requirement accepts. How the tracker is
+searched for the link belongs to the adapter.
+
+When the check finds such an issue, the Igor SHALL post that issue's link in the chat if the
+chat has no reply with that link yet, and SHALL otherwise do nothing. So an Igor that stopped
+between creating the issue and posting its link posts the link on its next read of the
+message, and reading the message again never posts the link twice.
+
+#### Scenario: Instructed in chat
+
+- **WHEN** a person in chat instructs an Igor to do work that has no issue
+- **THEN** the Igor creates an issue on the claiming tracker whose description links the chat
+  message
+- **AND** it then posts the issue's link in the chat
+
+#### Scenario: An issue links the message, and its link was never posted
+
+- **WHEN** an Igor reads a chat message asking for work, an issue on the claiming tracker
+  already links that message, and the chat has no reply with that issue's link
+- **THEN** the Igor creates no issue for it
+- **AND** it posts the issue's link in the chat
+
+#### Scenario: An issue links the message, and its link is already posted
+
+- **WHEN** an Igor reads a chat message asking for work, an issue on the claiming tracker
+  already links that message, and the chat already has a reply with that issue's link
+- **THEN** the Igor creates no issue and posts nothing
+
+#### Scenario: Lost record of handled messages
+
+- **WHEN** an Igor's record of which chat messages it has handled is lost or out of date, and
+  it reads again a message it already made an issue from
+- **THEN** it finds the issue that links the message and creates no second one
+
 ## ADDED Requirements
 
 ### Requirement: A chat message becomes an issue at the first available rank in its order
@@ -435,17 +641,19 @@ GraphQL `lastEditedAt` is set, SHALL count for nothing: it is no claim message, 
 nor erase one. Hiding or unhiding a comment, or reacting to it, is not an edit, and the comment
 still counts.
 
-A claim message's trailers SHALL be read only from lines that begin with `Igor-` at the line's
-first character. Before the role's bot account posts any comment other than a claim message,
-the Igor SHALL indent by one space each line of it that begins with `Igor-`, whether a worker or
-a model composed the line or the Igor interpolated it from a path, a login or a title, and
-before the text is signed where `signed-publishing` (#153) signs it, so that no comment but a
-claim message carries a line read as a trailer.
+A claim message's trailers SHALL be read only from lines that begin with `Igor-`, in exactly that
+letter case, at the line's first character. Before the role's bot account posts any comment
+other than a claim message, the Igor SHALL indent by one space each line of it that begins with
+`Igor-` in any letter case, whether a worker or
+a model composed the line or the Igor interpolated it from a path, a login or a title, so that
+no comment but a claim message carries a line read as a trailer. It SHALL do so before the text
+is read cold and signed where `signed-publishing` (#153) does both.
 
 An edit or a deletion of the holder's claim message while it works the item makes the item read
-as unclaimed, and a sibling may then claim and work it too. That risk is accepted: only a person
-with maintain or admin access to the repository can edit or delete the bot's comment, which task
-2.19 measures. It stays accepted whatever that measurement shows (Adam, 2026-10-21).
+as unclaimed, and a sibling may then claim and work it too. That risk is accepted. It is unmeasured
+who can edit or delete the bot's comment, which is taken to be only a person with maintain or
+admin access to the repository; task 2.19 measures it, and the risk stays accepted whatever it
+shows (Adam, 2026-10-21).
 
 A role runs several processes when the roster, which `role-config` specifies, declares more
 than one rank for it. It also runs several processes, as the process deciding sees it, while a heartbeat file of another
@@ -541,7 +749,9 @@ messages carry `Igor-Rank: 0` and `Igor-Run: <run id>`.
 
 `igor run` SHALL take over no claim message, its own rank's included: it passes over every item
 whose role label is on and that carries any claim message posted since its latest release,
-whatever rank posted it and whether or not that rank is gone. On an item with no label that
+whatever rank posted it and whether or not that rank is gone, except that it answers a stop said
+on such an item once none of its claim messages counts any longer, as any process that reaches it does (*Only the
+rank holding a claim gives it back*). On an item with no label that
 carries a gone process's claim message, it releases the item before claiming, as any process
 does (*A retired rank does not hold its items forever*). *A process recovers the claims of
 its own predecessor* does not apply to rank 0. A claim an `igor run` leaves, as when it crashes, is taken over
@@ -552,8 +762,8 @@ by a serving rank once that run is gone, as for any gone rank's claim.
 its own, as `task-execution`'s *The sweep removes trees by rank, never by age* says, and at its
 start removes those an earlier run of its role left whose process is gone. Each also
 gets a home of its own, the `HOME` its worker runs in, which #174 (`pinned-skills`) specifies
-(Adam, 2026-10-19); this change does not specify it. A run removes the home and plugin directory
-a gone run left at the same point, with its trees, as `task-execution` says.
+(Adam, 2026-10-19). A run removes the home and plugin directory
+a gone run left at its own start, with its trees, as `task-execution` says.
 
 `igor run --plan` SHALL change nothing: it claims nothing, posts nothing, writes no heartbeat and
 removes no tree.
@@ -573,8 +783,8 @@ removes no tree.
 
 #### Scenario: A run does not take over a claim
 
-- **WHEN** `igor run backend` finds a labelled item whose earliest claim message carries a rank
-  that is gone, or rank 0
+- **WHEN** `igor run backend` finds a labelled item, with no stop said on it, whose earliest claim
+  message carries a rank that is gone, or rank 0, another `igor run`'s
 - **THEN** it passes the item over and posts nothing on it
 
 #### Scenario: A crashed run's claim is recovered by a serving rank
@@ -613,8 +823,8 @@ declares, one for a role it does not name, and `h` is a hash of the item's id th
 of ranks SHALL be its owner, then each declared rank after it in ascending order, wrapping round
 to the lowest, and then rank 0, which owns no item. The first rank in that order that is
 available, as its heartbeat says (*A retired rank does not hold its items forever*), goes first
-for the item. A process judges this from its own read of the heartbeat files, and counts itself
-available.
+for the item. A process judges this from its own read of the heartbeat files, and judges its own
+availability by the same rule.
 
 A process SHALL attempt first the candidates it goes first for, then the others, each group in
 the order discovery gave. Before claiming a candidate another rank goes first for, it SHALL wait
@@ -670,7 +880,8 @@ counts holds the item.
 
 A rank that takes over a handed-over item, removing the role's label and adding it again under
 *A retired rank does not hold its items forever*, SHALL record in its claim message that the
-item was handed over. The adapter SHALL read an item whose holding claim message records a
+item was handed over, naming the person recorded as having handed the item over in the holding message it took over,
+or, where that message records no hand-over, the person who added the label. The adapter SHALL read an item whose holding claim message records a
 hand-over as handed over by a person, as it would read the person's label.
 
 #### Scenario: The owner takes a hand-over
@@ -783,12 +994,12 @@ started, a counter it increments on each write, whether the process is available
 interval the process applies, and the *state-directory id* of the state directory the process
 uses, as `graceful-handoff`'s *A handoff states what was done, what remains, and who could
 continue* (#216, `lore-search`) defines it, or no id where the process reads none in its state directory (Adam,
-2026-10-24). No rule of this change reads the state-directory id. Its first
+2026-10-24). No claim rule reads the state-directory id. Its first
 heartbeat SHALL land before its first cycle. A heartbeat file SHALL hold no time that any process
 compares.
 
-A process is available when it is free, holding no claim and not stood down, and it has a seat
-it can spend, as `seat-budget`'s *A role has a seat it can spend when the gate would choose one
+A process is available when it is free, holding no claim and not stood down, its heartbeat
+file is present, it is not gone, and it has a seat it can spend, as `seat-budget`'s *A role has a seat it can spend when the gate would choose one
 now* (#143, `read-seat-windows-from-the-stream`) defines.
 Availability only decides which rank goes first for an item (*Contention is resolved before a
 claim, not after it*).
@@ -802,8 +1013,9 @@ missing file does not change. Neither the sibling's clock nor any time in the fi
 whether it changed.
 
 A process SHALL read its role's heartbeat files before it chooses a candidate, and again before
-it verifies a claim. It SHALL read all of them, with their contents, in one request, and SHALL
-judge each sibling's file changed by its blob id.
+it verifies a claim. It SHALL read all of them, with their contents, in as few requests as the
+API allows, and SHALL judge each sibling's file changed by its blob id. Whether one request can
+return them all is unmeasured; task 4.11 measures it.
 
 A process taking over an item whose earlier claim message no longer counts, because that
 message's rank is gone, SHALL first release the item by removing the role's label and adding it
@@ -954,8 +1166,8 @@ make the process exit.
 #### Scenario: Every heartbeat file in one read
 
 - **WHEN** a process reads its role's heartbeat files
-- **THEN** it reads all of them, with their contents, in one request, and judges each sibling's
-  file changed by its blob id
+- **THEN** it reads all of them, with their contents, in as few requests as the API allows, and
+  judges each sibling's file changed by its blob id
 
 #### Scenario: A rank with no seat to spend is not available
 
@@ -1096,10 +1308,11 @@ after 90 minutes.
 
 Where several processes run one role, a process SHALL remove the role's label from an item only
 where its own claim message holds the item: the earliest claim message that counts carries its
-rank. That covers every way a claim is given back other than the end of a run: setting an item
-down after a failure before the worker that repeats (#173, `pre-worker-breaker`), and answering a
-stop. A process whose message does not hold
-the item SHALL drop out silently: it removes nothing, posts nothing, and leaves the label to the
+rank. That covers every way a claim is given back: setting an item down after a failure before
+the worker that repeats (#173, `pre-worker-breaker`), answering a stop, and the end of a run
+whose claim another rank's message now holds, where the process removes nothing, since the label
+stays with that rank. A process
+that finds another process's message holding the item SHALL drop out silently: it removes nothing, posts nothing, and leaves the label to the
 rank that holds the item. Which failures before the worker count toward setting an item down,
 and who posts the set-down, are `pre-worker-breaker`'s (#173) rules. Dropping out silently is an
 exception to *A claim that cannot be kept is given back, out loud*, since the claim is not this
@@ -1130,8 +1343,8 @@ and works it. A process that has stood down for missed heartbeats does none of
 this, and keeps its claim in silence.
 
 Because only a process whose own message holds the item withdraws, and its fresh read keeps
-the label on where a later message counts, a withdrawal releases no claim that verified after
-its test, as #173's decision 29 requires. `design.md` gives the reasoning.
+the label on where a later message counts, a withdrawal releases no claim whose message was posted and verified after
+its test, as #173's decision 29 requires.
 
 **Two exceptions to the holder rule are listed.** The second, below, is a stop on an item no
 claim message holds, answered by the process that reaches it. **The first** (Adam, 2026-10-21):

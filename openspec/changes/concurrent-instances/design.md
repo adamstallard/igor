@@ -440,9 +440,8 @@ roster still leaves it out gets the refusal. A retired rank needs no
 status of its own; the 79 that round four gave it, with `SuccessExitStatus=79`, is gone. Nothing alerts anyone: the unit's state and
 its journal say why. Measured on 2026-10-19 under systemd 252: with `Restart=on-failure` and
 `RestartPreventExitStatus=78`, an exit 0 was not restarted and the unit showed inactive, an exit
-78 showed failed, and an exit 1 was restarted. The unit shipped today, `Restart=always`, restarts
-every status, 0 included: until #82's unit change is built, a retired rank is restarted every 30
-seconds and refused each time, holding no item.
+78 showed failed, and an exit 1 was restarted. This change's unit has those lines (task 1.3), so a
+retired rank, which exits 0, stays down.
 
 The abandonment bound is therefore what frees any rank's claims, whether the rank crashed and
 was not restarted, was left in the roster with nothing running, or was removed from it.
@@ -681,7 +680,7 @@ and a verification later than one poll interval stand down in silence, so neithe
 Both now follow #173: after a failed post or verification the process makes the test, and its own
 message holding means it holds the item. A late verification works nothing, which is what the
 proposal's decision 5 needs, and gives the claim back the same way. Apart from a process whose test found another process's claim message counting, which drops
-out silently, only a process that stood down for missed heartbeats stays silent, since a sibling may already have taken the item over.
+out silently, only a process that stood down for missed heartbeats stays silent: its claim stays in place until a sibling counts it gone, and that sibling takes the item over and says so.
 
 **A withdrawal reads again before it removes the label** (decision 45, drawn up by this change from
 #173's decision 29 and confirmed by Adam on 2026-10-21). #173's test and its removal of the label are two tracker calls, and a claim posted
@@ -798,8 +797,9 @@ restating it. Adam decided on 2026-10-18 (round four) that the reasons a cycle t
 mark back, a stand-down among them, belong in that rule, and this change carries a `MODIFIED`
 block on it that adds the stand-down (decision 36). A mark appended right after triage
 passes every item the cycle meant to take, and a crash before the
-claims would leave those items untaken below every mark. This was true with one process too:
-the save today happens before the claims.
+claims would leave those items untaken below every mark. The code on `main` already saves the
+mark only after the items are worked (`report.settle` in `src/serve.ts`, and `markAfterWork` in
+`src/cli.ts`), so for one process this rule describes what the code does.
 
 **Every cycle also considers every item carrying its role's label** (Adam, 2026-10-17), whatever
 the mark. A crashed rank's claimed item can sit below every mark: a sibling saw it while the rank
@@ -871,12 +871,13 @@ pass without one. The model does not cover probes; #228's model covers the race 
 
 ### Derived timings are fixed multiples of the poll interval
 
-Decided by Adam, 2026-10-18, round four. Three timings follow the role's poll interval and have no
-setting of their own: a rank is gone after three intervals, a heartbeat is written every half
-interval, and a process stands down after two intervals without one. The in-force `role-config`
-said every interval is configurable; this change's MODIFIED *Timing values are configurable with
-stated defaults* keeps the poll interval configurable and makes these three the exception. TLC
-checked safety at these ratios only, and the rules depend on them: the stand-down threshold must
+Four timings follow the role's poll interval and have no setting of their own: a rank is gone
+after three intervals, a heartbeat is written every half interval, and a process stands down
+after two intervals without one (Adam, 2026-10-18, round four); and a probe's keepalive is
+appended every interval (decision 22, Adam, 2026-10-24). The in-force `role-config` said every
+interval is configurable; this change's MODIFIED *Timing values are configurable with stated
+defaults* keeps the poll interval configurable and makes these four the exception. TLC checked
+safety at the first three ratios only, since the model does not cover probes, and the rules depend on them: the stand-down threshold must
 be shorter than the bound, so that a process has stopped its worker before a sibling counts it
 gone. The settle interval stays configurable but must be shorter than the poll interval.
 

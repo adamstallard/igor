@@ -57,8 +57,9 @@
       backtick, a plain path, a single-quoted value holding `$` taken as written, and a
       single-quoted private key across several lines are each judged as `role-config` says, and
       the refusal in 1.6 holds nothing of the line but its number, including for a line of a
-      private key that a stray `'` left outside its value; and a name with no rank is refused as
-      1.5 says
+      private key that a stray `'` left outside its value; `TOKEN=` with no value is refused;
+      a name with no rank is refused as 1.5 says; and a name such as `../x-1`, whose role is not
+      one `role-config` accepts, is refused by the role-name check before any file is read
 - [ ] 1.8 `deploy/igor.service` sets `StateDirectory=igor`, and working trees are made under
       `<state dir>/trees`, where the state directory is as #216 (`lore-search`, its decision 105)
       defines it: `$STATE_DIRECTORY`, which `StateDirectory=igor` sets, and otherwise
@@ -71,7 +72,8 @@
       verification compares the run id too. A sibling judges a run's claim messages gone by that
       run's own file. It passes over every labelled item that carries any claim message posted
       since its latest release, whatever its rank and whether or not that rank is gone, posting
-      nothing. It removes its heartbeat file as it exits, and a serving process removes a run's
+      nothing, except that it answers a stop said on such an item once none of its claim messages
+      counts any longer. It removes its heartbeat file as it exits, and a serving process removes a run's
       file once it counts that run gone (decision 54). It spends only `IGOR_RUN_TOKEN`; #171's tasks build that spending. `igor run --plan` writes no heartbeat, claims nothing and removes no
       tree. Test: a run beside a serving rank 1 starts at once and writes its heartbeat before
       its cycle; a run passes over an item held by a gone rank and one held by rank 0; two runs
@@ -118,8 +120,9 @@
       read from the item's label events; a message in the release's second does not count, and
       the item is claimed at a later cycle. No process waits for the release's second to pass
 - [ ] 2.10 A taker's claim message on a handed-over item carries a second trailer, after
-      `Igor-Rank:`, recording the hand-over, exactly as below, where `<login>` is the person who
-      added the label; and the adapter reads an item whose holding claim message carries it as
+      `Igor-Rank:`, recording the hand-over, exactly as below, where `<login>` is the person
+      recorded as having handed the item over in the holding message it took over, or, where that
+      message records no hand-over, the person who added the label; and the adapter reads an item whose holding claim message carries it as
       handed over by that person:
 
       ```text
@@ -246,11 +249,16 @@
       again); and that the abandonment bound never shortens a run: a run longer than
       three poll intervals keeps its rank counted
 - [ ] 4.9 While it works a `condition-backoff` probe item, the process that took the probe
-      appends a keepalive row to the execution log every poll interval, naming its probe row; a
+      appends a keepalive row to the execution log every poll interval, from its heartbeat
+      timer, naming its probe row, and stops the probe's worker and gives the claim back where
+      two keepalive appends in a row fail, an append counting as failed where it has not landed
+      within half a poll interval (decision 61); a
       probe lapses once 90 minutes, three of the maximum poll interval, pass since its latest
       keepalive row, or since its probe row where it has none, instead of after `SWEEP_AFTER_MS`
-      (decision 22). #101's code is on `main`, so this change's build makes the edit. Tests: a
-      probe worked for three hours with keepalives does not lapse; a probe whose rank crashed
+      (decision 22). #101's code is on `main`, so this change's build replaces its
+      `SWEEP_AFTER_MS` lapse with the keepalive lapse. Tests: a
+      probe worked for three hours with keepalives does not lapse; a prober whose keepalive
+      appends fail twice in a row stops its worker; a probe whose rank crashed
       lapses after 90 minutes for a process of another role
 - [ ] 4.10 A process's first heartbeat lands before its first cycle
 - [ ] 4.11 A process reads its role's heartbeat files before choosing each candidate and again
@@ -290,10 +298,10 @@
       does, keeps writing heartbeats meanwhile, and then exits as 4.25 says. Where the
       configuration read at a cycle fails a check a starting process makes, the process goes on
       under the last configuration that passed and raises #208's `lore:config:<role>`, naming
-      the failing file and check, of the read-cleared kind #171 (`seat-files`) defines in
-      `stuck-conditions`; it never exits for it. The condition opens and clears by #208's rules:
-      only a passing read of the refused commit or one descending from it, or of a head that no
-      longer holds it, clears it, and a commit already known does not reopen it. A roster that
+      the failing file and check; it never exits for it. Whether it is of the read-cleared kind
+      #171 (`seat-files`) defines is open (proposal, *Still open*). The condition opens, clears
+      and does not reopen exactly as #208's `lore-pull` requirements say, its limits on clearing by a head that no
+      longer holds the refused commit included; this task restates none of them. A roster that
       drops the process's own rank is no failed check: that read passes and retires the rank.
       Whichever of #171, #208 and this build lands last wires the condition to those rules. Each
       process applies the newest lore commit it has fetched, with no coordination between ranks.

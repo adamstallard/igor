@@ -8,7 +8,7 @@ releasing. Silence after a claim MUST NOT be a permitted outcome, because the cl
 others to stand off.
 
 Where several processes run one role, a process that has stood down for missed heartbeats, or
-whose claim message does not hold the item, posts nothing, an exception that `work-claiming`'s *A claim that cannot be kept is given back, out loud*
+that finds another process's claim message holding the item, posts nothing, an exception that `work-claiming`'s *A claim that cannot be kept is given back, out loud*
 states.
 
 **A stop directed at the Igor is exempt.** Stop releases the claim immediately and posting a

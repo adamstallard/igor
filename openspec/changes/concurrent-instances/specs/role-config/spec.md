@@ -97,11 +97,19 @@ that identity's credentials, naming any variable that is missing.
 ### Requirement: Timing values are configurable with stated defaults
 
 Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
-value someone guesses differently each time. The exceptions are the maximum poll interval, the
-three derived timings below, and two timings of #228 (`probe-claim`) that its `stuck-conditions`
-requirement *Exactly one Igor takes a due probe, decided by the log after it writes* fixes in
-code: the append deadline, how long an Igor waits for a probe row to land, and the probe settle
-interval it waits before reading who decides. The defaults are: a **settle interval** of 10 seconds before a claim
+value someone guesses differently each time. The exceptions, none of which is configurable, are:
+
+- the maximum poll interval, below;
+- the four timings derived from the poll interval, below;
+- #228's (`probe-claim`) append deadline, how long an Igor waits for a probe row to land, which
+  its `stuck-conditions` requirement *Exactly one Igor takes a due probe, decided by the log
+  after it writes* fixes in code;
+- #228's probe settle interval, the wait before reading which probe row decides, fixed there
+  too;
+- the probe lapse, three of the maximum poll interval, which `stuck-conditions`' *A probe lapses
+  when its Igor stops keeping it alive in the log* fixes.
+
+ The defaults are: a **settle interval** of 10 seconds before a claim
 is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
 interval** SHALL be configurable too, with a default of 10 minutes.
 
@@ -120,12 +128,12 @@ maximum.
 These defaults, unlike the maximum, are starting points to tune against observation, not derived values, and SHALL be
 recorded as such rather than presented as considered.
 
-Three timings are the exception: each SHALL follow the role's poll interval, with no setting of
-its own: the *abandonment bound*, three intervals, each measured as `work-claiming`'s *A
+Four timings are the exception: each SHALL follow the role's poll interval, with no setting of
+its own: the probe keepalive, appended every interval as `stuck-conditions` says; the *abandonment bound*, three intervals, each measured as `work-claiming`'s *A
 heartbeat declares its process's poll interval* says, so up to three of the maximum after a
-restart or a lost state branch; the heartbeat period, half an interval; and
+restart or a lost state branch, either of which leaves a watcher with no declaration; the heartbeat period, half an interval; and
 the stand-down threshold, two intervals. `work-claiming` states the rule each belongs to.
-Changing the poll interval scales all three together. Where a process's poll interval has changed
+Changing the poll interval scales all four together. Where a process's poll interval has changed
 since it started, `work-claiming`'s *A heartbeat declares its process's poll interval* says which
 interval each counts in.
 
@@ -142,9 +150,11 @@ interval each counts in.
 
 #### Scenario: The derived timings follow the poll interval
 
-- **WHEN** a role sets its poll interval to 4 minutes
-- **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, and it
-  stands down after 8 minutes without writing one
+- **WHEN** a role sets its poll interval to 4 minutes, every process of it applies that, and a
+  watching process has seen its sibling declare it
+- **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, it
+  stands down after 8 minutes without writing one, and a process working a probe appends a
+  keepalive every 4 minutes
 
 #### Scenario: A poll interval above the maximum is refused
 
@@ -159,7 +169,8 @@ interval each counts in.
 
 #### Scenario: A derived timing has no setting
 
-- **WHEN** a role file sets the abandonment bound, the heartbeat period or the stand-down threshold
+- **WHEN** a role file sets the abandonment bound, the heartbeat period, the stand-down threshold
+  or the probe keepalive interval
 - **THEN** the role's file under `roles/` is refused, naming the key, as for any key that file
   does not read
 
@@ -208,7 +219,7 @@ instance is `igor@<role>-<rank>`, such as `igor@generalist-2`, and it starts
 `igor serve <role>-<rank>`. The rank SHALL be the last dash-separated part of the name, so a
 role's name may itself contain dashes. `igor serve` given a name whose last dash-separated part
 is not a whole number from 1 written in decimal with no leading zero SHALL refuse to start,
-as for `02`, saying the name is `<role>-<rank>`, so each rank has one spelling. The
+as for `02`, saying the name must have the form `<role>-<rank>`, so each rank has one spelling. The
 role's GitHub App identity SHALL be the same for every rank: no rank has an App of its own.
 
 A role's name SHALL match `[a-z][a-z0-9-]*`: a lowercase letter, then lowercase letters, digits
@@ -229,12 +240,12 @@ Loading the configuration SHALL refuse any other role name, naming the role.
 #### Scenario: A name without its rank is refused
 
 - **WHEN** `igor serve generalist` starts
-- **THEN** it refuses to start, saying the name is `<role>-<rank>`, such as `generalist-1`
+- **THEN** it refuses to start, saying the name must have the form `<role>-<rank>`, such as `generalist-1`
 
 #### Scenario: A rank with a leading zero is refused
 
 - **WHEN** `igor serve generalist-02` starts
-- **THEN** it refuses to start, saying the name is `<role>-<rank>`
+- **THEN** it refuses to start, saying the name must have the form `<role>-<rank>`
 
 #### Scenario: A role name outside the allowed characters is refused
 
@@ -258,7 +269,7 @@ written; it may span lines, as a private key does, and cannot itself hold a sing
 the file never closes is refused. A value is plain when every character in it is a
 letter, a digit, or one of `_ . / : @ -`. `igor serve` SHALL refuse to start on any other line,
 naming its line number and nothing of its content, since any line of the file may be part of a
-secret (proposal, decision 59). A plain value SHALL hold at least one
+secret. A plain value SHALL hold at least one
 character. Before it builds the path, `igor serve` SHALL check that the role name is one
 `role-config` accepts, so that the path names a file in `/etc/igor/`. A key the file sets SHALL take the place of
 the same key in the environment `igor serve` started with.
@@ -293,6 +304,17 @@ the same key in the environment `igor serve` started with.
 - **WHEN** `/etc/igor/backend.env` holds `GITHUB_APP_PRIVATE_KEY='` on one line, the key's lines
   after it, and a closing `'` at the end of the last
 - **THEN** `igor serve backend-1` reads the whole key, line breaks included
+
+#### Scenario: An empty value is refused
+
+- **WHEN** `/etc/igor/backend.env` holds the line `TOKEN=`
+- **THEN** `igor serve backend-1` refuses to start, naming that line's number
+
+#### Scenario: A role name that leaves `/etc/igor/` is refused before any file is read
+
+- **WHEN** `igor serve ../x-1` is started
+- **THEN** it refuses to start, saying the name must have the form `<role>-<rank>`, and reads no file outside
+  `/etc/igor/`
 
 #### Scenario: A quote that never closes is refused
 

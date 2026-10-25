@@ -167,7 +167,7 @@ than the look-back a source with no watermark gets.
 A cycle SHALL append its mark only after it has attempted every candidate it will attempt, and a
 cycle whose process crashes first appends none. A cycle that stops early, a cycle whose process stood down
 included, holds its mark back as *Watermarks reduce reconsideration without governing it*
-(`condition-backoff`, #101, as this change modifies it) says.
+(`condition-backoff`, #101) says, a stand-down among the reasons it lists.
 
 #### Scenario: A lagging rank holds the mark down
 
