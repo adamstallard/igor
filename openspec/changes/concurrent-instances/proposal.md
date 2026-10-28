@@ -5,7 +5,8 @@ rewrote some of them on 2026-10-24, each marked with that date, such as 22 and 4
 he also approved 53, 54, 56 and 57, which this change drew up, and made 55 and 58. The agents
 coordinating this work decided 59 and 61 that day. They did so under a rule Adam set, kept
 outside this repository, on which questions they may settle without him, and the two stand until
-he says otherwise. They also made 60 and withdrew it, as *Still open* records.
+he says otherwise. They also made 60 and withdrew it, as *Still open* records. On 2026-10-28
+Adam made 62 and 63, and the agents made 64 to 68 under the same rule.
 `design.md` gives the reasoning for each. Decisions 39 to 52 are his answers of 2026-10-21.
 This change drew up 45 to 48 from what other changes reported to it, and Adam confirmed them that
 day. This change drew up 53, 54, 56 and 57 from consistency reads on 2026-10-24, and Adam approved
@@ -383,6 +384,52 @@ settle**
     cheap to reverse, so the agent coordinating this work decided it under the rule Adam set for
     questions it may settle.
 
+**Decided by Adam on 2026-10-28**
+
+These answer questions the consistency read of 2026-10-21 had left for him in *Still open*.
+
+62. **A mention whose answer opens an issue or acts on a chosen option goes through a claim
+    first, like any item.** Under #140 (`directed-interaction`), answering a mention can open an
+    issue or carry out an option the person chose. A plain reply stays unclaimed under decision
+    37, since a second reply is harmless; an answer that acts would act twice if two ranks gave
+    it.
+63. **Igor detects two processes serving one rank, through the heartbeat.** Each process
+    rewrites its rank's heartbeat file, with a counter it increments on each write. A second
+    writer of the same file shows as that counter going backwards under the same process id, or
+    as another host or process id writing the file. The rank then stops, with a condition naming
+    the hosts involved. This replaces task 4.24's reading that keeping one serving process per
+    rank is the operator's job; task 4.24 still says that until it is rewritten. The model has no
+    hosts, so a task and a test cover this, not TLA+.
+
+**Decided on 2026-10-28 by the agents coordinating this work, under the same rule**
+
+64. **A set-down keeps the label, but the deferral wins** (one good option). A *set-down* is
+    #173's deferral of an item after repeated failures before its worker; under decision 52, a
+    third claim in a row whose claim messages cannot be read is set down, and the role's label
+    stays on it. A deferred item is passed over before claiming, even while labelled, until its
+    deferral ends or a person adds the label again. Otherwise every cycle would consider the
+    labelled item, as every cycle considers each item its role's label holds, and the unreadable
+    claim would be tried again each cycle.
+65. **#173's refusal and set-down posts take decision 42's time bound** (one good option). The
+    refusal is the post a refused run makes when it gives its claim back; the set-down post says
+    the item is deferred. Decision 42 lets a process whose claim message failed to post remove
+    the label only within half a settle interval of setting it, so that no sibling's claim comes
+    after. Each of the two posts is made only within that same half settle interval, for the
+    same reason.
+66. **#171 is asked to let a read-cleared condition take clearing rules** (already answered by
+    #208's request). #171 (`seat-files`) defines a *read-cleared* kind of condition, one that
+    clears on any later passing read, and lets a rule citing it add no clearing rules of its own.
+    #208's `lore:config:<role>` needs its own limits on clearing, so #171's definition should
+    allow a citing rule to add them, as #208 asked. This is reported to #171, which decides.
+67. **A mention while no rank is available is answered by its hash owner, with the time its
+    seat's budget resets** (already answered: `docs/architecture.md` promises that an Igor out
+    of budget says so with the reset time).
+68. **A run id starts with a letter** (one good option), amending decision 44's reading of a run
+    id as eight lowercase letters and digits. A rank is digits only and a role's name may end in
+    a dash and digits, so `heartbeats/web-0-12345678.json` reads both as role `web`'s run
+    `12345678` and as role `web-0`'s rank 12345678; a run id that starts with a letter cannot
+    read as a rank.
+
 **Still open:**
 
 - **Measurements the requirements rest on:** requests per cycle per rank against the App's rate
@@ -420,28 +467,12 @@ settle**
     rank's latest line keeps a gone rank's carried ids.
   - #173 names the claim-window test against claim messages "of another rank"; under decision
     39 two runs are both rank 0, so the test compares run ids too, as #173's decision 22 expects.
-- **For Adam, from the 2026-10-21 consistency read:**
-  - **A set-down that keeps the label.** Under decision 52 a third unreadable claim sets the
-    item down but leaves the label, and every cycle considers each item its role's label holds,
-    whatever the mark. Whether the deferral or the label wins at the next cycle is unsaid.
-    *Recommendation:* a deferred item is passed over before claiming even while labelled, until
-    its deferral ends or a person adds the label again.
-  - **Whether `lore:config:<role>` is of #171's read-cleared kind, which is open.** Decision 47
-    has it open and clear as #208 says, but #171's kind clears on any later passing read and lets a citing rule add no clearing rules; #208's decisions 13, 36 and
-    37 have passing reads that clear nothing. *Recommendation:* #171's definition makes room for
-    clearing rules, as #208 asked.
-  - **A mention answered twice may act twice.** Under #140 an answer can open an issue or act on
-    a chosen option, so decision 37's harmless duplicate reply can become two issues.
-    *Recommendation:* a mention that opens an issue or acts goes through a claim.
-  - **A mention while no rank is available waits,** where `docs/architecture.md` says an Igor
-    out of budget says so with the reset time. *Recommendation:* the hash owner answers with the
-    reset time when no rank has a seat to spend.
-  - **One serving process per rank is an operator invariant nothing detects** (task 4.24). Two
-    hosts running one rank each re-work the other's claims. *Recommendation:* accept it as a
-    decision, with the docs saying so.
-  - **A run id can read as a rank.** `heartbeats/web-0-12345678.json` is both role `web`'s run
-    and role `web-0`'s rank 12345678. *Recommendation:* a run id starts with a letter, amending
-    decision 44's reading.
+- **Decisions 62 to 68 are recorded here and in `design.md` only.** The spec deltas and tasks
+  that follow from them, the rewrite of task 4.24 among them, are still to be written, and so
+  are the notes on the TLA+ model in `design.md`. Writing decision 63 into the spec must settle
+  how a counter that went back under a process's own id, which decision 49 reads as a rolled-back
+  state branch, is told from a second writer, and what the condition names where both writers
+  run on one host.
 - **For the next revision, from the same read:** whether a rank whose message stopped counting,
   or that stood down after its worker ended, may still publish, which #153's post-worker steps
   also meet; #150's actionable approval past gate one, which decision 34 would have start a

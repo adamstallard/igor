@@ -881,6 +881,40 @@ safety at the first three ratios only, since the model does not cover probes, an
 be shorter than the bound, so that a process has stopped its worker before a sibling counts it
 gone. The settle interval stays configurable but must be shorter than the poll interval.
 
+### Decisions of 2026-10-28
+
+The consistency read of 2026-10-21 left seven questions for Adam, listed in the proposal's
+*Still open*. Adam answered two on 2026-10-28, and the agents coordinating this work settled the
+five that had one good option or an answer already given (proposal, decisions 62 to 68). The
+spec deltas and tasks that follow from these decisions are still to be written.
+
+- **A mention that acts goes through a claim** (decision 62, Adam). Decision 37 lets a mention
+  go unclaimed because a second reply costs nothing. Under #140 an answer can open an issue or
+  carry out an option the person chose, which is not harmless twice, so such an answer takes the
+  claim any item takes.
+- **Two processes on one rank are detected** (decision 63, Adam). A second writer of a rank's
+  heartbeat file shows as the file's write counter going back under the reader's own process id,
+  or as another host or process id writing it; the rank then stops with a condition naming the
+  hosts. The model has no hosts, so a task and a test cover it.
+- **The deferral wins over the label** (decision 64). A set-down, #173's deferral of an item
+  after repeated failures before its worker, follows a third claim in a row whose claim messages
+  cannot be read, and leaves the role's label on. Every cycle considers each labelled item, so
+  without this rule the unreadable claim would be tried again every cycle; a deferred item is
+  passed over before claiming until the deferral ends or a person adds the label again.
+- **The refusal and set-down posts share decision 42's bound** (decision 65). Decision 42 lets a
+  process whose claim message failed to post remove the label only within half a settle interval
+  of setting it, so that no sibling's claim comes after; #173's refusal and set-down posts take
+  the same bound, for the same reason.
+- **#171 is asked to let a read-cleared condition take clearing rules** (decision 66). #171's
+  read-cleared kind clears on any later passing read and lets a citing rule add none, while
+  #208's `lore:config:<role>` needs its own limits; #208 asked #171 to allow them, and this is
+  reported to #171, which decides.
+- **A mention with no rank available gets the seat's reset time** (decision 67), from its hash
+  owner, as `docs/architecture.md` promises.
+- **A run id starts with a letter** (decision 68). A rank is digits only and a role's name may
+  end in a dash and digits, so a run id of digits could make a run's heartbeat file name read as
+  another role's rank, as `heartbeats/web-0-12345678.json` does.
+
 ## Roads not taken
 
 **A shuffled candidate order.** Reduces collisions probabilistically and still produces
