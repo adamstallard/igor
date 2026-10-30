@@ -311,9 +311,104 @@ and names `propose` as the next step, and `promote --by <you>` repairs one that 
 without a pull request, recording whoever ran it as the approver.
 
 
-Firing is **unbidden**. The worker never issues a query or elects to search; matching
-entries are injected before it runs. This is the property that distinguishes the design
-from RAG, and it sits entirely on the *condition* side — the payload mechanism is ordinary.
+Firing is **unbidden**. The worker never has to issue a query: matching entries are injected
+before it runs. This is the property that distinguishes the design from RAG, and it sits
+entirely on the *condition* side — the payload mechanism is ordinary.
+
+Every worker is also offered a search over the store, `igor lore-search`, for example to find
+an entry that firing did not inject because the role's in-scope entries exceed the firing
+budget (see the budget paragraphs below). The worker passes the command a question's text or
+search terms on its standard input. Its Igor runs the search over the lore store it injects
+from and returns the results. igor runs the search because the worker cannot: its shell may
+run only the commands its role lists, which do not include the inquisitor skill's script, and
+the open pull request #175 designs a worker that cannot read the lore checkout under `igor
+serve`. The command is offered whatever the role's `commands` say, and it is read-only: it
+gives the worker no file access, command or credential it lacked. Under `igor run` the worker
+runs as the developer's own user and can read and write the whole lore checkout. It could
+plant an `active` entry there, which would fire on the next run, show in a search, and pass
+the check the Igor makes before pushing a citation, that the cited entry is `active` and in the
+role's scope (§3.4.1). That is possible because `igor run` reads the checkout as it finds it,
+local edits included. It is accepted, since `igor run` runs on the developer's own trusted
+machine. `igor serve`, where #175's design bars the worker from the checkout, is where the
+boundary holds.
+
+The search matches, ranks and caps by the inquisitor skill's own rule for its first filter:
+the query's terms against an entry's claim, conditions and body, and against a question file's
+question text, with no embedding or model, ranked by how many terms each matches, and at most
+20 come back, with a note when more matched.
+
+The inquisitor skill's script learns that it runs during an Igor's run from `IGOR_RUN`, which
+the Igor sets to `worker` in a worker's environment and to `igor` in its own inquisitor run's.
+The variable carries no secret. The script then reads no lore clone, pushes nothing itself, and
+searches lore only through `igor lore-search`. An Igor whose work is stopped by a question
+it cannot settle runs the inquisitor skill itself, with no worker (§3.4.1); that run searches
+through `igor lore-search` too, under the same rules.
+
+During an Igor's run, scope binds a search exactly as it binds firing: an entry whose scope
+does not cover the role is never returned (§4.2.2). An entry scoped to a project's repository
+is also returned only when the item's repository is no more visible than that repository, so
+a worker on a public item never finds an entry about a private one by searching. Firing
+applies the same filter, so such an entry is not injected either, and does not count toward
+the firing budget. The repository a scope such as `project:api` names is the repository the
+role works whose short name, the part after the `/`, is `api`; where two share that name, it is
+the more private of them. `igor lore-search` also reads the `questions` branch of the
+destination repository, as the inquisitor skill's own search does. The destination repository
+is the repository the configuration key `destination` names; it holds the lore store and
+`igor-state`. That branch holds
+question files (the inquisitor calls them log files), each logging a question an agent asked
+or decided for itself, and miss files, each logging a question a person said should have been
+settled without asking them. Each file names the repository it was asked from, but its
+question concerns the organization or project, so scoping it by that repository would hide an
+organization-wide answer from every other role. Every file on the branch is therefore in scope
+for every role whose Igor uses that destination repository. `igor lore-search` still returns a file
+only when the repository of the item the run works is no more visible than the file. A file
+an Igor pushed is as visible as the more private of the repository it names and the repository
+of the item whose run pushed it, which the Igor records in the file's `asked_from` key. A file
+from a person's own session has no `asked_from`, and is judged by the repository it names. Without that key, a
+worker on a private repository could write that repository's details into a file whose
+`repository` key names a public repository, and the search would show the file to workers on
+public items. A worker could carry what it read into its pull request, and filtering what it is
+given is the only certain guard. The rule ranks visibility, not readership, so a file about
+one private repository can reach a worker on another. That is a known limit: a team's destination
+repository serves one team, whose private repositories usually share readers, and comparing
+collaborator lists on each search would be costly and brittle.
+
+Under `igor serve`, the Igor fetches the `questions` branch when a run starts, and every
+search in that run reads that copy, so a run's results do not change while it works. Under
+`igor run` a search fetches nothing: it reads the branch as it was last fetched. The only
+fetch `igor run` makes from the destination repository is of the `questions` branch, when the Igor
+pushes a run's citations or question files (§3.4.1), and it applies nothing it fetches to the
+lore checkout, so lore entries are still read as the checkout holds them.
+
+A question file holding an answer is labelled an answer only when it passes the authority
+checks the inquisitor skill's spec states, such as that the person who answered has write
+access to the destination repository. Those checks read GitHub, and the worker has no GitHub login,
+so the Igor runs them itself, as its App. They also read the relay files in the destination
+repository as of the last commit that open pull request #208's lore read applied. That read
+checks each fetched configuration commit and applies only one that passes, so a refused
+commit's relay files never count, and neither does the checkout's working tree. A
+person's relay file, `relays/<login>.yaml`, lists the Apps that post that person's answers in
+comments starting `User says: `, and counts only when its last change came from that person:
+a merged pull request they authored, or a commit GitHub verifies as theirs. The checks never
+count an Igor's App as a relay App, even where a relay file lists it: an Igor's App slug always
+starts with `igor-`, which igor checks at startup, and no App with that prefix counts as a
+relay. So text an Igor posted never proves a person's answer. One check is that the comment the file links to
+matches the recorded answer. The Igor judges it in code, by the inquisitor spec's rule: once
+list markers and inline markup are removed from both texts, each run of whitespace, line
+breaks included, becomes one space, and a leading `User says: ` and a trailing line of the
+form `Re: <URL>` are ignored, the comment must equal the file's recorded answer.
+A comment that merely contains it does not count. No model reads the comment. Whenever a check fails or
+cannot be run, the file is shown as input, something the worker may weigh but which does not
+settle the question, labelled as unconfirmed. During a run, a file that names a repository
+other than the item's is always input: its proofs show who answered, not that the answer
+belongs to the item's repository.
+
+Status does not bind a search: it may return an in-scope `provisional` or `deprecated` entry,
+labelled as not lore, and only `active` entries count as lore. A search outside an Igor's
+run, such as a person running the inquisitor skill in their own session, has no role to
+filter by, so igor sets no rule for it; the inquisitor skill's own spec, in shared-skills
+#25, sets its scope rule. A search's results come back as search output, never in the trusted
+channel that carries injected lore. A search hit is not a firing (§3.4.1).
 
 A trigger is `(condition → intervention)`. Interventions come in three kinds:
 
@@ -399,6 +494,284 @@ Neither promotion nor pruning should be automatic. Both change what an Igor know
 the thing review exists to gate, so they belong in the review queue as proposals with the
 firing history attached. The rule is a threshold and a window, and there is no basis for
 choosing either yet: it needs firing history from a real store, which does not exist.
+
+**A search hit is not a firing.** A worker may search the store (§3.3), and so may an agent
+running the inquisitor skill for an Igor. The inquisitor is a shared skill that an agent runs
+before asking a person a question. Search hits are not recorded as firings or counted anywhere.
+
+A review that proposes pruning picks the entries it calls unused by fire count alone; a count
+of zero citations is never a reason to call one unused. Citations can only hold an entry back.
+A citation records that an agent found the entry answered a question, so no person had to be
+asked, and an entry that has one is never proposed as unused, even if it never fires, for
+example while its role's in-scope entries exceed the firing budget. Whether a review proposes
+pruning or promotion, it shows each entry's citations beside its fire count, for the person
+who judges the proposal.
+
+The review reads citations from the destination repository's `questions` branch. Where that
+branch is missing, or holds no citation an Igor pushed dated within the period the review
+covers, the review shows citations as not checked, never as zero. The reason does not
+matter: every push may have failed, for example while rulesets refuse the Igor's App; every
+run may have been flagged, as a run that may have met a sensitive question is (described
+below); or the visibility rule described below may have withheld every citation. People's own
+sessions of the inquisitor also push citations there, so the branch can hold some while none
+from an Igor arrives. Were the review to count them anyway, the count would hold only people's
+citations, so an entry that Igor runs relied on could show zero.
+When the branch does hold an Igor citation from the period, the review shows each count as a
+lower bound, because the Igor does not push every citation:
+the paragraphs below list the ones it holds back. Since citations only hold an entry back, a
+citation missing from the count can only fail to hold back an entry that was cited, and the
+person reviewing the proposal judges that entry.
+
+The `questions` branch is an orphan branch of the destination repository, separate from igor's
+`igor-state`, that holds the inquisitor's questions about the organization and its projects
+(shared-skills #25). The inquisitor and the Igor both write citations there, so a review reads
+one file format, which shared-skills #25 defines for both. A citation file holds the cited
+entry's id, the day it was pushed and, for a citation an Igor pushes from a run, the run's id.
+The run's id is a random identifier that the Igor records on `igor-state`, in the run's row in
+the execution ledger, with the work item, time and outcome. That row is written once per run,
+so the id links each citation an Igor pushed to its run, and a review can show which item the
+citation came from. The run's transcript cannot serve as that link: there is one per item, and
+each run overwrites it.
+
+An entry id is unique within one lore store, while the inquisitor can be configured with
+several. During a run, `igor lore-search` reads only the Igor's own checkout, the lore store
+it injects from, so a citation's entry id names one entry.
+
+During an Igor's run, the worker reports each citation by the entry's id alone, and the Igor
+pushes them; the worker holds no credential for the destination repository. The push is bookkeeping,
+like the firing record, so the role's `allow` list does not govern it. The Igor pushes a run's
+citations only when the run publishes an artifact or ends in the Igor's handoff comment on the
+item, and only of an `active` entry in the run's role's scope, since the worker's output is
+untrusted. The inquisitor gives a question one of three categories when it is sensitive:
+`vulnerability`, `secret` or `personal`. No citation is made for such a question, since the
+cited entry would show what the question was about.
+
+A run that meets such a question stores no transcript on `igor-state`; its transcript path
+holds one line saying the transcript was withheld because the run met, or may have met, a
+sensitive question. It still writes its row
+in the execution ledger, which holds its counts of citations not pushed (described below). It
+also writes its firing record and, if the provider refused it, the refusal record described
+next. Its pull
+request body carries no excerpt of the worker's result and no transcript link. If the
+provider refuses the run over a usage limit, the record of that refusal keeps only the limit
+and reset time Igor read from the provider's reply. All of these rules for such a run, the ledger row's above included, hold because free text cannot be redacted reliably, and personal details should not reach everyone
+who can read the item or the destination repository, which holds `igor-state`. The worker's report
+carries a flag that its run met such a question, listing each category met, such as
+`personal`, once each, and marking those of the question or questions the run stopped on. igor
+takes only the three exact words, so anything else a steered worker sends counts as no
+category, and writes them to no ledger, branch, comment or label, only to the Igor's host file
+described below; they also stay in the session logs of the steps that met them, which #174
+copies onto the Igor's own host for every run, since credential redaction removes credentials,
+not those words. A run that
+ends before the Igor has its worker's completed report (its report of citations and of that
+flag, marked by the worker as whole), for any reason (refused by the
+provider, gone silent, out of time or stopped), is treated the same way. The Igor cannot tell
+whether its worker met such a question. If such a run kept its transcript, a worker steered by
+text in its item could end its run on purpose to get what it met saved.
+
+Such a run's ledger row keeps each command the worker's sandbox denied only by its name, such
+as `gh issue comment`, without its arguments: enough for the operator to decide what the role
+should allow. Its `reason` keeps only fixed words for the kind of reason, such as `error`,
+never an error message's text. For a worker killed for a limit, those words name the kind of
+hang and the limit's duration, such as `silent after 10m`. Its handoff comment on the item
+gives the same fixed words, quotes no failure detail or worker's reason, and points to the
+item's transcript path. Facts igor records itself, such as a budget's reset time, still appear
+in that comment. A flagged run, one that met or may have met a sensitive question, including
+one that ended before its completed report, posts a handoff that asks no question, even when
+the run stopped on one it could not settle: its reason reads `needs a person`, and the
+question's text never reaches the item. The handoff gets no `igor:question` label, so
+nothing routes the item to an inquisitor role. The Igor keeps the question in a file on its own host,
+`flagged-questions/<tracker>/<repo>/<item>/<name>.md` under its state directory, where `<name>`
+is random and `<tracker>/<repo>/<item>` is the item's transcript path. The state directory is
+`$STATE_DIRECTORY` where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is
+`~/.local/state/igor` when `XDG_STATE_HOME` is unset. #179's systemd unit sets
+`StateDirectory=igor`, so `STATE_DIRECTORY` is `/var/lib/igor`, and `deploy/docker-compose.yml`
+sets the variable to the same path itself. The file is readable only by the Igor's own user, and
+igor never pushes it. It records the flag's categories and, for each question the run stopped
+on, that question's category, or, for a stopped question with no category, its text, as the run's handback would have
+asked it. It names every Claude Code session log of the execution that #174 copies, one for
+every model step, taken before the reset that precedes the next, and the Igor moves those
+copies beside the file, each named with the file's `<name>` as its prefix. The operator reads a
+categorized question itself in those logs. When the file cannot be written, the handoff still
+posts, the ledger row's `reason` reads `needs a person, question not kept`, and a notice opens,
+below; the path that failed appears only in the Igor's own log on the host.
+
+Each such run puts a *flagged hold* on the item, and the item is *flagged-held* while any of its
+flagged holds is open. (#179's "held", an item a claim holds, is a different thing.) A reply does
+not release it, nor does a *cure key*, `condition-backoff`'s key for a handoff caused by the Igor's own
+setup, which would release any other item: the operator reads the
+question and decides whether the item may be worked again. Each flagged hold is identified by
+its own `needs a person` ledger row, and a later flagged run of the same item starts a hold of
+its own, with a file of its own. The *flagged-hold record* on the state branch has one entry per
+flagged hold, naming the opaque id of the state directory that holds its files, its question
+file's random name and the process that kept the hold, but never a host, so nothing about the
+host reaches the branch. Each state directory keeps that
+random id, created once. The record never expires. The `needs a person` row names the same id and
+file name, so a lost record is rebuilt in full from the ledger. A run adds its entry
+before writing any file, and its row comes last.
+
+The operator can always release an item with `igor release <tracker>/<repo>/<item>` on the
+host. An edit, relabel or change of holder by someone with write access to the item's
+repository releases it too, where the edit can be attributed, which needs #141, the change that lets igor tell who made
+an edit; until #141 lands, only `igor release` does. For an edit, the Igor process that sees it, a *rank*, one of the processes #179 runs
+for the role, or an `igor run`, appends a `release requested` row, which covers the flagged holds before it. Any
+live process whose state directory has a covered hold's id then deletes that hold's session
+logs and then its question file, by the no-follow rule below, clears its entry, and appends a
+`released` row naming the hold; `igor release` does the same for its own directory. An entry is
+cleared only once its run's `needs a person` row exists, so the run has written all its files,
+and only by deleting the file the entry names, so a directory that finds nothing, such as a
+copy taken before the question file was written, can never release a hold. A hold whose question was not kept is the exception: its entry is
+cleared by deleting its session-log copies. No process deletes in another's state directory. A run that dies
+part-way, after its entry but before its row, is cleaned up by any live process on its
+directory once #179's heartbeat shows it gone, with no request. The item is released once each
+of its flagged holds has its `released` row.
+
+Three notices tell the operator about flagged holds. Each opens on its first occurrence, stops
+no work, is rebuilt each cycle with no record of its own, and clears when no item is affected;
+`igor conditions` lists it with no item, and the Igor's log on the host names the items and
+state-directory ids. *Question not kept* is the failed write above. *Release stuck* means a
+delete was refused, or no live process answers for the hold's state directory; #179's heartbeat,
+which records each process's state-directory id, shows whether one does. *Hold mismatch* covers every way
+the record, the ledger and the files on a host can disagree: an entry whose named file is
+absent, a file no open entry names, or an open hold with no entry. Each process compares the
+record with its own directory every cycle, so a crash between a delete and a clear, a rebuilt
+record that reopens a cleared entry, a copied state directory, or a process that wrote after it
+was counted gone, all end in this one notice rather than a rule of their own. Copying a live
+state directory is unsupported. Each notice names its runbook in `docs/deployment.md`, which
+gives the `igor release` command and flag that clears it. `igor release` also releases in a
+batch, but only flagged holds that leave nothing to read: by cause, those whose question file
+and session-log copies are all absent from the directory it runs against; by id, every hold naming a directory no live process answers for; running that batch is the
+operator's statement that the directory is gone. A hold whose question file
+exists is released only by naming its item, after the operator has read it. The state branch
+is a cache that may be lost or reset, and the ledger is on it too, so losing it releases every
+flagged hold: one whose
+question was kept leaves files the mismatch notice finds, and one whose question was not kept,
+with no session-log copy left, is dropped silently. That is accepted, since it is rare and a rerun of the item meets the same
+question and is flagged-held again. An edit by anyone
+without write access, or one whose author cannot be read, leaves the item flagged-held.
+
+These rules are checked by a TLA+ model, `openspec/changes/lore-search/model/`, which the
+`tla-lore-search` workflow runs with TLC on every change to it. Ranks and `igor run`s share or
+own state directories, every write is its own step, and processes crash, retire and exit
+between any two writes; the record can be lost and a directory copied. Each rule that the model
+showed the change needs is a constant that turns it on or off, and a configuration under `negative/` turns each off and
+must find a violation. The passing configurations check that no hold is released while its
+files remain, that no process deletes outside its own directory, that an item is never worked
+while a hold is open, and that an entry is cleared only by deleting its file; that a requested
+release completes while a live process uses each hold's directory; that a part-way run is
+cleaned up; and that any mismatch on a directory a live process uses opens the mismatch notice.
+Two assumptions the spec does not promise are named as such: that a copy holds no question
+file, and that a process remembers its deletes across a crash. Each configuration that
+drops one of these assumptions checks that the mismatch notice opens instead.
+
+Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and
+`~/.claude.json` there from a template before each model step, has a worker authenticate only
+with its seat's token, so a worker runs only for a seat that names one, and copies each session
+log out, redacted, before the next reset. A flagged execution's copies are moved beside its
+kept question.
+#174's per-run home and reset keep each run's Claude state private once workers run as users of
+their own (#175).
+Until then, and always under `igor run`, the developer's own trusted machine, every worker runs
+as the same user, so one can read another's home and read or write `flagged-questions`, its
+logs and categories included; Adam accepts that.
+A worker could use that access to plant a link that sends igor's own writes elsewhere, such as
+into a working tree a pull request is pushed from. So whenever igor creates, moves or deletes a
+file under `flagged-questions`, it opens the state directory and every path component below it
+without following a link, for the destination and for the source of each move, #174's copy in
+the state directory. It does not check the directories above the state directory, since
+`$HOME` or `$XDG_STATE_HOME` may legitimately pass through a link. It refuses when any checked
+component is a link, or when an existing file is hard-linked or not a regular file. A refused
+write of the question file counts as a question not kept. A refused move of a session-log copy
+does not; igor moves the copies before writing the question file, which notes such a copy as
+missing. When `igor release` meets a refused delete, it says it failed and leaves the item
+flagged-held. igor records the path of a refused move or delete only in its own log on the host.
+
+For a flagged run's ledger row, the changed paths, and the actions the role's `allow` list
+refused, which differ from the sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
+run's tool calls; for a flagged run, that
+log keeps only names and numbers: tool names, command names, exit codes, counts and timings.
+
+In these rules a run is a whole execution of an item, which can start more than one worker
+run. A model step igor runs after the worker in the same execution, such as writing the pull
+request body, counts as a worker run here. When any of its worker runs raises the flag or ends
+before its completed report, none of them keeps a transcript, and the pull request carries no
+summary of any of them.
+
+A refusal record keeps the provider's whole reply, redacted as every write to the state
+branch is, only for a run whose worker completed its
+report without the flag. Those replies are how igor's patterns for reading a limit and its
+reset time get checked, so the check works from those runs alone.
+
+An Igor whose work is stopped by a question it cannot settle runs the inquisitor skill itself,
+with no worker (#211). It pushes that run's citations by the same rules as a worker's.
+
+The inquisitor also puts question and miss files on the `questions` branch: a question file
+for a question about an organization or project, including one recording an agent's own
+choice, and a miss file. A worker cannot push these either. It reports each one, and the Igor pushes it under the citation rules: only
+when the run publishes an artifact or hands off, and never to a destination repository more visible
+than either the item's repository or the one the file's `repository` key names. Within that
+visibility rule, the role does not matter: an Igor of any role pushes such a file, whatever
+repository its key names, since organization and project questions are shared by every role. It sets the file's `asked_from` key to the item's
+repository. A worker asks a person only in its handback comment, so the run that asks
+a question never holds its answer. The answer can reach only a later run on the same item,
+once someone has replied to the handback, and it is then a comment on that item. The Igor
+therefore pushes only an unanswered question file, one recording the agent's own choice, a miss
+file, or a question file whose answer links to a comment on the run's item and whose question
+is one the Igor recorded posting in its handback. For that last kind, the Igor sets the
+file's `authority` key, which says whether the answer is a person's decision or only input,
+itself, by the same checks its search runs. When the answer is a relay App's comment, it also
+sets the file's `answered_by` to the person whose relay file lists that App. It records the
+comment's whole text, word for word, as the answer, however many sentences it holds, in the
+inquisitor's quote-line form (each line prefixed `> `, its line breaks kept): the answer line the worker wrote only
+identifies which comment holds the answer, so a worker that reports "merge it." against a
+comment reading "Do not merge it." cannot record the opposite of what the person said. It
+never keeps the `authority` or `answered_by` the worker wrote, under `igor serve` or `igor run`: a worker
+under `igor serve`, barred from the lore checkout, cannot read the relay files
+and so cannot tell whose answer a relay App's comment is, and no worker's word is proof. The Igor refuses a file that already holds `asked_from`, a key only the Igor
+writes. An unflagged run's report names no category, so the Igor cannot screen its files by
+category, and a flagged run, whose flag does name them, pushes nothing to the `questions`
+branch. So a worker steered by its item could report, from an unflagged run, a file about a
+personal or secret matter, and the Igor would push it for every
+role to find. That
+is a known limit: an honest worker never reports such a question, and the credential check
+below still refuses a file holding a credential. When it posts the handback, the Igor
+records on `igor-state` a hash of each question it asked, with the comment's id and time, and
+no question text, so the record shows a reader of the destination repository nothing of the question.
+It checks a file's question against that record, by hash, not against the comment: anyone with
+write access could later edit the comment to hold a question the Igor never asked. Any other
+file claiming a person's answer, such as one linking a comment elsewhere or answering a
+question not in that record, could be forged, or pair a real answer with another question, so
+the Igor refuses it. It never pushes one at a path the branch already
+holds, so an answered question file goes beside the unanswered one. The Igor pushes nothing to the `questions` branch from a run treated as having met a
+sensitive question, citations included. It refuses a file holding a credential. It finds one with
+the matcher that redacts every write to `igor-state` (#217). That matcher also matches the
+seat token, the model-provider credential in the worker's environment, which a matcher of
+token prefixes would miss. The Igor counts each file it does not push, by reason.
+
+No citation goes to a destination repository more visible than the repository of the item the
+run works. A citation tells its readers
+that work on that repository needed the entry, and when. `igor-state` is also a branch of the
+destination repository, and its records name each run's item, so a destination repository more visible than
+a role's repositories would expose those names too. #212, decided and not yet built, has Igor
+refuse to start when the team's destination repository is more visible than the least visible
+repository any role works. That check runs only at startup, so the citation rule still applies
+at each push.
+
+The Igor learns the destination repository's visibility by asking GitHub, which returns `private`,
+`internal` or `public`. #212's check asks at startup, and the push rules ask again at each
+push. The `publicStore` setting cannot serve: it says only whether the store is public, so
+an internal destination repository would pass for private. A destination repository whose visibility
+GitHub does not return counts as public.
+
+A review never sees a citation the Igor did not push, so none of these reaches its count:
+from a flagged run, from a run that published neither an artifact nor a handoff, refused,
+withheld by visibility, or failed to push. The Igor tallies each of these kinds in the run's
+row in the execution ledger, counting each citation once, under the first that applies in that
+order.
+
+A worker steered by text in its item could report forged citations, which would keep an entry
+from being proposed as unused. That is a known limit: a review shows each citation's run and
+item, and a person reviews every prune proposal.
 
 Deliberately not built with retrieval. Recording counts is cheap and can begin immediately;
 acting on them requires history to act on, and a threshold guessed before any data would be a
@@ -510,7 +883,7 @@ This also resolves a cost problem: recognition is high-frequency, and moving it 
 model means polling and triage consume electricity rather than a subscription seat's
 rolling allowance, leaving the whole budget for actual work.
 
-**What survives:** unbidden firing, from the worker's perspective — it never elects to
+**What survives:** unbidden firing, from the worker's perspective — it never has to
 search, it receives context that already contains what matters.
 
 **What is lost:** introspective conditions. You can recognize *situations* ("this context
@@ -732,7 +1105,9 @@ Items handed back live there as well, in `deferred.json`. A handoff releases the
 leaves no pull request, so nothing downstream stops the item returning — and the handoff
 comment itself lifts the item above the watermark, which is what makes it return. The record is
 what keeps the Igor quiet until a reply or an edit answers it, and losing it costs one repeated
-handoff.
+handoff. An item a flagged run handed back over a question is the exception: a reply does not
+answer it, and it is known from the ledger's `needs a person` rows, not from this record, so
+losing the record costs nothing (§3.4.1).
 
 **Reconciliation keeps one there too, in `reconcile.json`, and it is what makes running on every
 merge affordable.** `reconcile` used to read the destination's whole pull request history each

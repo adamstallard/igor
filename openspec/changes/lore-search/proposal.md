@@ -1,0 +1,1944 @@
+# A search over lore may be offered, and never shows an out-of-scope entry
+
+## Decisions
+
+The numbered list below records all one hundred and forty-nine decisions, which
+[#215](https://github.com/adamstallard/igor/issues/215) tracks too, and all are Adam's. Where the agent that wrote this change fitted
+details Adam had not stated, that decision says so; where Adam has since confirmed them, a
+later decision records it, and where he has not, Still open lists them. A *consistency read*
+is a check, by a fresh agent, of this change against every other spec, change and open pull
+request; Adam answered the questions each read raised. He made:
+- decisions 1, 2 and 7 on 2026-10-19, while reviewing
+  [shared-skills #25](https://github.com/adamstallard/shared-skills/pull/25);
+- decisions 3 to 6 on 2026-10-20, answering this change's first consistency read;
+- the first paragraph of decision 8 on 2026-10-20, while reviewing shared-skills #25;
+- the second paragraphs of decisions 3, 6 and 8, and decisions 9 to 11, on 2026-10-20,
+  answering the questions that this change's second to fourth consistency reads raised;
+- decision 12 on 2026-10-20. The agent that wrote this change proposed it, and Adam approved
+  it without changes;
+- later on 2026-10-20, after decisions 9 to 11, that a citation file takes the format
+  shared-skills #25 defines (decisions 110 and 111 in #25's proposal, both Adam's). Decision 10
+  now points to that format instead of stating its own;
+- later again on 2026-10-20, reviewing shared-skills #25 and this change, eight answers that
+  amend decisions 5 and 8 to 12:
+  1. the run's id stays (10, 12); its reason, as Adam restated it later that day, is that it
+     links a citation to the run's row in the execution ledger;
+  2. the citation visibility rule stays, and #212 keeps the destination repository no more visible
+     than any repository a role works (10);
+  3. the Igor pushes the citations of an inquisitor run it starts itself (9);
+  4. fire counts alone decide whether an entry is proposed as unused (5, 8);
+  5. whether a worker reports through its output or #175's outbox follows #175 (Still open);
+  6. a worker's report of a citation carries no category (9); decision 92 later puts one in
+     the flag;
+  7. this change is the one home of the Igor's push rules (9);
+  8. #153 should exempt citation commits from its trailer rule (Still open);
+- last on 2026-10-20, answering this change's open questions: the retry bound of three in
+  decision 12, which the agent that wrote this change proposed; decisions 13 and 14; and a
+  new reason for the run id in decisions 10 and 12. The reason first given, a link to the
+  run's transcript, fails because a transcript is kept per item, not per run; the new reason
+  is answer 1 above;
+- decisions 15 to 18 on 2026-10-20, answering four questions a later consistency read
+  raised;
+- decisions 19 and 20 on 2026-10-20: decision 19 answers a question the next consistency
+  read raised, and decision 20 settles how a worker's question and miss files reach the destination
+  repository;
+- decisions 21 and 22 on 2026-10-20, answering two questions this change's next consistency
+  read raised, and decision 23 that day, settling whether igor offers its workers a search;
+- decisions 24 to 26 on 2026-10-20, answering three questions the next consistency read
+  raised, and decision 27 that day, answering the next read's one question;
+- decisions 28 to 32 on 2026-10-20, answering the five questions the next read raised, and
+  decision 33 that day, answering the last read's question about decision 20;
+- decision 34 on 2026-10-20, in the session reviewing shared-skills #25, settling who runs
+  #25's authority checks during igor's search;
+- decisions 35 to 42 on 2026-10-20 and 2026-10-21, choosing among offered options for
+  questions that this change's consistency reads had left open;
+- decisions 43 to 45 in those same two days, in the session reviewing shared-skills #25;
+- decisions 46 to 53 on 2026-10-21, when he picked options in a picker, answering this
+  change's questions for him;
+- decisions 54 to 61 on 2026-10-21, in a second picker, answering the eight questions this
+  change then had for him;
+- decision 62 on 2026-10-21, in the session reviewing shared-skills #25;
+- decisions 63 to 69 on 2026-10-21, later in the session that gave decisions 54 to 61,
+  answering the seven questions this change then had for him. They were first recorded as
+  2026-10-20 by mistake in the brief that carried them; the coordinator of that session
+  corrected the date;
+- decisions 70 and 71 on 2026-10-21, answering two questions the consistency read of
+  decisions 63 to 69 raised;
+- decision 72 on 2026-10-21, a rule for shared-skills #25 and this change alike, given in
+  the session reviewing #25;
+- decision 73 on 2026-10-21, answering the question the consistency read of decisions 70 to
+  72 raised;
+- decisions 74 to 77 on 2026-10-21, answering the three questions the consistency read of
+  decision 73 raised and the open item on which ref relay files are read from;
+- decisions 78 to 81 on 2026-10-21, answering the three questions the consistency read of
+  decisions 74 to 77 raised and accepting decision 76's fitted details;
+- decisions 82 to 89 on 2026-10-21, answering the five questions the reads of decisions 78 to
+  81 raised, a gap shared-skills #25's owner raised, and a gap in worker isolation, and
+  decision 90 that day, confirming details the agent that wrote this change had fitted to
+  decisions 71, 73 and 80;
+- decisions 91 to 96 on 2026-10-21, answering the four questions this change then had for
+  him, confirming more fitted details, and settling how a refused run's reply is kept;
+- decisions 97 to 99 on 2026-10-21, answering the three questions the reads of decisions 91 to
+  96 raised, and decision 100 that day, confirming the details fitted to decision 97;
+- decision 101 on 2026-10-21, answering the question the reads of decision 100 raised, and
+  decision 102 that day, answering the three questions the reads of decision 101 raised;
+- decisions 103 to 107 on 2026-10-21, answering the two questions the reads of decision 102
+  raised, confirming its fitted details, and settling the state directory's definition and
+  this change's archive order;
+- decisions 108 and 109 on 2026-10-21, answering which rank deletes on a release by an edit
+  and confirming the `released` row on such a release and `lore-firing`'s new requirement
+  name;
+- decisions 110 to 112 on 2026-10-21, answering the two questions the reads of decision 108
+  raised and confirming its fitted details;
+- decisions 113 to 119 on 2026-10-24, confirming the details fitted to decisions 110 and 111,
+  answering the six questions the reads of those decisions raised, and citing #220's visibility
+  rules;
+- decisions 120 to 124 later that day, answering the questions the reads of decisions 113 to
+  119 raised; that round added a TLA+ model of the hold a flagged run puts on an item, and its release, in this change's
+  `model/` directory;
+- decisions 125 to 132 that day too, answering the model's first two findings, a release
+  requested while a run was still writing its files and a lost record rebuilt with only a later
+  entry, and the questions the
+  reads of decisions 120 to 124 raised;
+- decisions 133 to 139 that day too, settling the model's next two findings, a copied question
+  file and a crash before an entry is cleared, as accepted limits,
+  answering the questions the reads of decisions 125 to 132 raised, and naming this change's
+  hold the *flagged hold*;
+- decisions 140 to 145 that day too, replacing, with one notice, the case-by-case rules for when the
+  record and the files disagree, giving each notice a runbook and limiting batch release;
+- decisions 146 to 149 that day too (2026-10-24), confirming the details fitted to decisions 141, 143 and
+  144, and accepting a lost state branch as a known limit.
+
+Terms used here:
+- The *destination repository* is the repository the configuration key `destination` names,
+  where the lore store is kept, wherever that is. Unless `destination` names another
+  repository, it is the *lore repository*, the one holding the Igor configuration, as
+  [#208](https://github.com/adamstallard/igor/pull/208) and `docs/deployment.md` call it. The `questions` branch,
+  `igor-state` and the relay files are in the destination repository (decision 66).
+- An *Igor* is a teammate agent that runs one role. A *worker* is the agent an Igor starts to do
+  one item, and *during an Igor's run* means while an agent works for an Igor under its role.
+- The *inquisitor* is a shared skill (shared-skills #25) that an agent runs before asking a
+  person a question. Its first filter looks for an *answer*: something already recorded that
+  settles the question, so that no person need be asked.
+- A *citation* is an agent's record that a lore entry answered a question.
+- A question has a *category* when the inquisitor marks it sensitive: `vulnerability`,
+  `secret` or `personal`. A run is *flagged* when it counts as having met such a question
+  (decisions 13, 19, 22 and 38).
+- *Gate one* is this specification. *Gate two* is the code, which lands on the same branch once
+  Adam approves gate one.
+
+1. **Lore still reaches the worker unbidden.** Active, in-scope entries are injected before the
+   worker runs, and the worker is never required to request them.
+2. **The ban on offering a search over the lore store is dropped.** The ban's only stated reason
+   is that a worker needs no search. `docs/architecture.md` §3.2.1 justifies unbidden firing by
+   saying that better search cannot replace it, not that search does harm; of letting a worker
+   search Linear or Slack, the same section says "forbidding it buys no safety". Open pull
+   request #172 rewrites that paragraph; whichever of #172 and this change merges second updates this
+   quote.
+3. **Scope is a hard filter on a search; status is not.** During an Igor's run, a search never
+   returns an entry whose scope does not cover the run's role, nor any count or mention of one,
+   because scope decides what a role may see (*Status and scope are exact filters, always
+   applied*). A search may return an in-scope `provisional` or `deprecated` entry, labelled as
+   not lore. Only `active` entries count as lore or as answers. Status filters firing only,
+   because it is review state: an unreviewed or retired entry can still inform an agent, as long
+   as nobody takes it for reviewed lore.
+
+   A search result is not injected lore. It comes back to the agent as search output, labelled,
+   and never in the trusted channel that carries injected lore. So `lore-from-corrections`'
+   promise that no worker receives a `provisional` candidate until a person merges it, which is
+   about injection, still holds while a search shows that candidate labelled as not lore.
+4. **During an Igor's run, a search uses firing's scope rule for the run's role.** That is
+   `scopeMatches` in `src/firing.ts`: `global`, `role:` naming the running role, and `project:`
+   naming any repository the role works. This holds when the inquisitor skill runs inside an
+   Igor, and shared-skills #25 adopts the same rule for that case (its decision 64). A search
+   outside an Igor's run, such as the inquisitor in a person's own session, has no run's role to
+   filter by, and this change sets no rule for it; the inquisitor's own spec, in shared-skills
+   #25, does.
+5. **A search hit is not a firing.** It is not recorded as one and gets no counter of its own.
+   A review that proposes pruning (`docs/architecture.md` §3.4.1, still planned, with no
+   thresholds) picks the entries it calls unused by fire count alone; a count of zero
+   citations is never a reason to call one unused. Citations can only hold an entry back: an
+   entry that an agent has cited as the answer to a question, so that no person had to be
+   asked, is never proposed as unused. Whether a review proposes pruning or promotion, it shows
+   each entry's citations beside its fire count, for the person who judges the proposal. An
+   entry can be cited but never fire, for example while its role's in-scope entries exceed the
+   firing budget.
+6. **A search is a lookup over the store made to find lore or an answer for an agent.** A check
+   that compares a candidate against the store to avoid a duplicate, as `lore-from-corrections`
+   and `lore-from-reviews` do, is curation and not a search. It may compare against `provisional`
+   entries, and against candidates a reviewer has already rejected (`lore-from-corrections` never
+   proposes one of those again). Scope is a hard filter there too, by the role of the Igor running
+   the check. A person reading the store, as `igor list` lets them, is not a search either:
+   reviewing entries requires seeing the `provisional` ones.
+
+   Checking that a candidate's id is free is not a duplicate check. `lore-review`'s id gate, and
+   minting an id, still check against every entry and rejection in the store. During a run, a
+   collision with an entry or rejected candidate outside the run's role's scope is reported only
+   as "id taken", without naming what holds the id or saying whether it is an entry or a
+   rejection. A rejection that records no scope counts as outside the run's role's scope, for
+   the id gate and for a duplicate check alike. This rule has a limit, which nothing in this
+   change closes: an id is derived from its claim, so "id taken" still tells the run that
+   something outside its scope makes that claim.
+7. **No carve-out for one caller.** *Rejected:* allowing only the inquisitor's search. The one
+   harm a search could do is show a role entries it may not see, and decision 3 prevents that for
+   every caller.
+8. **A review reads an entry's citations from the destination repository's `questions` branch.** That
+   branch is an orphan branch of the destination repository, separate from igor's `igor-state`, holding
+   the inquisitor's questions about the organization and its projects. Shared-skills #25 moves
+   those questions there (its decision 42), and writes citations there. When the inquisitor
+   finds the answer to a question in a lore entry, so that nobody is asked, a citation of that
+   entry goes to that branch, within the limits decisions 9 and 10 set. *Rejected:* counting
+   citations in the inquisitor's per-repository question logs, which are scattered across
+   repositories, some of them worked by no Igor role.
+
+   Where the branch is missing, or holds no citation an Igor pushed (one with a run id) dated
+   within the period the review covers, the review shows citations as not checked, never as
+   zero, whatever the reason (decisions 32, 39 and 69). Otherwise it shows each entry's count as a lower bound, and says so beside the count. Missing from the count are the citations the Igor refused, withheld or could not push,
+   every citation from a run that published neither an artifact nor a handoff (decision 9),
+   and every citation from a run that counts as having met a question with a category
+   (decision 26).
+   Since fire counts alone decide whether an entry is proposed as unused (decision 5), a missing
+   citation can only fail to hold back an entry that was in fact cited; the person reviewing the
+   proposal judges that entry.
+9. **During an Igor's run, the worker reports each citation, and the Igor pushes it.** The Igor
+   pushes the citations to the `questions` branch, as the rest of the design has it: *worker
+   edits, Igor publishes*. The worker gets no credential for the destination repository. A worker's
+   report of a citation holds the cited entry's id and no category: a question with a category
+   (`vulnerability`, `secret` or `personal`, as shared-skills #25's inquisitor gives one) sends
+   no citation, so the worker never reports one (#25's decision 104). Because the worker's
+   output is untrusted, the Igor pushes a citation only of an existing `active` entry in the
+   run's role's scope. It counts every citation it does not push, by reason: refused because
+   its id names no such entry, withheld by the visibility rule in decision 10, failed to push, from a run that
+   published nothing, or from a flagged run (decision 26).
+
+   The Igor pushes a run's citations only when the run publishes an artifact, or ends in the
+   Igor's handoff comment on the item (`graceful-handoff`; #211 calls a handoff comment over an
+   unsettled question a handback, and a handback counts the same). A run that publishes neither pushes no citations, and neither does a run that counts as
+   having met a question with a category (decision 26). Pushing them is
+   bookkeeping, like the firing record and the transcripts on the state branch, so the role's
+   `allow` list does not govern it; `task-execution`'s *Only reversible artifacts are produced*
+   says so. *Rejected:* a new `allow` action for citations.
+
+   An Igor may also run the inquisitor itself, with no worker: under #211's decision 9, an Igor
+   whose work is stopped by a question runs the inquisitor's filters. The Igor pushes a
+   citation from such a run under the same rules as a worker's: only when the run publishes an
+   artifact or ends in the Igor's handoff comment on the item, only of an `active` entry in the role's scope, none for a
+   question with a category, and none past the visibility rule in decision 10.
+
+   This change's requirement *An Igor publishes the citations its worker reports* is the one
+   statement of these push rules. Shared-skills #25 points to it instead of restating them.
+10. **A citation file takes the one format shared-skills #25 defines,** in its requirement
+    *A citation file has one format* (#25's decisions 110 and 111). This change points to that
+    requirement and does not state a format of its own. As #25 states it, the file holds the
+    cited entry's id, the date and, for a citation an Igor pushes from a run, the run's id, with
+    no text or hash of the question and no person's identity. The run's id is an opaque
+    identifier that the Igor records in the run's row in the execution ledger on the state
+    branch. That row is per run and holds the run's item, time and outcome, so the id links the
+    citation to the run, and a review can show its item (decision 11). The run's transcript
+    could not serve as that link, since there is one per item and each run overwrites it; this
+    change leaves that as it is. A
+    question with a category sends no citation at all (decision 9).
+
+    No citation goes to a place more visible than the repository the question concerns, where
+    private is less visible than internal and internal less than public. A citation tells its
+    readers that work on that repository needed the entry, and when; the cited entry also shows
+    what the question was about. This rule is Adam's, given for the inquisitor and for this
+    change alike; shared-skills #25 states it for the inquisitor's citations. The Igor reads
+    the destination repository's visibility from GitHub at each push (decisions 16 and 37). A destination repository
+    whose visibility cannot be read counts as public, and a concerned repository whose
+    visibility cannot be read counts as private. During a run, the repository the question
+    concerns is the repository of the item the run works, never one the worker names.
+
+    The state branch, `igor-state`, is a branch of the destination repository too, and its firing
+    records and transcripts name each run's item. A destination repository more visible than a
+    repository a role works would show those names to its readers. Adam settled that through
+    #212 on 2026-10-20: Igor is to refuse to start when the team's destination repository is more
+    visible than the least visible repository any role works. #212 is not yet specified. Its
+    check runs only at startup, so the citation rule above still applies at each push.
+11. **A forged citation is a known limit.** Item text can steer a worker, and a steered worker
+    could report citations of any `active` entry in its role's scope, which would keep that
+    entry from being proposed as unused. It could also report a citation for a question that has
+    a category and so should send none. The Igor would push it, and the cited entry would show
+    readers of the destination repository what the question was about. A review shows each citation's run and item, so the
+    person reviewing a prune proposal can judge it. Prune proposals are always reviewed by a
+    person, and nothing else guards against a forged citation.
+12. **How the Igor dates, pushes and records citations.** Approved by Adam (2026-10-20), as
+    the agent that wrote this change proposed it:
+    - The citation's date is the date the Igor pushes it, since the worker's output is
+      untrusted.
+    - The Igor creates the `questions` branch, as an orphan, where it is missing. Shared-skills
+      #25 may create it first.
+    - A push rejected because the branch moved is retried on the branch's new tip, at most
+      three times; a citation still not pushed then counts as failed to push. Adam approved
+      the bound later on 2026-10-20.
+    - The Igor records only counts, by reason, of the citations it did not push. That record
+      never repeats worker text or says why a citation was refused, so it adds no mention of an
+      out-of-scope entry. The run's transcript, written beside it, holds the worker's output
+      and so can repeat a refused citation's id (Still open).
+    - Shared-skills #25's settled format makes the run's id opaque, rather than the item's
+      repository and number. A citation carries it so that it links to the run's row in the
+      execution ledger, which holds the run's item, time and outcome; that is the reason Adam
+      gave on 2026-10-20. He dropped the reason first approved with this decision, that an item
+      reference could show a private item's repository to lore readers who cannot read it. The
+      state branch is in the destination repository, and its records already name each item.
+
+13. **A run that meets a question with a category stores no transcript.** When a worker meets
+    a question in the categories `vulnerability`, `secret` or `personal`, the Igor writes no
+    transcript of that run to `igor-state`. It still writes the run's record, with its outcome,
+    cost, run id, item and citation counts, the firing record, and, where the provider refused
+    the run, the refusal record decision 18 allows. The same holds for an inquisitor run the Igor starts itself.
+    Free text cannot be redacted reliably, and personal details should not reach everyone who
+    can read the destination repository, where `igor-state` lives (Adam, 2026-10-20).
+
+    For such a run the pull request body carries no excerpt of the worker's result and no link
+    to a transcript, though today's body carries up to 700 characters of it (`prBody`,
+    `src/execute.ts:1178`). A record of the provider refusing the run keeps only the refusal's
+    reason, never the provider's text, which today's refusal record keeps unredacted
+    (`src/execute.ts:2133`). Adam extended the decision to both later on 2026-10-20.
+
+    The Igor learns of such a question from the worker's report: a flag saying the run met
+    one, with no question or answer. Decisions 92 and 97 add the categories met to the flag. A citation report still carries no category
+    (decision 9). The agent that wrote this change proposed the flag, and Adam approved it on
+    2026-10-20. A steered worker could leave the flag out, and the transcript would then be
+    stored; as with decision 11, nothing but the worker guards against that.
+
+14. **During a run, a candidate whose id is taken out of scope is not proposed.** When
+    `lore-review`'s id gate or minting reports a candidate's id only as "id taken" (decision 6),
+    the agent proposing it, whichever agent runs `lore-review`'s proposing during the run,
+    proposes the candidate neither under that id nor under another, and reports that
+    it was not proposed. A person may propose it outside a run, where the collision is reported
+    in full. A run cannot tell whether the id is held by an entry or by a rejected candidate, so
+    proposing under another id could put a lesson a reviewer already rejected in front of a
+    reviewer again (Adam, 2026-10-20).
+
+15. **A search during a run may find the question and miss files on the `questions` branch.**
+    The inquisitor's first filter searches them as well as lore entries. Shared-skills #25
+    calls a question file a *log file*, and sets both formats in its *A log file and a miss
+    file have one format*. Every file on that branch is in scope for every role whose Igor
+    uses that destination repository, whichever repository its `repository` key names, for the reason
+    decision 25 gives. Adam first had the key decide a file's scope,
+    then replaced that rule with decision 25 (both 2026-10-20).
+
+    The search labels a question file holding no answer, one whose frontmatter holds no
+    `authority` key, as unanswered. It labels a miss file as a miss, and neither file as an
+    answer. That matches #25's filter 1, which labels them so under #25's
+    decision 183, item 1. Adam accepted that decision in #25, so this is an alignment with
+    #25, not a new decision of his.
+16. **The Igor learns the destination repository's visibility from GitHub.** One API call returns
+    the exact visibility: `private`, `internal` or `public`. #212's startup check and the
+    citation visibility rule in decision 10 both ask GitHub, and `publicStore` no longer
+    decides it. `publicStore` says only whether the store is public, so an internal destination
+    repository would read as private, and a private item's citation would go to a repository
+    everyone in the enterprise can read. A destination repository whose visibility GitHub does not
+    return counts as public (Adam, 2026-10-20). The push rules ask at each push (decision 37);
+    this decision first had them ask once, at startup.
+17. **A citation is checked against the lore store as the run read it, not at push time.**
+    The check is decision 9's: that the cited entry is `active` and in the run's role's scope.
+    The citation then records what the run actually used, even when #208's lore pull
+    deprecates or rescopes the entry while the run is under way (Adam, 2026-10-20).
+18. **A refused run that met a question with a category keeps no provider reply.** Its
+    refusal record, under decision 13, keeps only the limit and reset time Igor parsed from
+    the reply. Every other refused run keeps the provider's whole reply, redacted as decision 96
+    says: nobody yet
+    knows where the provider puts its reset time, and those replies are how igor's limit
+    patterns get checked. Adam accepted that runs under decision 13 add nothing to that check
+    (2026-10-20). Decision 19 counts more refused runs as falling under decision 13.
+19. **A refused run that ends without a completed worker report counts as flagged.** The
+    worker's completed report is its report of citations and of decision 13's flag, marked by
+    the worker as whole; the provider's reply naming the limit is not it, and a report the
+    Igor cannot tell from a cut one counts as not completed. When the provider refuses a run
+    over a usage limit and the run ends before the Igor has its worker's completed report,
+    decision 13 applies to it: the Igor writes no transcript of it,
+    its pull request body carries no excerpt of the worker's result and no transcript link,
+    and its refusal record keeps only the limit and reset time Igor parsed. The Igor cannot
+    tell whether such a run's worker met a question with a category, since the flag would
+    have come in the report the run never completed. The refusal record is written from the
+    provider's reply whether or not a flag arrived (`src/execute.ts:2133`), so without this
+    rule such a run would keep the whole reply and its transcript.
+
+    *Rejected:* a marker file the worker writes in the run's workspace when it meets such a
+    question, which the Igor would read even from a run cut short. *Rejected:* treating such a
+    run as unflagged, keeping its whole reply and transcript. Adam accepted that these runs no
+    longer give the provider's whole reply for checking igor's limit patterns: only a refused
+    run whose worker completed its report without the flag keeps it (Adam, 2026-10-20).
+    Decision 38 extends this rule to every run that ends without its worker's completed report.
+20. **The Igor pushes the question and miss files its worker reports, under the citation
+    rules.** An Igor worker cannot push to the destination repository, so it cannot put the
+    inquisitor's files on the `questions` branch itself: a log file for a question about an
+    organization or project, including one that records an agent's own choice with
+    `authority: agent`, and a miss file. The worker reports each such file on the channel it
+    reports citations on, and the Igor pushes it under the same rules as a citation. It pushes
+    only when the run publishes an artifact or ends in the Igor's handoff comment on the item,
+    and never to a destination repository more visible than the item's repository or the repository
+    the file's `repository` key names. Decision 33 dropped a third condition, that the file's `repository` key name a
+    repository the run's role works. The
+    worker reports no file for a question with a category, and the Igor pushes none from a
+    run that counts as having met such a question under decisions 13 and 19 (Adam,
+    2026-10-20). Shared-skills #25 states the worker's side.
+
+    Two readings of the agent that wrote this change, which Adam confirmed on 2026-10-20: the
+    visibility check uses both the item's repository and the one the file's `repository` key
+    names, and the rule covers an inquisitor run the Igor starts itself.
+
+    Each file takes #25's format, which follows from #25 rather than from a choice of this
+    change's. The Igor refuses a file holding a credential, by the matcher decision 28 names.
+    It counts each file it does not push, by reason, as it counts citations.
+21. **The Igor pushes a worker's file only when it can be trusted, and never replaces one.** Of
+    the questions-branch files a worker reports, the Igor pushes only an unanswered log file, a
+    log file holding `authority: agent` and `answered_by: agent`, a miss file, or a log file
+    holding a person's answer whose `answer_link` is a comment on the item the run works
+    (decisions 24 and 30). It pushes each only at a path the `questions` branch does not already hold,
+    refuses anything else, and counts each refusal by reason. Any other file claiming a
+    person's answer could be forged, and filter 1 would then treat its question as settled with
+    no person having reviewed it (Adam, 2026-10-20).
+22. **"Run" in decisions 13 and 19 means the whole execution of an item.** An execution counts
+    as flagged when any of its worker runs reported the flag, or ended before its completed
+    report (decision 38). Then no worker run of it keeps a transcript, and its pull
+    request carries no summary or excerpt of any of them, including the first run's summary
+    that #189 would publish (Adam, 2026-10-20). #189's side is in Still open. Decision 60
+    counts the model steps after the worker as part of the run.
+23. **igor runs the search for its workers.** Every worker is offered `igor lore-search`, a
+    command igor provides, whatever its role's `commands` list, so this change amends
+    `role-config` to allow it. The worker passes it a question's text or search terms on its
+    standard input. Its Igor searches its own lore checkout's entries and the
+    `questions` branch's files, applying the run's role's scope, the status labels and every
+    other rule a search during a run follows, and returns the results to the worker as search
+    output, never in the injected-lore channel. The command is read-only, and offering it
+    widens nothing the worker may run, read or write.
+
+    The reason comes from reading the code of igor's `main`, #174 and #175, without running
+    or changing anything. A worker cannot run the inquisitor's script, since its Bash is
+    limited to its role's `commands` (`src/execute.ts:1652`). Under #175 it could not read the
+    lore checkout either, which #175's design gives mode 0750 (task 4.2 checks). It has no
+    `inquisitor.json`, the inquisitor skill's configuration file, and no `gh` login. The Igor
+    already holds the checkout and the run's scope. *Rejected:* skills declaring scripts safe for a worker to
+    run, with a read-only snapshot of lore handed to the worker (Adam, 2026-10-20).
+24. **An answer from the run's own item is pushed as a new file.** A worker on an item handed
+    back with a question, worked again after a person answered it, does hold that answer.
+    The Igor pushes its log file holding `authority: decision` or `input` when the file's
+    `answer_link` is a comment on the item the run works. It goes at a new path, beside the
+    question's unanswered log file, which stays as it is: shared-skills #25 never changes a
+    question file once pushed (its decision 140). The comment link is the proof of authority,
+    and #25's filter 1 checks that the comment's author has write access. The Igor still
+    refuses any other file holding a person's answer (Adam, 2026-10-20, amending decision 21).
+    Decision 30 adds that the file's question must be one the Igor asked.
+25. **A questions-branch file is in scope for every role whose Igor uses that destination
+    repository.** A file on a destination repository's `questions` branch concerns an organization or
+    project by definition, but its `repository` key names the one repository it was asked
+    from. Scoping it by that key would hide an organization-wide answer from every role that
+    does not work that repository, and those roles would ask again. Question and miss files in
+    a repository's own `.inquisitor/questions/` are not igor's concern here (Adam, 2026-10-20,
+    amending decision 15).
+26. **A flagged run pushes nothing to the `questions` branch, and its unparsed refusal says
+    only that the provider refused it.** A run that counts as having met a question with a
+    category, by its worker's flag or by decisions 19 and 38, pushes no citation and no question or
+    miss file. Where Igor read neither a limit nor a reset time from such a run's refusal, the
+    refusal record says only that the provider refused the run (Adam, 2026-10-20).
+27. **igor's search returns no `questions`-branch file about a more private repository.**
+    `igor lore-search` returns such a file only when the repository of the item the run works
+    is no more visible than the repository the file's `repository` key names, where private is
+    less visible than internal and internal less than public: a file about a private
+    repository never reaches a worker on a public one. A visibility it cannot read counts
+    against returning the file: an unreadable item's repository counts as public, and an
+    unreadable file's repository as private. Decision 25's scope otherwise stands. The harm is a worker
+    reposting what it read about a private repository, not reading it, since the Igor and its
+    worker may see the destination repository. A
+    worker could carry what it read into a more public place, and its pull request body
+    quotes up to 700 characters of its result (`prBody`, `src/execute.ts:1178`). Filtering
+    what a worker is given is the only certain guard, because what a worker writes cannot be
+    policed reliably. *Rejected:* checking the worker's output for copied passages before
+    publishing, which catches only verbatim copies. *Rejected:* accepting the exposure as a
+    known limit (Adam, 2026-10-20). The rule ranks visibility, not readership, which decision
+    29 accepts as a known limit. Decision 42 judges a file by its `asked_from` key too.
+28. **The Igor's credential check on questions-branch files uses #217's matcher.** It refuses
+    a file in which #217's credential redaction would replace anything: the requirement
+    [*Credential redaction replaces every credential the Igor knows*](https://github.com/adamstallard/igor/blob/fix-213/openspec/changes/redact-state-branch/specs/task-execution/spec.md),
+    which matches every seat token the Igor has read and the values of credential-named
+    variables, as well as token prefixes. One matcher then serves every write the Igor makes
+    to the state branch and to the `questions` branch, and it knows the seat token, the
+    model-provider credential in the worker's environment. Shared-skills #25's credential
+    patterns are prefixes only and miss it. *Rejected:* #25's patterns (Adam, 2026-10-20).
+    #217 has not merged (Still open).
+29. **Decision 27 ranks visibility, not readership, as a known limit.** A file about private
+    repository X can reach a worker on private repository Y, whose readers need not be X's.
+    Adam accepted that: a team's destination repository serves one team, whose private repositories
+    usually share readers, and comparing collaborator lists on each search is costly and
+    brittle (Adam, 2026-10-20).
+30. **An answer from the run's item is pushed only beside the question the Igor asked.** Under
+    decision 24, the Igor pushes a log file holding a person's answer only when its question
+    matches a question the Igor itself posted in the handback comment that the answering
+    comment replies to. A steered worker could otherwise pair a real comment, by someone with
+    write access, with a different question. #25's filter 1 checks that the comment holds an
+    answer and that its author has write access, but not which question it answers (Adam,
+    2026-10-20). Decision 41 says where the Igor finds the questions it posted.
+31. **Three rules the spec already stated are Adam's.** The agent that wrote this change had
+    put them in the spec with no decision behind them, and Adam adopted each one. A run reads
+    the `questions` branch once, as it stands when the run starts; decision 35 says when it is
+    fetched. The Igor reads the visibility of the item's
+    repository, and of the repository a file's `repository` key names, when it pushes. A
+    rejection records a scope only when its file holds the rejected candidate's `scope`
+    (Adam, 2026-10-20).
+32. **When no Igor citation reached the branch, the review shows citations as not checked.**
+    People's own sessions can put citations on the `questions` branch while none from an Igor
+    reaches it: every Igor push fails, for example while rulesets refuse the Igor's App (task
+    4.3), every run is flagged, or every citation is withheld. Each count would then leave out
+    every citation from an Igor run, so showing it as a lower bound would mislead. Where the
+    branch holds no citation an Igor pushed, the review shows citations as not checked (Adam,
+    2026-10-20). Decision 39 limits the test to the period the review covers. As first given,
+    decision 32 showed "not checked" only when, in addition, the run records counted at least
+    one citation that failed to push; decision 69 dropped that condition.
+33. **Any role may push a questions-branch file, whatever repository it names.** Decision 20
+    first pushed only a file whose `repository` key names a repository the run's role works.
+    Adam dropped that condition: organization and project questions are shared by every role
+    (decision 25), so any role may log one. Decision 27's search rule and the push visibility
+    rule still apply (Adam, 2026-10-20, amending decision 20).
+34. **igor's search runs #25's authority checks before it labels a file an answer.**
+    Shared-skills #25 states the checks once, in its requirement *Only an answer with
+    authority stops a question*, and this change points to it rather than restating them.
+    `igor lore-search` runs them on an answered questions-branch file before labelling it an
+    answer. Whenever a check fails or cannot be run, it shows the file as input, labelled as
+    #25 labels such a file, unconfirmed. The worker cannot run the checks, since they read
+    GitHub and it has no `gh` login, so the Igor does. Each read authenticates as the
+    installation of the Igor's App that covers the repository that read is from, as the
+    `surface-adapter` spec requires of every Igor call to GitHub. When no installation covers
+    that repository, or GitHub cannot be reached, the check cannot be run and the file is
+    input (Adam, 2026-10-20, in the session reviewing shared-skills #25). Decision 43 says how
+    the Igor tells that a linked comment holds the answer.
+35. **Under `igor serve` the `questions` branch is fetched when a run starts; under `igor
+    run` it is read as last fetched.** `igor run` reads lore as it finds it and fetches
+    nothing, as [#208](https://github.com/adamstallard/igor/pull/208)'s decision 28 has it,
+    and it reads the `questions` branch the same way. `igor serve` fetches the branch at the
+    start of each run. Either way a run reads one copy of the branch throughout, as decision
+    31 says (Adam, 2026-10-20/21). The search's results also say when that copy was last
+    fetched, or that it never was or could not be. That part came from #25, whose own search
+    reports when each source was last fetched so that a search of a stale copy is not mistaken
+    for a fresh one, and Adam confirmed it as his (decision 61). Decision 58 has `igor run`
+    fetch the branch to push, never to search.
+36. **A flagged run's ledger row keeps each denied command's name, without its arguments.**
+    The execution ledger row records each shell command the worker's sandbox denied, so the
+    operator can see what to allow in the role's `commands`. For a flagged run, that row keeps
+    only the command's name, such as `gh issue comment`, without its arguments: enough to
+    decide what to allow, and none of the question's text. Any other run keeps the whole
+    command, as today (Adam, 2026-10-20/21).
+37. **The destination repository's visibility is read at every push.** For the push rules, the Igor
+    asks GitHub for it at each push, one API call per push, rather than once at startup. A
+    destination repository made public while the Igor runs then gets no further citation or file of a
+    more private item. This matches [#188](https://github.com/adamstallard/igor/pull/188)'s
+    read of the store's visibility at each write (Adam, 2026-10-20/21, amending decision 16).
+38. **A run that ends without its worker's completed report, for any reason, counts as
+    flagged.** A worker run that was refused, went silent, hit the time ceiling or was
+    stopped before the Igor had its completed report counts as having met a question with a
+    category; decision 19 already said so for a refused run. A worker steered by text
+    planted in its item could crash on purpose to get sensitive content saved. For every flagged run:
+    - no transcript is written; the run's transcript path holds one line, "Transcript withheld:
+      this run met, or may have met, a sensitive question. See the action log.";
+    - #188's action log of the run's tool calls keeps only names: tool names, command names
+      without arguments, exit codes, counts and timings, and no arguments, paths, file
+      contents, messages or outputs.
+
+    Both apply to a run that reported the flag as well (Adam, 2026-10-20/21, extending decision
+    19). #188 is not merged, so this change states the
+    names-only form as the rule for a flagged run's log, and #188 must carry it (Still open).
+39. **"Not checked" looks at the period the review covers.** The review shows citations as
+    not checked when the branch holds no citation an Igor pushed dated within the period it
+    covers, where decision 32 asked whether one had ever been pushed (Adam, 2026-10-20/21,
+    amending decision 32). Decision 69 dropped the test's other half, that the run records for
+    the period count a citation that failed to push.
+40. **An unpushed citation is counted once, under the first reason in a fixed order:** the
+    run is flagged, the run published neither an artifact nor a handoff, the citation is
+    refused, it is withheld by the visibility rule, or it failed to push. Adam set the order
+    as flagged run, category, scope, visibility, push failure, to be fitted to the reasons the
+    spec has (2026-10-20/21). The agent that wrote this change fitted it so: the spec has no
+    reason of its own for a category: the Igor sees categories only in a flagged run's flag,
+    so every category comes with a flagged run, which is already the first reason; and it
+    cannot tell which category, if any, a citation's question had. So a category shows as a
+    flagged run; scope is the refused reason, since a citation is refused when its entry is not in the role's scope; and a run that published nothing goes second,
+    beside the other reason that applies to the whole run. Questions-branch files are counted
+    by the same reasons, in the same order.
+41. **The questions an answered file must match come from the Igor's own record.** When the
+    Igor posts a handback comment, it records the questions it posted there, as
+    [#140](https://github.com/adamstallard/igor/pull/140) keeps the Igor's record of what it
+    asked. Decision 30's match reads that record, never the comment's current text, which
+    anyone with write access to the item can edit (Adam, 2026-10-20/21). Decision 30
+    had two readings by the agent that wrote this change, now dropped, which read the questions
+    from the posted comment. A file's question matches a recorded one when the two are equal
+    once each is reduced as #25 reduces a question for its hash, and the questions that count
+    are those of handback comments the Igor posted on the item before the answering comment.
+    Adam settled both of these rules in the session reviewing shared-skills #25; #25's
+    decision 221 records the first. Decision 59 says where the record lives and what it holds.
+42. **The Igor records where a questions-branch file came from, and the search judges the file
+    by the more private of the two.** The Igor sets an `asked_from` key on each
+    questions-branch file it pushes, naming the repository of the item the run works.
+    `igor lore-search` treats a file as being as visible as the more private of its
+    `repository` and `asked_from`. A worker on private repository X could otherwise report a
+    file holding X's details keyed to public repository P, and a worker on a public item would
+    then be shown it (Adam, 2026-10-20/21). Shared-skills #25, which defines the file format,
+    adds the key to it in its decision 221, the same one that records decision 41's hash
+    match. Under #25 only an Igor writes the key, so the Igor refuses a worker's file that
+    already holds one.
+43. **A linked comment's match with the recorded answer is #25's rule, judged in code.** #25
+    defines the rule once, in the check that proves who wrote a file's answer, and no model
+    call judges it. The Igor applies that rule (Adam, in the session reviewing shared-skills
+    #25, 2026-10-20/21). As first given, the rule was that the reduced comment contains the
+    file's answer line; decision 72 replaced containment with equality.
+44. **Adam intends that a file keyed to another repository than the item's shows as input.**
+    During a run, #25 shows a `questions`-branch file whose `repository` key names a repository
+    other than the item's as input, whatever its proofs: they show who answered, not that the
+    answer belongs to the item's repository. So a log file holding an answer that a run on
+    repository A pushes, keyed to repository B, never counts as an answer. During a run on A it
+    is input by that rule. During a run on B, its `answer_link`, a comment on A, proves no
+    writer, since #25 accepts only a comment in B or in the destination repository (Adam, in the
+    session reviewing shared-skills #25, 2026-10-20/21).
+45. **An Igor's App never relays a person's answer.** This is shared-skills #25's decision
+    216, which Adam gave in the session reviewing #25 (2026-10-21). #25's spec states the rule,
+    and this change's spec points to it rather than restating it. Decision 34's checks apply
+    it, so a question file whose `answer_link` is a `User says: ` comment by an Igor's App
+    shows as input. Decision 62 is how a reader tells an Igor's App: its slug starts with
+    `igor-`.
+
+46. **Decision 40's fitted order stands.** Adam confirmed how the agent fitted his order to
+    the spec's reasons: flagged run, published neither, refused, withheld, failed to push.
+47. **A denied command's name is its first words, up to three lowercase words.** Each starts
+    with a lowercase letter and holds only lowercase letters, digits and hyphens, so `gh issue
+    comment 12 --body "…"` keeps `gh issue comment`. A plain-word argument can pass as part
+    of the name, as `echo alice` keeps `echo alice`, and Adam accepts that.
+48. **A steered worker reporting a question file about a personal or secret matter is a
+    known limit.** The Igor sees a category only in a flag, and a flagged run pushes nothing to
+    the `questions` branch; a
+    steered worker that reports such a file from an unflagged run gets it pushed for every role
+    to find (decision 25). An honest worker never reports a categorized question, and #217's
+    credential check still refuses a file holding a credential.
+49. **An Igor's own inquisitor run searches through `igor lore-search` too.** When the Igor
+    runs the inquisitor skill itself, with no worker, that run's filter 1 searches through
+    `igor lore-search`, so the scope filter, decision 27's visibility filter, decision 35's
+    single fetch and decision 34's authority checks apply to it as to a worker's search, and
+    #25's script runs no search of its own beside it. #25's script could otherwise read every
+    lore repository #25's configuration lists, and a citation from that run could carry the id
+    of an entry in another store, where the same id names a different, `active` entry in the
+    Igor's own.
+    Through `igor lore-search` the run reads only the Igor's own store.
+50. **Under `igor run`, a worker can read the whole lore checkout, and that is a limit of `igor
+    run`.** #175 runs that worker as the developer's own user on their own machine, so the
+    scope filter binds its searches, not its reads. `igor serve`, where #175 bars the worker
+    from the checkout, is where the boundary holds. Decision 68 accepts writes too.
+51. **A flagged run's ledger row keeps only the kind of its `reason`:** a fixed word igor
+    sets for the kind of reason, such as `error` for a thrown error, never an error message's
+    text. Its changed file paths, the actions the role refused and the role settings that
+    would have permitted them stay as for any other run. Decision 56 lets the fixed words name
+    a hang's kind and a limit's duration.
+52. **`igor lore-search` matches plain text, as #25's filter 1 does.** It matches the query's
+    terms against an entry's claim, conditions and body and a question or miss file's
+    question text, with no embedding or model. It ranks results by how many terms each
+    matches, returns at most 20, and says when more matched. Shared-skills #25 now states this
+    rule once, for filter 1 inside and outside a run, in its requirement *Filter 1 searches
+    every place an answer is recorded* (its decision 229); this change's spec points to it and
+    keeps only that `igor lore-search` applies it.
+53. **Decision 27's visibility filter also binds `project:` lore entries in a search.**
+    `igor lore-search` returns a `project:X` entry only when the repository of the item the
+    run works is no more visible than X. Decision 54 applies the same filter to firing.
+54. **Firing applies decision 53's visibility filter too.** A `project:X` entry is not injected
+    into a worker when the repository of the item the run works is more visible than X (Adam,
+    2026-10-21). As in the search, X is the repository decision 55 names, a visibility of X the
+    Igor cannot read counts as private, and one of the item's repository counts as public. This
+    change modifies `lore-firing`'s *Status and scope are exact filters, always applied* for
+    it. The filter applies before the firing budget, as the scope filter does, so an entry it
+    keeps out neither fires nor counts toward the budget (decision 63).
+55. **A `project:X` scope names the role's source repository whose short name is X.** Where two
+    of the role's sources share that name, the more private is taken. The agent that wrote this
+    change proposed this reading, and Adam confirmed it (2026-10-21).
+56. **A flagged run's `reason` may name the kind of hang and the limit's duration.** For a
+    worker killed for a limit, the fixed words of decision 51 may keep what the base
+    `task-execution` spec has that reason say, such as `silent after 10m` or `time ceiling
+    60m`: a fixed vocabulary plus numbers, never free text (Adam, 2026-10-21, amending
+    decision 51).
+57. **The Igor reads relay files from the destination repository's default branch as last fetched.**
+    Decision 77 narrows this to the commit #208 last applied, which differs only when #208
+    refused the newest fetched commit.
+    It never reads them from the checkout's working tree, so a worker under `igor run`, running
+    as the developer's own user, cannot forge one by writing the checkout. The agent that wrote
+    this change proposed this, and Adam confirmed it (2026-10-21).
+58. **Under `igor run`, the Igor fetches only the `questions` branch, and only to push.** It
+    fetches the destination repository's `questions` branch only when it pushes a run's citations or
+    questions-branch files, to check what the branch holds and retry on its new tip, and
+    applies nothing it fetches to the lore checkout. So #208's rule that `igor run` reads lore
+    entries as it finds them still holds, and a search under `igor run` still fetches nothing
+    (Adam, 2026-10-21, amending decision 35).
+59. **The record of handback questions lives on `igor-state`, per item, as hashes.** For each
+    question the Igor posts in a handback comment, decision 41's record keeps the question
+    reduced and hashed as shared-skills #25 reduces and hashes a question, with the handback
+    comment's id and time, and no text of the question; decision 41's match compares hashes
+    (Adam, 2026-10-21). A reader of the destination repository, which holds `igor-state`, then sees no
+    question's text in the record, even for a flagged run or an item more private than the
+    destination repository. Decision 65 accepts that a hash can be guessed.
+60. **#153's model steps after the worker are part of the run.** Decision 22's "run" means the
+    whole execution, so it covers the steps
+    [#153](https://github.com/adamstallard/igor/pull/153) adds after the worker, such as
+    writing the pull request body. If any step meets a sensitive question, or the execution
+    ends without a completed report, the whole execution is flagged (Adam, 2026-10-21). Each
+    such step counts as a worker run for decisions 22 and 38, so it reports the flag and a
+    completed report as a worker does (decision 64).
+61. **Decision 35's last-fetched note is Adam's.** A search's results say when the `questions`
+    branch was last fetched, or that it never was or could not be (Adam, confirmed
+    2026-10-21).
+
+62. **An Igor's App slug starts with `igor-`.** igor requires it: the deployment guide says
+    so, and an Igor whose App's slug lacks the prefix refuses to start, naming the slug, as
+    `surface-adapter`'s *An Igor that cannot act as its App does not start* refuses for its
+    other startup checks. Shared-skills #25 never counts a relay-file entry whose slug starts
+    with `igor-` as a relay, so an Igor's App can never count as a person's relay App
+    (decision 45). It replaces the idea of listing the Igors' Apps in a `relays/_igor.yaml`
+    file (Adam, 2026-10-21, in the session reviewing shared-skills #25).
+
+63. **An entry that firing's visibility filter keeps out does not count toward the firing
+    budget.** It neither fires nor counts toward the budget, 4000 tokens unless configured
+    (`DEFAULT_LORE_BUDGET_TOKENS`, `src/firing.ts:17`), so the budget is judged on what can
+    fire. The agent that wrote this change proposed this reading of decision 54, and Adam
+    confirmed it (Adam, 2026-10-21).
+64. **Each model step after the worker counts as a worker run.** Each step that #153 runs after
+    the worker in an execution, such as writing the pull request body, reports the flag when it
+    meets a question with a category, and sends a completed report, as a worker does. A step
+    that sends no completed report flags the whole execution. The agent that wrote this change
+    proposed this reading of decision 60, and Adam confirmed it (Adam, 2026-10-21). #153's side
+    is in Still open.
+65. **Decision 59's hashes may be guessed.** A reader of `igor-state` could learn a short or
+    predictable question, such as "May I merge this?", by hashing likely questions. That
+    reveals nothing the handback comment does not already show, and to an audience no wider
+    than the item's (Adam, 2026-10-21). *Rejected:* a salt or a keyed hash.
+66. **The `questions` branch, `igor-state` and the relay files live with the lore entries.**
+    When #208's `destination` names a repository other than the one holding the Igor
+    configuration, all three are in the destination repository, beside the entries (Adam,
+    2026-10-21). The agent that wrote this change resolved the naming clash this raised: this
+    change first called the repository the entries are read from the *lore repository*, a name
+    #208 gives to the configuration's repository. It now calls it the *destination
+    repository*, as `lore-store` and `lore-review` call where `destination` points, and leaves
+    *lore repository* to #208. The Igor must then fetch the destination repository, which #208
+    does not do (Still open, for #208).
+67. **The Igor records the linked comment's text as the person's answer, never the worker's
+    line.** The answer line a worker writes in a log file only identifies which comment holds
+    the answer. When the Igor pushes a log file holding `authority: decision` or `input`, it
+    writes under `## Answer` the text of the comment the file's `answer_link` points to, word
+    for word, in place of the worker's line. It writes it as #25's quote lines: each line of
+    the comment as `> ` and the line, or `>` for a blank one, keeping the comment's line breaks,
+    as #25's *A log file and a miss file have one format* sets (#25 at 9247d3c). So a worker
+    that reports "merge it." against a person's comment "Do not merge it." gets "Do not merge
+    it." recorded, never "merge it." (Adam, 2026-10-21). The comment's text is kept word for
+    word, a leading `User says: ` included; decision 72's match ignores that prefix when it
+    reads the file back. The agent that wrote this change added that the Igor checks the file
+    as pushed for credentials, since the comment's text was not in the file the worker
+    reported. Decision 70 keeps the whole comment, however long.
+68. **Under `igor run`, a worker can write the lore checkout, and that is an accepted limit.**
+    A worker running as the developer's own user can plant an `active` entry in the checkout's
+    working tree, which would fire on the next run, show in `igor lore-search` and pass the
+    citation check. That is consistent with #208's decision 28, that `igor run` reads the
+    checkout as it finds it, local edits included, and with decision 50: `igor run` runs on the
+    developer's own trusted machine. `igor serve` is unaffected (Adam, 2026-10-21, extending
+    decision 50 from reads to writes).
+69. **The review shows citations as not checked whenever no Igor citation reached the branch
+    in the period.** The reason does not matter: a failed push, flagged runs, withheld
+    citations, or anything else. Under decisions 32 and 39 as first given, "not checked" also needed a
+    citation that failed to push. While every run is flagged, or every citation withheld, no
+    push fails, so that rule never applied, and the review would have shown people's citations
+    alone as a lower bound, hiding that no Igor citation arrived (Adam, 2026-10-21, amending decisions 32 and 39, which
+    now state the rule).
+70. **A long answer is recorded whole.** Under decision 67, the person's whole comment is the
+    record, even when it holds several sentences or quotes the question before answering it.
+    Trimming it to one sentence would mean choosing which part is the answer, which brings back
+    the risk decision 67 removed (Adam, 2026-10-21). Shared-skills #25's log format at 9247d3c
+    allows it: an answer with an `answer_link` is the comment word for word, in as many quote
+    lines as it has. Adam confirmed that format in #25 (its decision 239).
+71. **A flagged run's handoff comment uses fixed words only.** When a flagged run hands off,
+    `graceful-handoff`'s comment on the item states why it stopped only in the fixed words its
+    ledger row's `reason` keeps (decisions 51 and 56), quotes no failure detail, and points to
+    the item's transcript path on the state branch instead. Today that comment quotes a
+    failure's detail (`src/handoff.ts:326`) and, for a run that declined, the worker's own
+    account of why (`src/handoff.ts:320-324`, from `declineReason` at `src/loop.ts:42`),
+    either of which could repeat what a sensitive question brought into the run (Adam,
+    2026-10-21). The agent that wrote this change fitted the rule, and Adam confirmed it (decision 90):
+    a declining worker's reason is not quoted either, and facts igor records itself, such as a
+    budget's reset time or which setting would let the run proceed, still appear, since the run
+    did not produce them. The transcript path is the item's, as there is one
+    transcript per item, and for a flagged run it holds the transcript-withheld note. This change modifies `graceful-handoff`'s *A
+    handoff states what was done, what remains, and who could continue* for it, with four new
+    scenarios. [#179](https://github.com/adamstallard/igor/pull/179) and
+    [#143](https://github.com/adamstallard/igor/pull/143) modify other `graceful-handoff`
+    requirements, so their deltas and this one do not overlap.
+72. **A logged answer is confirmed only when the linked comment equals it.** Writers record the
+    comment's own text word for word: the Igor, #25's inquisitor script and #25's answer
+    session, the tool in which a person answers logged questions, alike. A reader confirms a logged answer only when the comment its `answer_link`
+    points to, reduced, equals the recorded answer, reduced the same way. Reduced means no list
+    markers or inline markup, each run of whitespace joined to one space, a leading
+    `User says: ` ignored, and a trailing `Re: <URL>` line ignored. Containment is dropped
+    entirely, and a worker's answer line only identifies the comment. This is #25's rule,
+    decided by Adam on 2026-10-21 for both repositories; this change points to it and applies
+    it in `igor lore-search`'s authority checks.
+73. **A flagged run's handback posts no question.** A handback is a handoff that asks a person
+    the question a run could not settle. When a flagged run stops on such a question, it posts
+    decision 71's fixed-words handoff instead, which says the run needs a person, and asks
+    nothing; whoever picks up the item reruns it or looks into it. Decision 76 says where the
+    question goes and that a reply does not rerun the item, and decision 79 says who may release it, that is, let it be worked again. The run's
+    question text never reaches the item, since it is text the run produced and could reveal
+    the sensitive matter that flagged the run. The agent that wrote this change, as Adam confirmed (decision 90), gave the
+    reason such a run stopped, a question it could not settle, the fixed words `needs a person`, in the ledger row's `reason` and in the
+    handoff. Because no handback is posted, the Igor records
+    no handback question for the run (Adam, 2026-10-21). This change's `graceful-handoff` delta
+    says so, and `lore-firing`'s *An Igor publishes the questions-branch files its worker
+    reports* points to it, each with one new scenario.
+74. **`directed-interaction` names decision 73 as an exception.** `directed-interaction` has
+    an Igor that cannot act on an item as written say what it needs; a flagged run instead says
+    only `needs a person` (Adam, 2026-10-21). That change is open and this one does not modify
+    its requirement, so the exception is Still open's item *For `directed-interaction`*.
+75. **A flagged run's handoff routes nothing to an inquisitor role.** It gets no
+    `igor:question` label, and nothing reaches #211's inquisitor role; only a person picks the
+    item up (Adam, 2026-10-21). `graceful-handoff`'s delta says so, with one new scenario, and
+    Still open has an item for #211.
+76. **A flagged run's question is kept on the Igor's own host, and a reply does not rerun the
+    item.** The Igor writes the question the run would have asked to a file on its own host,
+    readable by its operator and never pushed. A person's reply on the item does not start an
+    automatic rerun: the operator reads the question and decides (Adam, 2026-10-21). The agent
+    that wrote this change fitted three details, which Adam accepted (decision 81):
+    - the file is `flagged-questions/<tracker>/<repo>/<item>.md`, with the same
+      `<tracker>/<repo>/<item>` as the item's transcript path, under the Igor's state directory: `$STATE_DIRECTORY` where systemd sets it, as
+      [#179](https://github.com/adamstallard/igor/pull/179)'s unit sets `StateDirectory=igor`
+      for `/var/lib/igor`, and otherwise `$XDG_STATE_HOME/igor`, by default
+      `~/.local/state/igor`. It is mode 0600 in directories of mode 0700, owned by the user
+      the Igor runs as, and the question of a later flagged run of the item replaces it;
+    - an edit to the item, such as a relabel, still lifts `work-triage`'s rule that a handed-back
+      item is not worked again until something answers it, so that is how the operator lets
+      the item be worked again; only a reply no longer does;
+    - under `igor run` the worker runs as the developer's own user, who is also the operator,
+      so it could read the file; that is the limit decisions 50 and 68 accept.
+
+    `graceful-handoff`'s delta states the file, with three new scenarios, and a new `work-triage`
+    delta modifies *An item handed back is not re-worked until something answers*, with one
+    new scenario and one changed.
+77. **Relay files are read from the commit #208 last applied.** #208's lore read checks each
+    commit it fetches against igor's startup checks, and applies only one that passes. The
+    relay files of a commit it refused do not count. This matches #25, where a last change
+    that cannot be verified counts no relay (Adam, 2026-10-21). The ref's name stays gate
+    two's. One new `lore-firing` scenario. Decision 78 covers the case where #208 applied none.
+78. **Where #208 has applied no commit of the destination repository, a relayed answer is
+    input.** Under `igor run`, or for a destination #208 never fetches, the relay check cannot
+    run, so a file whose answer is a relayed `User says: ` comment is pushed as `input`, never
+    as the person's decision. An answer the person gave in their own comment still counts
+    (Adam, 2026-10-21). Three new `lore-firing` scenarios, two for the push and one for the
+    search.
+79. **Only someone with write access to the item's repository releases a flagged item.** They
+    release it by an edit or a label; the operator releases it the same way and needs that
+    access like anyone else; anyone else's
+    edit leaves it held, *flagged-held* as decision 82 defines it (Adam, 2026-10-21, narrowing decision 76's release by edit). The
+    `work-triage` delta says so, with two new scenarios and one changed. Decision 104 has such
+    a release delete the item's session-log copies and question file, as `igor release` does.
+80. **A question that cannot be kept does not block the handoff.** If the Igor cannot write the
+    question's file, the fixed-words handoff still posts, the ledger row records the fixed
+    phrase `question not kept`, and the Igor opens a condition for the operator naming the
+    path it could not write (Adam, 2026-10-21). `graceful-handoff` and `task-execution` say
+    so, with one new scenario each. The condition is one of `condition-backoff`'s, an open
+    change; its key is gate two's to name. The agent that wrote this change fitted three
+    details, which carry out Adam's wording rather than override it, and which Adam confirmed
+    (decision 90):
+    the path is named to the operator only in the Igor's own log on the host, which the
+    operator reads beside the condition, never on the state branch or in the condition;
+    the ledger's `reason` reads `needs a person, question not kept`; and where conditions are
+    not built, the ledger and the log alone record the failure.
+81. **Decision 76's fitted details are accepted as written:** the path and modes, release by
+    an edit, which decision 79 narrows to someone with write access, and `igor run`'s read
+    limit (Adam, 2026-10-21).
+82. **A flagged-held item stays flagged-held whatever else its handoff carries.** An item a flagged run handed
+    back over a question is *flagged-held*. Nothing that exempts another handoff from
+    `work-triage`'s rule against working an item again releases it: not a cure key
+    (`condition-backoff`'s key for a handoff caused by a fact about the Igor that a configuration
+    change would cure, through `condition-backoff`'s cure-key exemption and today's `shouldDefer`,
+    `src/deferred.ts:136`), not a question not kept, and nothing else (Adam, 2026-10-21).
+    The `work-triage` delta says so, with one new scenario.
+83. **A flagged-held item's flagged-hold record never expires, and a lost record leaves it flagged-held.**
+    The flagged-hold record is the record `work-triage` keeps of an item's flagged holds. It
+    differs from today's handed-back record, which expires after 30 days (`src/deferred.ts:43`),
+    and from any other item's missing record, which lets it be worked again (Adam, 2026-10-21). The agent that wrote this change fitted how a
+    flagged-held item is known when its record is lost, which Adam confirmed (decision 95): from its file under
+    `flagged-questions` on the host, or from a ledger row whose `reason` starts
+    `needs a person`. It also fitted what decision 84's `igor release <item>` does: its `<item>` is
+    `<tracker>/<repo>/<item>`, and it marks the flagged-hold record released, appends a `released` ledger row
+    and deletes the host file, so no fallback holds the item again; decision 102 has it
+    delete first and mark the record released only once every delete succeeds. Two new
+    scenarios, and one changed.
+84. **The operator can always release a flagged-held item on the host,** with
+    `igor release <tracker>/<repo>/<item>`, as Adam confirmed in decision 95,
+    whatever #141 or task 4.10 find. An edit by someone with write access releases it too, where
+    the edit can be attributed (Adam, 2026-10-21, adding to decision 79). One new scenario.
+85. **Decision 80's condition opens on the first failed write, as a notice only.** A condition
+    normally opens only when its key recurs; this is a second exception to that in
+    `condition-backoff`, beside #101's refused credential, and stops no work, since
+    the item is already flagged-held (Adam, 2026-10-21). With #101 merged, this change states the
+    exception itself, in its `stuck-conditions` requirement (decision 118). One new scenario. The agent
+    that wrote this change fitted, and Adam confirmed (decision 95), that a later failed write,
+    for any item, reuses a condition already open rather than opening another.
+86. **A relayed answer pushed as `input` names its actual author.** Where decision 78 makes the
+    relay check unrunnable, the file's `answered_by` is the comment's actual author, the relay
+    App's login without GitHub's `[bot]` suffix (Adam, 2026-10-21, a gap shared-skills #25's
+    owner raised).
+    One changed scenario.
+87. **Each worker run's Claude state is private to it, and its session log is collected.** Every
+    role and rank runs today as the user `igor` with one shared home, and `workerEnv` forwards `HOME`
+    (`src/execute.ts:847`), so every worker could read every other run's Claude Code session log
+    under `~/.claude/projects/`, a run still in progress included. Each worker run's Claude
+    state, its session log included, is private to that run, and the log is collected when the
+    run ends (Adam, 2026-10-21). Open pull request
+    [#174](https://github.com/adamstallard/igor/pull/174) (change `pinned-skills`) is how this
+    is done: `~/.claude` and `~/.claude.json` are reset from a template before each model step,
+    never between a step's first call and its later `claude -p --resume` call, so the resume
+    finds its session; each run has a home of its own; workers
+    use seat tokens only; and the session log is copied out and redacted with #217's
+    credential redaction. Every seat must name a token: open pull request #171 removes main's
+    `seat-budget` text that let a seat naming none run on the ambient login, and Adam decided
+    there that an organization declaring no seats is refused (#171's decision 36), so this
+    change relies on #171 for that rule, and its `task-execution` delta refuses to spawn a
+    worker for a seat naming no token. As first written, this decision gave each run its own
+    `CLAUDE_CONFIG_DIR`; decision 91 replaced that with #174's design. `task-execution` gains
+    two scenarios.
+88. **A flagged-held item's session log is kept beside its question.** A flagged run's collected session
+    log moves into the `flagged-questions` directory, beside the question's file, mode 0600, and
+    no worker can reach that directory (Adam, 2026-10-21). The log moved is #174's copy,
+    redacted with #217's credential redaction. Until workers run as users of their own, another
+    worker can read that directory, an accepted limit (decision 94).
+89. **The question's file holds its category, not its text, where it has one.** It holds the
+    question's #25 category (`vulnerability`, `secret` or `personal`) where it has one,
+    otherwise the question's text, and the path of the moved session log; a categorized
+    question's text is only in the log (Adam, 2026-10-21). The Igor learns the category from
+    the worker's flag (decisions 92 and 97), and decision 98 has the file list every step's
+    log. Two new `graceful-handoff` scenarios.
+90. **The details fitted to decisions 71, 73 and 80 are Adam's.** He confirmed them as written
+    (Adam, 2026-10-21): under decision 71, a declining worker's reason is not quoted, and igor's
+    own facts, such as a budget's reset time or the setting that would let the run proceed,
+    still appear; under decision 73, the fixed reason `needs a person`; and under decision 80,
+    the ledger reason `needs a person, question not kept`, the path going only to the Igor's
+    host log while the condition's record holds only its key, and the ledger and the log alone
+    recording the failure until `condition-backoff` ships.
+91. **#174's design stands over decision 87's first form.** Adam chose #174's design, a home of its
+    own for each run with a template reset,
+    and its copied, redacted session log, over a per-run `CLAUDE_CONFIG_DIR` in one shared home
+    (Adam, 2026-10-21). Decision 87 is rewritten in place to state it; the `runs/<run id>/claude`
+    path and the measurement of `CLAUDE_CONFIG_DIR` are dropped, and #174 owns the work.
+92. **A flagged worker reports the question's category with the flag.** The flag carries one
+    word from shared-skills #25's fixed list, `vulnerability`, `secret` or `personal`, and
+    nothing else about the question. That word goes only into decision 89's question file on
+    the Igor's host, never into the ledger, the state branch, a comment or a label (Adam,
+    2026-10-21, amending decision 13). Decision 97 widens the flag to list every category
+    met. Two `task-execution` scenarios, one changed and one new; a Still open item asks #25
+    to allow the worker to report the category.
+93. **Gate two depends on #179.** This change's gate two merges only after #179's unit sets
+    `StateDirectory=igor`, so no deployment is left unable to keep a flagged question (Adam,
+    2026-10-21).
+94. **One `igor` user for every worker is an accepted limit until #175.** Until workers run as
+    users of their own, another worker can read `flagged-questions`, its logs and categories
+    included. Adam keeps the flagged log there now (decision 88), knowing that (Adam,
+    2026-10-21). Still open has an item for #175 to close that read-access limit. Decision 99
+    makes write access part of the accepted limit too.
+95. **More fitted details are Adam's.** He confirmed as written (Adam, 2026-10-21) decision 83's
+    fallbacks for a lost record, decision 84's `igor release` details, including deleting the
+    question file and its session log on release, and decision 85's reuse of an open
+    condition.
+96. **A refused run's kept reply is redacted.** Where a refused run keeps the provider's whole
+    reply, it is redacted with #217's credential redaction (change `redact-state-branch`), as
+    #217's *Every write to the state branch, and every text the Igor posts, is redacted* requires
+    of every write to the state branch (Adam,
+    2026-10-21, his decision on #217). #217's Still open item asking which text to reword is
+    settled by this.
+97. **The flag lists every category met, and marks the stopped question's.** A flagged worker's
+    flag lists each #25 category met in the run (`vulnerability`, `secret`, `personal`), each at
+    most once, and marks which belong to the question or questions the run stopped on; the host
+    question file records both. Where several questions stopped one run, the file lists their
+    categories and the texts of those without one, unpaired, as decision 100 confirms (Adam, 2026-10-21, amending decision 92).
+    igor writes a category word only when it is exactly one of the three; any other value,
+    which a steered worker could supply, counts as no category, and the run stays flagged.
+    The agent that wrote this change fitted three details, which Adam confirmed (decision
+    100): since the flag
+    gives each category once, the file keeps two separate lists, the marked categories and the
+    texts of stopped questions without one, and neither pairs them nor counts questions that
+    share a category;
+    a value outside the three words counts as no category, so the file leaves it out if
+    unmarked and, if marked, says a stopped question's category could not be read;
+    and the Igor never follows a symbolic link under `flagged-questions`, which a same-user
+    worker could plant (decisions 94 and 99) to redirect the Igor's writes, moves or deletes. `task-execution` and
+    `graceful-handoff` gain five new scenarios between them, and four change.
+98. **Every step's session log is kept for a flagged execution.** #174 is to copy each step's
+    session log before the next reset, which it does not do yet, #153's later model steps and #189's second worker run
+    included, and the question file lists them all (Adam, 2026-10-21, amending decisions 88 and
+    89). An item for #174.
+99. **Under `igor run`, a same-user worker's write access is accepted too.** Planting or deleting
+    a file under `flagged-questions` is part of decision 94's limit. Decision 87's privacy rule
+    binds only where workers have users of their own, which is `igor serve` once #175 lands;
+    `igor run` is the developer's own trusted machine, as decisions 50 and 68 say (Adam,
+    2026-10-21).
+100. **The details fitted to decision 97 are Adam's.** He confirmed them as written (Adam,
+    2026-10-21): the question file keeps two unpaired lists, the marked categories and the
+    texts of uncategorized stopped questions, and no entry pairs a question with its category; a value outside
+    #25's three words is dropped if unmarked, and if marked the file notes that a stopped
+    question's category could not be read; and the Igor never follows a symbolic link under
+    `flagged-questions`. Decision 101 extends that rule to the whole path.
+101. **The no-follow rule covers the whole path, and the stricter checks are Adam's.** The Igor
+    opens every component from its state directory down through `flagged-questions` to each
+    file it creates, moves or deletes there without following a link, so `flagged-questions` itself and every directory above it,
+    up to the state directory, are covered; Linux's `openat2` with `RESOLVE_NO_SYMLINKS`, or
+    `O_NOFOLLOW` on each component, is an example, and gate two picks. It refuses where any
+    component is a link. It also refuses an existing file under `flagged-questions` that has
+    more than one hard link or is not a regular file, both checks the agent that wrote this
+    change had added, since a planted hard link or special file there could carry a write
+    elsewhere just as a link could. A refused write is a failed write under decision 80:
+    the ledger row records `question not kept`, and decision 80's notice condition opens once
+    `condition-backoff` defines conditions (Adam, 2026-10-21). Decision 102 settles the state
+    directory itself, a refused move and a refused delete. Four new `graceful-handoff`
+    scenarios.
+    Following from this rule, and so recorded here rather than as a decision of its own, no
+    path component under `flagged-questions` may be `.` or `..`, since a no-follow open still
+    lets `..` climb out of the item's directory.
+102. **The rule's three edges** (Adam, 2026-10-21), which the consistency read of decision 101
+    raised:
+    - *The state directory itself is checked, its parents are not.* The rule covers the state
+      directory (`/var/lib/igor`, or `~/.local/state/igor`) and everything below it. Its
+      parents are left alone, because a legitimate `$HOME` or `$XDG_STATE_HOME` may pass
+      through a link; a worker that swaps one of them is within decision 99's limit under
+      `igor run`.
+    - *A refused move of a session-log copy is not `question not kept`,* since the question
+      was kept. The question file notes that copy as missing, as for a log #174 did not copy.
+      The move's source, #174's copy, is also opened without following a link.
+    - *A refused delete under `igor release` keeps the item flagged-held.* Release reports the
+      failure and marks nothing released, so the flagged-hold record and the files never disagree;
+      the operator fixes the path and runs it again.
+    The agent that wrote this change fitted, and Adam confirmed (decision 106): the Igor moves the log copies
+    before it writes the question file, so the file can name a refused one; the move's source
+    is checked from the state directory down, like the destination; `igor release` deletes the
+    session logs before the question file, so a refused delete leaves the question file and
+    the item stays known as flagged-held; its report says only that it failed and that the path is in
+    the Igor's log; and a refused delete of an earlier execution's log, when a later one
+    replaces it, leaves that log in place.
+    He also confirmed the detail the agent that wrote this change fitted to decision 101: a
+    refused move or delete leaves the path in place, and the Igor writes the path only to its
+    own log on the host, never to the state branch. Three new `graceful-handoff` scenarios and
+    one new `work-triage` scenario.
+103. **A Docker-run Igor keeps its state on a volume** (Adam, 2026-10-21).
+    `deploy/docker-compose.yml` sets `STATE_DIRECTORY=/var/lib/igor` on a named volume, so a
+    Docker-run `igor serve` keeps its question files when the container is recreated, and its
+    state path lies outside the workers' home, so #174's reset of that home cannot remove the
+    files, as #179's `StateDirectory=igor` does under systemd. Task 3.10 builds it.
+104. **A release by an edit deletes the files too** (Adam, 2026-10-21, amending decision 79). A
+    release through an attributable edit by someone with write access deletes the item's
+    session-log copies and then its question file under `flagged-questions`, exactly as
+    `igor release` does, and a refused
+    delete leaves the item flagged-held in the same way. Two new `work-triage` scenarios. The agent that
+    wrote this change fitted that such a release also appends the `released` ledger row once
+    its deletes succeed, which Adam confirmed (decision 109); decision 108 says which rank
+    deletes.
+105. **This change owns the state directory's definition** (Adam, 2026-10-21):
+    `$STATE_DIRECTORY`, else `$XDG_STATE_HOME/igor`, as `graceful-handoff` states it. #174 and #143
+    should cite it rather than define their own; an item below asks them.
+106. **The details fitted to decision 102 are Adam's** (Adam, 2026-10-21): the Igor moves the
+    log copies before writing the question file; a move's source is checked from the state
+    directory down; release deletes the logs before the question file; release's report says
+    only that it failed and that the path is in the Igor's log; and a refused delete of an
+    earlier execution's log, when a later one replaces it, leaves that log in place.
+107. **This change archives after #171** (Adam, 2026-10-21). igor issue #204, which orders the
+    open changes' archives, lists this change after #171 and #179. Its `task-execution` delta
+    stays on main's requirement *The worker is given an explicit environment holding no
+    credential but its seat's* for now, so spec-check, which cannot see #171's rename from
+    this branch, passes; once #171 merges, and before this change archives, the delta is
+    rewritten against #171's requirement *…but its seat's token*, keeping #171's rules and
+    scenarios (task 5.1). #204's order also puts #101 and #143 before #179, so this change
+    carries their text, and #179's, into the requirements it replaces whole:
+    `condition-backoff`'s (#101) in `work-triage` now, and #143's and #179's before it
+    archives (task 5.2). Recorded alongside, not decided by Adam: `lore-firing` removes *Lore
+    reaches the worker unbidden* and re-adds it under a new name, since `openspec archive`
+    refuses a modified requirement that drops a scenario in force. Decision 109 confirms the
+    new name.
+108. **The keeping rank deletes on a release by an edit** (Adam, 2026-10-21). Whichever rank
+    sees the attributable write-access edit appends a `release requested` ledger row. The
+    rank named in the flagged-hold record, the one that kept the question on its host, does the
+    deletes on its next poll, in decision 102's order, then appends `released`; other ranks
+    learn the release from that row on the state branch. A *rank* is one of the several Igor
+    processes #179 runs for one role. A refused delete is retried on every poll and opens,
+    once for the item, a notice condition that stops no work, which decision 111 gives a key of
+    its own, reusing an open condition as decision 85 says, and the item stays flagged-held until
+    `released` is written. The agent that wrote this change fitted, and Adam confirmed (decision 112), that the flagged-hold record names the keeping rank, that a lost flagged-hold record leaves an
+    item flagged-held even when its latest ledger row is `release requested`, which is not yet a
+    release, and that a rank appends no
+    second `release requested` row for an edit that already has one; and, as for decision
+    80's own notice, that the notice opens only once `condition-backoff` defines conditions.
+    Decision 110 settles what happens when the keeping rank leaves #179's roster, and when no
+    rank can finish. Three new `work-triage` scenarios. Decision 120 lets any live
+    process on the state directory named by a flagged hold's entry, its line in the record
+    (decision 110), do the deletes. Decision 128 keys each flagged hold on its own.
+109. **Two details are Adam's** (Adam, 2026-10-21): a release by an edit appends the `released`
+    row once its deletes succeed (decision 104), and `lore-firing`'s re-added requirement is
+    named *Lore reaches the worker unbidden, beside a search it may run* (decision 107).
+110. **The flagged-hold record names the host** (Adam, 2026-10-21). It names the host holding the
+    item's files, with the keeping rank, or `igor run` where no rank kept them. When no rank can
+    finish a `release requested` (the keeping rank was retired from #179's roster, an `igor run`
+    ended, a question's write failed after log copies existed, or two ranks raced on different
+    hosts), the item stays flagged-held, and the notice tells the operator to run `igor release` on the
+    named host. No rank takes over another's release, and nothing deletes on a host other than
+    the one named. For the race, Adam asked that the record name every host that may hold
+    files, or say how the race is resolved. The agent that wrote this change fitted, and Adam confirmed (decision 113): the record holds one entry per host (per state directory since decision 116, and per flagged hold since decision 128), which the rank or `igor run` that writes a
+    file there adds; each entry is cleared when that host's files are deleted, by its keeping
+    rank or by `igor release` run on that host; and `released` is appended once every entry is
+    cleared, by the process that, re-reading the record after its own clear, finds them all cleared, with `igor release` naming the hosts still to clear.
+    Under those details the ranks can themselves finish both the race and the deletion of a
+    not-kept question's log copies, two of the cases this decision first listed as ones no
+    rank can finish; decision 113 confirms these details. Six new `work-triage` scenarios.
+    Decision 116 replaces host names with state-directory ids, and decisions 114 and 115 say
+    when `igor run` and a rank count as unable to finish. Decision 120 lets any live
+    process on a directory clear its entry. Decision 128 gives each flagged hold its own entry.
+111. **A stuck release has a condition key of its own** (Adam, 2026-10-21, amending decision
+    108). A refused delete, or an entry no rank can clear, opens a notice condition whose key
+    is separate from `question not kept`, such as `release stuck`, which gate two names, so the
+    operator can tell a stuck release from a question never written. This change's `stuck-conditions` requirement keeps a recurring refused delete from counting toward stopping a scope, `condition-backoff`'s rule that a recurring condition stops new work in the scope it names (decision 118). The
+    agent that wrote this change fitted, and Adam confirmed (decision 113), that the process that finds a release
+    stuck opens the notice, and that its notice names the item and the entries, by id since decision 116, still to clear
+    and nothing else of the item.
+112. **Decision 108's fitted details are Adam's** (Adam, 2026-10-21): the flagged-hold record names the
+    keeping rank; a lost record stays flagged-held when the latest ledger row is `release requested`;
+    one `release requested` row per edit; and the notice waits on `condition-backoff`.
+113. **The details fitted to decisions 110 and 111 are Adam's** (Adam, 2026-10-24): one entry
+    per state directory, with a re-read of the flagged-hold record before `released`; any process
+    that finds a release stuck opens the notice; and the notice names only the item and its
+    entries. Decision 123 puts the item's name and ids only
+    in the notice text and the host log, never on the state branch.
+114. **`igor run` counts as stuck only after it exits** (Adam, 2026-10-24). While alive, it
+    finishes its own release on its next poll, like a keeping rank; once it has exited, its
+    entry counts as stuck, and the notice tells the operator to run `igor release` against
+    its state directory. Decision 120 replaces "finishes on its next poll": a run never clears its own
+    entry while it runs; the
+    next `igor run` on that directory finishes it.
+115. **A keeping rank is gone when #179's heartbeat rule says so** (Adam, 2026-10-24): #179's
+    *A retired rank does not hold its items forever* decides by the rank's heartbeat, not by
+    whether the roster still lists it. #179
+    judges an `igor run` the same way, by its run's heartbeat file.
+116. **Entries name an opaque state-directory id, not a host** (Adam, 2026-10-24). Each state
+    directory holds a random id created once and kept on its volume; entries, notices and
+    `igor release`'s report name that id, and `igor release` prints its own id so the operator
+    can match them. This replaces host names throughout decisions 110 and 111, keeps host names
+    off a state branch that can be public, and task 4.13 now covers where the id file lives. The
+    agent that wrote this change fitted that two ranks sharing a state directory share one id and
+    so one entry; decision 120 settles who clears it, any live process on the directory, and decision 121 covers a lost or copied
+    id.
+117. **An item whose flagged-hold record has no entries stays flagged-held** (Adam, 2026-10-24), and its notice says the
+    files' location is unknown. `igor release` refuses such a record unless the operator,
+    having checked their state directories, passes a flag gate two names; it then writes
+    `released`. Decision 141 makes a flagged hold with no entry a mismatch, whose notice is the
+    mismatch notice.
+118. **The two flagged-hold conditions stay open while any item is affected** (Adam, 2026-10-24).
+    The `question not kept` and `release stuck` conditions clear only when no item is still
+    affected, the Igor's host log lists the items, and `condition-backoff`'s probe, the one item a stopped scope takes after a cooldown to test a
+    condition, does not clear them. A new `stuck-conditions` requirement says so, with five scenarios. With decision 111's rule that a recurring refused delete does not count toward
+    stopping a scope, and decision 85's first-occurrence rule, it makes the requirement this
+    change once asked of `condition-backoff`.
+119. **#220's rules are cited where this change writes to the lore store** (Adam, 2026-10-24,
+    relayed from the agent session working on igor's #219). Wherever this change writes questions-branch log files, citations or a flagged
+    run's material to the lore store or its state branch, it cites open pull request #220's
+    rules (change `visibility-guard`, issue #219), so no private repository's content reaches
+    a public state branch; it does not restate them. The `lore-firing` delta cites only *A private repository is never worked
+    through a public lore store*, since #220's state-branch rule does not cover the `questions`
+    branch; the `task-execution` delta cites the state-branch rule.
+120. **Any live process on a state directory clears its entry** (Adam, 2026-10-24, amending
+    decisions 110, 114 and 116). Any rank or `igor run` whose state-directory id matches an
+    uncleared entry clears it, at the start of its cycle or at the start of the next `igor run`
+    there. Its files are in its own directory, so this never deletes on another host. It replaces
+    decision 108's rule that the rank the flagged-hold record names does the deletes, and decision 114's
+    rule that a live `igor run` finishes its own release, and settles a gone rank's
+    entry while a directory-mate lives. A release is stuck only for an entry no live process answers for, where no live rank or
+    `igor run` has the state-directory id it names. Three new `work-triage` scenarios, and two changed.
+121. **Lost or copied ids** (Adam, 2026-10-24, amending decision 116). The notice lists the ids
+    no live process answers for, and `igor release` drops a named entry only with a flag gate
+    two names, which the operator passes after checking that no directory with that id still
+    holds the item's files, like decision 117's flag. One new `work-triage` scenario. Decision 132 has the flag clear an entry whose named file
+    is absent.
+122. **A notice is a kind of condition of its own** (Adam, 2026-10-24, amending decision 118). This
+    change defines it in `stuck-conditions`: it opens at once, never stops a scope, and clears
+    when nothing is affected. `question not kept` and `release stuck` are notices. #171's
+    read-cleared kind and its complete list of exceptions stay as written.
+123. **Item names live in the notice text and the host log only** (Adam, 2026-10-24, amending
+    decision 113). A notice's record on the state branch holds only its key. The text the
+    operator reads and the Igor's log on the host name the items and their state-directory ids,
+    so nothing item-specific reaches a branch that may be public. Decision 130 removes the notice's stored record, so
+    the rule on that record no longer applies: a notice is rebuilt from ledger rows and flagged-hold record entries.
+124. **This change archives after #220** (Adam, 2026-10-24, amending decision 107's place). In
+    #204's order this change moves to just after #220, the end of the chain #82 and #220 form,
+    so that its citations of #220 point back to a change archived before it. Nothing else
+    moves.
+125. **An entry is cleared only after its run has kept its files** (Adam, 2026-10-24). A
+    process clears a flagged hold's entry only once that run's `needs a person` row exists, so its
+    files are all written, or once the run is gone by #179's heartbeat. No timers. This closes
+    the race the TLA+ model found, where a flagged run was still writing its files when a
+    release was requested.
+126. **A lost flagged-hold record is rebuilt in full from the ledger** (Adam, 2026-10-24). Each `needs
+    a person` row names its run's state-directory id, opaque so nothing leaks, and a lost record
+    is rebuilt from those rows. This closes the model's finding of a lost record that a later flagged run rebuilt, when it
+    kept its own question, with only its own entry, dropping the earlier flagged hold's.
+127. **A run adds its entry before writing any file** (Adam, 2026-10-24), confirming a detail
+    the agent that wrote this change fitted in the round that recorded decision 120.
+128. **Flagged holds are keyed per flagged hold, not per item** (Adam, 2026-10-24, amending decisions 108 and
+    110). The record has one entry per flagged hold, not per state directory. Each flagged hold
+    is identified by its own `needs a person` row, `released` names the flagged hold it
+    ends, and a later flagged hold of the same item is independent. The agent that wrote this change
+    fitted that such a later run keeps its question in a file of its own, withdrawing decision
+    76's detail that it replaces the earlier question.
+129. **This change adds notices to #82's `igor conditions` listing** (Adam, 2026-10-24), as a
+    modified copy of #82's *Every open condition is readable without naming a role*; #82
+    archives first, and #82 does not change. Task 5.4 brings the copy up to #82's final text.
+130. **Notices are rebuilt from ledger rows and flagged-hold record entries** (Adam, 2026-10-24,
+    amending decision 123), with no stored notice record, as `condition-backoff` rebuilds its
+    conditions.
+131. **#179's heartbeat records the process's state-directory id** (Adam, 2026-10-24), so any
+    rank can tell whether a directory is still answered for. An item for #179 is in Still open.
+132. **An entry is cleared only by deleting its named file** (Adam, 2026-10-24, amending
+    decision 121). Each entry names its question file's random name, and a process clears an
+    entry only by deleting that file; if the file is absent, only the operator's flag clears
+    it, so a copied state directory can never release a flagged hold by finding nothing. Two later rules
+    are exceptions: a flagged hold whose question was not kept is cleared by deleting its
+    session-log copies (decision 137), and a run gone part-way is cleaned up with its file
+    absent (decision 135).
+133. **Copying a live state directory is unsupported** (Adam, 2026-10-24, answering the TLA+
+    model's `findings/CopiedQuestion.cfg`). Once a release is requested, a process on a copy taken
+    after a question file was written deletes its copy of the named file, clears the entry and appends `released`, while
+    the original keeps its files. That is the operator's problem: the
+    `graceful-handoff` delta says copying is unsupported, the operator recovers with the
+    stuck-release notice and `igor release`, and the Igor adds no guard. The finding stays in
+    the model as a recorded limit Adam accepts. Decision 140 makes a copy a mismatch, with the
+    mismatch notice in place of the stuck-release one, and decision 142 turns the finding into
+    a passing configuration.
+134. **A crash between deleting the named file and clearing the entry is accepted** (Adam,
+    2026-10-24, answering `findings/CrashBeforeClear.cfg`). The entry is left with its file
+    absent, and the stuck-release notice and decision 121's flag are the way out; no process
+    writes a marker of what it is about to delete. The model's liveness configuration, the TLC run that checks a requested
+    release completes, states its assumption, `DeletedSurvivesCrash`, that a process still knows after a crash which named
+    files it deleted, and the finding stays as a
+    recorded limit Adam accepts. Decisions 140 and 142 make this a mismatch, with the mismatch
+    notice in place of the stuck-release one, and turn the finding into a passing
+    configuration.
+135. **A run gone part-way through keeping is cleaned up without a request** (Adam, 2026-10-24,
+    applying decision 125). Once a run that added its entry, and perhaps wrote files, is gone by
+    #179's heartbeat without appending its `needs a person` row, any live process on that
+    directory deletes those files and clears the entry, and no flagged hold needs releasing. It adds one new
+    `work-triage` scenario, and the model gains a `CleanOrphans` rule, with a negative TLC
+    configuration, `negative/NoCleanOrphans.cfg`, which turns the rule off and must fail. The
+    agent that wrote this change fitted that such an entry is cleared once its session logs are
+    deleted where the run wrote no question file, and that no `released` row is appended for it.
+136. **A rebuild that reopens a cleared entry is accepted** (Adam, 2026-10-24). Where the flagged hold
+    record is lost after an entry was cleared but before its `released` row, the rebuild reopens
+    it with its file gone; the stuck-release notice and the operator's flag are the way out, and
+    the ledger gets no row for a clear. Decision 140 makes this a mismatch, with the mismatch
+    notice in place of the stuck-release one.
+137. **The details fitted for decisions 125 to 132 are confirmed** (Adam, 2026-10-24), but for
+    the interim rule for heartbeats without a state-directory id, which decision 138 drops. The
+    confirmed details are these: a flagged hold whose question was not kept names no question file and is
+    cleared by deleting its session-log copies; a later flagged run keeps its question in a file
+    of its own; a `needs a person` row names the question file's name; a run whose entry a lost
+    record dropped adds it again before its row; a `release requested` row covers only the flagged holds
+    before it; a run with no readable state-directory id writes no file, adds no entry, and its flagged
+    hold is released by the first release that covers it; each
+    process rebuilds a notice each cycle; and a question file name not of the random form is
+    refused.
+138. **No interim rule for heartbeats without a state-directory id** (Adam, 2026-10-24). This change
+    removes the `work-triage` rule that, until #179's heartbeat records the id, no flagged hold is
+    judged stuck by its directory having no live process. This change depends on #179's heartbeat
+    recording each process's state-directory id (decision 131).
+139. **"Flagged hold" and "flagged-held" for this change's own meaning** (Adam, 2026-10-24).
+    This change uses them throughout for the hold a flagged run's question puts on an item;
+    #179's "held", for an item a claim holds, is unchanged. This settles the Still open item on
+    the two meanings of "held".
+140. **Any mismatch between the record and the files opens a notice** (Adam, 2026-10-24). One
+    fact, where each flagged hold's files are, lives in two stores: the flagged-hold record and
+    ledger on the state branch, and the files on each host. Rather than settle each way they can
+    disagree one at a time, any mismatch, a disagreement between them, opens a notice of its own kind, `hold mismatch` or
+    the key gate two names, which the operator resolves with `igor release`. Each live process
+    compares the record with its own state directory each cycle, and any process compares the
+    record with the ledger. This replaces the case of a stuck release where an entry's named file
+    is absent (decisions 121 and 132), which is now a mismatch, and it covers decisions 134 and 136. Two new
+    `work-triage` scenarios, and two changed.
+141. **The questions the reads of decisions 133 to 139 raised close under decision 140**
+    (Adam, 2026-10-24). None is normal
+    operation, so each is a mismatch:
+    - a copy taken after a question file was written leaves the original's files with no open
+      entry;
+    - a lost record drops a part-way run's entry, leaving its files with no entry;
+    - a flagged hold whose question was not kept has no entry when its run had no
+      state-directory id, and `igor release` with decision 121's flag appends its `released`
+      row, amending decision 137's rule that the first covering release releases it; a
+      not-kept hold that has an entry is not a mismatch, since decision 137 clears it by deleting its
+      session-log copies;
+    - a process #179 judged gone that goes on writing leaves files no entry names, or an entry
+      whose file it never wrote.
+
+    `igor release` gains a flag gate two names that deletes an item's files no open entry names,
+    after the operator has read any question file among them. Decision 135's two fitted details
+    are confirmed as written: a part-way run's entry is cleared once its session logs are
+    deleted, and no `released` row is appended for it.
+142. **The model checks the rule, not each case** (Adam, 2026-10-24). The TLA+ model gains a
+    `DetectMismatch` rule and a property, `MismatchNoticed`, that any reachable mismatch on a
+    directory a live process uses leads to an open notice. The normal-operation invariants and
+    liveness properties stay. The two configurations under `findings/` are retired as findings:
+    `CopiedQuestion` and `CrashBeforeClear` become passing configurations that check
+    `MismatchNoticed`, and the copied one drops the two invariants a copy is known to break
+    (decision 133), `ClearedOnlyByDeleting` and `NeverReleasedWithFiles`. A new configuration, `LoreSearchHoldsLostPartWay`, loses the record
+    while a rank may retire part-way and checks `MismatchNoticed` there too.
+143. **Each notice has an operator runbook** (Adam, 2026-10-24). A new `stuck-conditions`
+    requirement has each notice's text name its section of `docs/deployment.md`, which says,
+    for `question not kept`, `release stuck` and `hold mismatch`, what the notice means, where
+    to investigate and the exact `igor release` command that clears it. This change adds those
+    sections to the guide. The agent that wrote this change fitted the flag names the guide
+    uses, `--files-gone`, `--delete-unnamed`, `--batch` and `--directory`, which decision 148
+    confirms.
+144. **Release in a batch only where no question file is left to read** (Adam, 2026-10-24).
+    `igor release` releases in a batch, by cause or by state-directory id, only flagged holds that leave nothing to read: by cause, those whose question file and
+    session-log copies are all gone; and by id, those whose state directory is gone. A flagged
+    hold whose question file still exists is released only by `igor release` naming its item,
+    after the operator has read it. Gate two names the batch flags. The agent that wrote this
+    change fitted how a batch knows a question file is absent and a directory gone, since
+    `igor release` sees only its own state directory: a batch by cause acts only on entries
+    naming the id of the directory it runs against, and a batch by id names a directory no live
+    process answers for, which the operator states no longer exists. Two new `work-triage`
+    scenarios.
+145. **Flagged holds are common until workers send their completed report** (Adam,
+    2026-10-24). A run whose worker has not sent its completed report counts as flagged
+    (`task-execution`), and no worker sends one until task 3.1 is built, so until then every
+    run counts as flagged and many items will be flagged-held. Adam accepts that, since no one uses
+    Igor yet and task 3.1 has workers send the report, with task 4.7 measuring how reliably
+    they do. Still open says so.
+146. **The details fitted for decisions 141 and 144 are confirmed** (Adam, 2026-10-24). The
+    one fitted for decision 141, to tell which files an entry names: each session-log copy's
+    name starts with the random `<name>` of its question file, so the entry naming that `<name>`
+    names the copies too. Those fitted for decision 144: a batch by cause acts only on entries naming
+    the id of the state directory `igor release` runs against; and a batch by id, naming a
+    directory no live process answers for, one whose id no live process's heartbeat records,
+    is the operator's statement that the directory is gone.
+147. **A lost or reset state branch is an accepted limit** (Adam, 2026-10-24). Losing the state
+    branch releases every flagged hold, and one whose question was not kept and that left no
+    session-log copy leaves no file for the mismatch notice to find, so it is dropped silently. Adam accepts this: it is rare, and it
+    mostly heals itself, since a rerun of the item meets the same question and is flagged-held
+    again. Still open records it as accepted.
+148. **The runbook's flag names are the intended ones** (Adam, 2026-10-24): `--files-gone`,
+    `--delete-unnamed`, `--batch` and `--directory`, confirming the names decision 143 fitted.
+    Task 3.12 has gate two build them with these names, or change `docs/deployment.md` in the
+    same pull request, so the merged guide always matches the code.
+149. **A batch by cause leaves out any flagged hold whose session-log copies remain** (Adam,
+    2026-10-24), confirming the detail fitted in the round that recorded decision 146, when
+    decision 144 said only that the question file must be gone; the copies hold the question's
+    text too.
+
+
+
+**Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
+decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
+- **The Igor decides a pushed answer's `authority` itself.** #25's decision 216 counts a
+  `User says: ` comment as a person's answer only when that person's relay App posted it, as
+  listed in that person's relay file in the destination repository. That file is
+  `relays/<login>.yaml`, and #25's decision 225 counts it only when its last change came from
+  that person: a merged pull request they authored, or a commit GitHub verifies as theirs.
+  This change points to #25's rules for both. A worker may not be able to read relay
+  files: #175's design bars it from the lore checkout under `igor serve` (task 4.2). It then
+  cannot tell whose answer such a comment is. Since decision 34 has the Igor run #25's
+  authority checks, the Igor sets the `authority` of each answered log file it pushes
+  (decisions 24 and 41) by those checks, to `decision` or `input`, whatever the worker
+  wrote, and its search reads the relay files as of the commit #208 last applied for those
+  checks (decisions 57 and 77). For a relay App's comment, the Igor also sets
+  the file's `answered_by` to the person whose relay file lists that App, since #25 now gives
+  the Igor both keys.
+- **The spec points to #25's decision 216** for which comments count as a person's relayed
+  answer, instead of stating that rule.
+- **The Igor refuses a worker's file that already holds `asked_from`**, since #25's format
+  now has the key, written only by an Igor (decision 42).
+- **igor marks a run so #25's script can tell it is in one.** The Igor sets `IGOR_RUN` to
+  `worker` in a worker's environment and to `igor` in its own inquisitor run's. The variable
+  carries no secret. #25's script reads it, by exact name and value (#25's decision 235), and
+  then reads no lore clone, pushes nothing itself and searches through `igor lore-search`
+  (#25's decision 229). `task-execution`'s *The worker
+  is given an explicit environment holding no credential but its seat's* says so.
+- **Search ranking and its cap of 20 point to #25's filter 1 rule** (decision 52 above).
+- **A recorded answer is written as #25's quote lines** (decisions 67 and 70), as #25's log
+  format stores it; Adam confirmed that format (#25's decision 239), and answers chosen in a
+  picker are recorded in his own words (#25's decision 240).
+- **Inside an Igor, relay files are read from the commit #208 last applied** (decision 77), and
+  so is their last-change check; outside an Igor, the fetched default branch. #25's decision 241
+  says so (#25 at 2040f88).
+
+**Still open:**
+- **For [#208](https://github.com/adamstallard/igor/pull/208): the Igor must fetch the
+  destination repository.** Under decision 66 the `questions` branch, `igor-state` and the
+  relay files are in the destination repository, which `destination` can point away from #208's
+  lore repository. #208 fetches only its lore repository, so where the two differ, relay files
+  would never update and the `questions` branch would never be fetched. #208 should fetch the
+  destination repository too; this change does not edit it. This change's `surface-adapter`
+  delta has the startup check require the App on the destination repository as well.
+- **For gate two: how a Node program opens a path without following a link** (decisions 101
+  and 102, task 4.12). Node's `fs` has no `openat2` and no directory-relative calls, and its
+  `O_NOFOLLOW` guards only the last component, so the mechanism is unmeasured.
+- **For gate two: when several Igor processes for one role (#179's ranks) each record which
+  commit #208 last applied, whose record governs the relay-file read** of decision 77; the
+  processes
+  #179 runs for one role, for decision 77's relay files.
+- **For [#175](https://github.com/adamstallard/igor/pull/175) (decision 94).** Until workers run
+  as users of their own, every worker runs as `igor`, the Igor's own user, and can read
+  `flagged-questions`, its logs and categories included; Adam accepts that until then. #175's
+  worker users close it.
+- **Not open, recorded for the reviewer: settled by
+  [#174](https://github.com/adamstallard/igor/pull/174) (decisions 98, 102 and 105).** #174 now copies each step's log before the next reset of the worker's home, #153's
+  later model steps and #189's second worker run included; cites this change's state directory; and lets its record
+  name a log copy this change could not move.
+- **Task 4.11 is unmeasured, for whichever of gate two and #174 is built first.** Nobody has measured that Claude Code keeps
+  no session or state under `HOME` outside the two paths #174 resets.
+- **For #217 (decision 96).** Its Still open item on which of the two refusal texts to reword is
+  settled by decision 96, so #217 should drop it.
+- **Gate two depends on [#179](https://github.com/adamstallard/igor/pull/179) (decision 93).**
+  Today's `deploy/igor.service` sets no `StateDirectory=` and makes the home directory
+  read-only (`ProtectHome=read-only`, only `/srv/igor` writable), so neither #174's per-run
+  home nor the question's file can be written. This change's gate two merges only after #179's
+  unit sets `StateDirectory=igor`.
+- **Not open, recorded for the reviewer: this change carries what it once asked of
+  `condition-backoff`.** Adam merged
+  [#101](https://github.com/adamstallard/igor/pull/101), the pull request carrying
+  `condition-backoff`, on 2026-10-22, and archived its change into `openspec/specs/` on main. The rules Adam decided for it are this change's
+  own, built at gate two against that code: a flagged-held item is not released by the cure-key
+  exemption (decision 82), in this change's `work-triage` delta, which carries
+  `condition-backoff`'s text of that requirement; and the three flagged-hold notices, the one for a
+  question not kept (decision 85), the stuck release (decision 111) and the mismatch (decision
+  140), open on their first
+  occurrence, stop no scope and do not count toward stopping one, and clear only when no item
+  is still affected (decision 118), in a new `stuck-conditions` requirement of this change,
+  *A notice opens at once, stops nothing, and stays open while an item is affected*. It is an
+  added requirement that names the `condition-backoff` requirements that do not apply to a
+  notice, rather than modified copies of them: #171 and #82, which archive before this
+  change, modify them, so modified copies would have to carry their text.
+- **Accepted: a lost or reset state branch can drop a flagged hold whose question was not kept**
+  (decision 147). The flagged-held item is known from the ledger's `needs a person` rows, and
+  the ledger is on the state branch, which `work-discovery`'s *State is a cache and correctness
+  never depends on it* lets be lost and #179 specifies being lost or reset. Losing it releases
+  every flagged hold. One whose question was kept leaves its files, which the mismatch notice
+  then finds, since no entry names them; one whose question was not kept and that left no
+  session-log copy leaves no file, so it is dropped silently. Adam accepts this because it is rare and mostly heals itself: a rerun of
+  the item meets the same question and is flagged-held again.
+- **Flagged holds will be common at first** (decision 145). Until workers send their
+  completed report (task 3.1, measured by task 4.7), every run counts as flagged, so nearly
+  every item a run hands back over a question will be flagged-held and need `igor release` or
+  an edit by someone with write access. Adam accepts this while no one uses Igor.
+- **For [#179](https://github.com/adamstallard/igor/pull/179) (decisions 131 and 138).** #179's
+  heartbeat file names its process by role and rank, or `igor run`'s run id; this change
+  depends on it also recording the process's state-directory id, so any rank can tell whether a
+  directory is still answered for.
+- **For gate two: the condition keys** (decisions 111, 118 and 140). In the merged
+  `src/conditions.ts`, a key of a shape it does not know names no scope and is never a
+  condition, and a `role:`-shaped key counts toward stopping the role. Gate two gives the three
+  keys, decision 140's mismatch key included, a form that opens a condition which neither stops a role nor is ignored (task 3.11).
+- **This change depends on [#174](https://github.com/adamstallard/igor/pull/174) (decisions 87
+  and 88)** for each worker run's private Claude state and the copied, redacted session log;
+  decision 88 moves a flagged run's copy beside its question. #174's record in the execution
+  ledger names the copy's path, which for a flagged run is the moved copy under
+  `flagged-questions`, or the unmoved copy where decision 102's rule refused the move, and #174
+  allows for both.
+- **For [#174](https://github.com/adamstallard/igor/pull/174) and
+  [#143](https://github.com/adamstallard/igor/pull/143) (decision 105).** This change owns the
+  state directory's definition, in `graceful-handoff`: `$STATE_DIRECTORY` where set, else
+  `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. #174
+  now cites it, but #143's seat-budget equates it
+  with `/var/lib/igor`; it should cite this change's definition instead. Otherwise, with
+  `XDG_STATE_HOME` set, a log copy and the question file could sit in different state
+  directories, and decision 102's check of a move's source, from the state directory down,
+  starts from the wrong one.
+- **For gate two: the state-directory id, and how processes update one flagged-hold record**
+  (decision 116, task 4.13). Gate two picks where the id file lives and how it is created only
+  once when two processes sharing the directory start together, and how several processes add
+  or clear entries in one record on the state branch without losing a write, which #179's
+  rules for state-branch writes govern; for #179: its task 5.1 does not yet list flagged-hold records among
+  its keyed state.
+- **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decisions
+  87 and 107)** for the rule that every seat names a token, and that an organization declaring no
+  seats is refused (#171's decision 36). It archives after #171 (decision 107). Until #171 merges, main's `seat-budget` still lets a
+  seat naming no token run on the ambient login, while this change's execution refuses to spawn
+  a worker for one.
+- **For #179 or the deployment guide: workers cannot write the home.** Today's
+  `deploy/igor.service` sets `ProtectHome=read-only`, with only `/srv/igor` writable, so tool
+  caches under the home cannot be written there; #179's unit change, on which gate two waits
+  (decision 93), is where that is fixed.
+- **`condition-backoff` and #141 modify the same `work-triage` requirement.** `condition-backoff`,
+  now archived, modified *An item handed back is not re-worked until something answers*,
+  and [#141](https://github.com/adamstallard/igor/pull/141) amends its delta to count only a
+  reply from someone with write access. Each replaces the requirement whole, so whichever
+  archives last carries the text of the others. This change archives after
+  `condition-backoff` (#101), so its delta carries `condition-backoff`'s rule that a handoff
+  caused by a fact about the Igor is not suppressed, and that rule's scenario. #141 is not yet
+  in #204's order, so whether this change or #141 carries the other's reply rule is decided
+  when Adam places #141.
+- **For gate two: the ref relay files are read from, where #208 did apply a commit.** Decision 77 has them read as of the
+  commit #208 last applied; gate two names the ref that holds it, beside the `questions`
+  branch's ref.
+- Whether an Igor's worker that runs the inquisitor skill reaches its filter 1 through `igor
+  lore-search`. Open pull request [#174](https://github.com/adamstallard/igor/pull/174)
+  decides which skills a worker loads, and shared-skills #25 is to have filter 1 call `igor
+  lore-search` inside an Igor's worker. Task 4.1 checks once both have landed.
+- Whether a worker under `igor serve` can read the lore checkout's files directly. If it can,
+  it can see entries outside its role's scope without any search, and the filter above does
+  not stop that. Under `igor run` it can, which decision 50 accepts. #175's requirements say
+  only that the worker cannot write the checkout, though #175's design makes the checkout
+  unreadable to the worker under `igor serve`; task 4.2 checks which holds. If the design
+  holds, a worker there searches only through `igor lore-search` (decision 23).
+- Shared-skills #25 carries the firing scope rule inside an Igor (decision 4), the `questions`
+  branch and citations (decision 8), and has not merged. Until it merges, nobody should rely on
+  the inquisitor's search during a run, and task 4.1 checks that a worker's filter 1 reaches
+  `igor lore-search` before anyone does. Citations made outside a run are not written until then, so a review's
+  count misses them.
+- The citation-file format is defined only in shared-skills #25, in its requirement *A
+  citation file has one format*, and #25 has not merged. This change's requirement *An Igor
+  publishes the citations its worker reports* links to it on #25's branch. Until #25 merges,
+  gate two builds the format as #25's branch states it, and follows any change #25 makes to it.
+  Archive this change only after #25 merges, and then point the link at the requirement in
+  shared-skills' `openspec/specs/inquisitor/spec.md`.
+- Whether a worker reports its citations in its output or through
+  [#175](https://github.com/adamstallard/igor/pull/175)'s outbox follows whatever #175
+  settles (Adam, 2026-10-20). Task 3.1 builds the report on that channel.
+- How an Igor runs the inquisitor skill itself, with no worker (decision 9), and where that
+  run's transcript and count record go. #211 gives the Igor that job and specifies no
+  mechanism yet. Task 3.6 waits on it.
+- The review's rules in decisions 5, 8, 32, 39 and 69 (fire counts alone decide "unused", a cited
+  entry is never proposed as unused, "not checked" and the lower bound) live only in this proposal and
+  `docs/architecture.md` §3.4.1, since the review is planned and has no spec. No change
+  specifies the review yet; whichever does must carry them as requirements.
+- This change depends on [#188](https://github.com/adamstallard/igor/pull/188) for decision
+  38's names-only log. #188 keeps a log of each run's tool calls beside the transcript,
+  redacting only credentials, and has not merged. This change states, in `task-execution`'s
+  *Transcripts and outcomes are captured to the state branch*, the names-only form a flagged
+  run's log takes; #188 must carry that rule, and whichever merges second reconciles the two
+  texts. Until #188 is built, there is no action log for a flagged run's transcript note to
+  point to.
+- [#190](https://github.com/adamstallard/igor/pull/190) defines the pull request body as the
+  one statement of it: the worker's summary, at most 700 characters, a pointer to the
+  transcript where the summary was cut, and the worker's commands. #190 has no exception for a
+  run under decision 13, whose body holds no excerpt of the worker's result and no transcript
+  link.
+  [#153](https://github.com/adamstallard/igor/pull/153) has a model write the body. Whether
+  those changes carry decision 13's exception, and leave the commands and a model-written body
+  free of that run's text, is theirs; this change does not edit them.
+- `lore-review`'s *A public destination refuses privately-sourced entries* is built to
+  take the destination repository's visibility from `publicStore` when it is set
+  (`src/propose.ts:297`). Decision 16 covers #212's check and the push rules only. The two
+  can disagree on an internal destination repository: with `publicStore: false`, `lore-review`
+  treats it as not public and lets a privately-sourced entry into it, while the citation rule
+  withholds a private item's citation from it. Whether `lore-review` should ask GitHub too is
+  for a change to `lore-review`; this change does not edit it.
+- #212's issue body records decision 16 for its startup check. #212 has no change yet; the
+  change that specifies it must read the destination repository's visibility as decision 16 says.
+  This change's requirements bind only the push rules, which read it at each push (decision
+  37).
+- Whether a run the provider refuses over a usage limit ever ends with its worker's
+  completed report. If none does, decision 19 counts every refused run as flagged, no
+  refusal record keeps the provider's reply, and igor's limit patterns have nothing to check
+  them. Task 4.4 checks.
+- [#217](https://github.com/adamstallard/igor/pull/217) redacts credentials from every write
+  to the state branch, including refusal records. This change keeps a refused run's whole
+  reply subject to that redaction; whichever of #217 and this change merges second reconciles
+  the two texts.
+- This change depends on #217, which has not merged: decision 28's credential check on
+  questions-branch files uses #217's matcher, and the requirement *An Igor publishes the
+  questions-branch files its worker reports* links to it on #217's branch. Gate two builds
+  that check on #217's matcher, so #217 merges first. Then point the link at the requirement
+  in `openspec/specs/task-execution/spec.md`.
+- The transport `igor lore-search` uses to reach its Igor is gate two's, bound by the rules
+  that only the run's worker reaches it and that it widens nothing (task 2.8). So is the ref
+  the Igor fetches the `questions` branch into under `igor serve`, and that `igor run` reads
+  (decision 35):
+  [#208](https://github.com/adamstallard/igor/pull/208) fetches only its lore repository's
+  default branch, into a ref and a worktree per process, so the `questions` branch needs a ref
+  of its own beside them.
+- For [#208](https://github.com/adamstallard/igor/pull/208): its decision 28 says `igor run`
+  never fetches lore. Under decision 58 an `igor run` that pushes citations or questions-branch
+  files fetches the destination repository's `questions` branch, and nothing else, and applies
+  nothing to the lore checkout, so #208's rule for lore entries still holds. #208's text
+  should say that it covers lore entries, not the `questions` branch; this change does not
+  edit it.
+- The spec restates #25's rule that, during a run, a file keyed to another repository than
+  the item's shows as input (decision 44). #25's spec states it, so this change's next round
+  should replace the restatement with a pointer.
+- #25 counts no comment as a relayed answer until its task 0.21 shows that GitHub reports
+  which App wrote a comment. Until then the Igor sets `input` on every file whose answer is a
+  `User says: ` comment, and its search shows such a file as input. Task 4.8 checks.
+- What an `igor serve` run reads after its fetch of the `questions` branch fails at the start
+  of the run: the copy last fetched, or nothing. The results say the fetch failed either way,
+  and no scenario covers that case yet.
+- [#140](https://github.com/adamstallard/igor/pull/140) and this change each define an Igor's
+  record of the questions it posted, with the same rule that the record, never the posted
+  text, decides. This change's record keeps hashes on `igor-state`, never text (decision 59). One should own the record and the other point to it; whichever merges second
+  does that.
+- Two cases have no scenario yet, for the next round of this change to add. `lore-review`'s rule
+  that, during a run, a collision outside the role's scope is reported only as "id taken" also
+  holds where the lore checkout already holds an entry or rejection of the same name; no
+  scenario tests that case. Nor does a questions-branch scenario test the `repository` key's
+  visibility changing between the run's start and the push.
+- Whether a worker allowed only `Bash(igor lore-search)` can feed the command its standard
+  input, since a pipe from `echo` needs `echo` allowed (`src/execute.ts:1652`). Task 4.5
+  checks; if it cannot, gate two gives the command another way to take the text before any
+  worker relies on it.
+- [#189](https://github.com/adamstallard/igor/pull/189) starts two worker runs in one
+  execution, and when the second is killed for a limit before reporting, it publishes the
+  first run's summary. Under decision 22 such an execution counts as flagged, and its pull
+  request carries no summary of either run. #189 has no such exception. #189's execution row
+  also holds each worker run's transcript, which decision 22 withholds for a flagged
+  execution. Both are #189's to change, and this change does not edit it.
+- [#153](https://github.com/adamstallard/igor/pull/153) and
+  [#143](https://github.com/adamstallard/igor/pull/143) also modify `role-config`'s *A role
+  declares its sources, lane, behaviour, permissions, and reviewers*, and they and the open
+  change `lore-from-corrections` modify *Merge semantics differ by field kind*. Whichever of
+  them and this change merges later carries this change's `igor lore-search` exception into
+  its text. Under #204's order #143 archives before this change, so this change carries
+  #143's `reserve` field and merge rule (task 5.2), and #153 archives after it, so #153
+  carries this change's exception, with the
+  scenario *Listing the search command is no widening*; #204's archive check refuses #153
+  until it does.
+- This change defines a *handback comment* as the Igor's handoff comment when it asks a
+  question the run could not settle. Decision 41 needs the Igor's record of the questions it
+  posted in each one. `graceful-handoff`'s handoff comment holds no question today, and #211,
+  which has the Igor ask in it, specifies neither the comment's format nor that record. Task
+  4.6 checks once #211 is specified; until the record exists, every log file holding a
+  person's answer is refused.
+- Once #211's inquisitor role posts an answer given in chat onto the item as a comment by its
+  App, decision 24 would accept that comment as proof. Since an Igor's App relays no one's
+  answer (decision 45), the Igor sets such a file's `authority` to `input` when it pushes it,
+  as shared-skills #25 keeps a chat answer as input. Whether to refuse the push instead is a
+  question for Adam once #211 specifies the role.
+- The text a worker pipes to `igor lore-search` is untrusted and can quote item text. Nothing
+  yet requires that the permitted way of feeding standard input keeps that text out of shell
+  expansion, such as `$(…)` in an unquoted heredoc. Task 4.5 checks this too.
+- For [#179](https://github.com/adamstallard/igor/pull/179) and gate two: decision 34's
+  authority checks spend the Igor's App installation's GitHub rate limit, which claiming and
+  #179's heartbeats also use. A worker steered by item text could exhaust it by calling `igor
+  lore-search` in a loop, since nothing caps or caches the checks' reads. #179 runs several
+  Igor processes, each a *rank*, and stops every one of them when their heartbeats to GitHub
+  fail. Whether to cap the reads, cache them or accept the limit is open.
+- A run whose worker never sends a completed report. Decision 38 makes
+  every run that ends without one flagged. Nothing yet makes every worker send one on every
+  run, including a role whose worker never runs the inquisitor; if one does not, every run of
+  that role is flagged, and loses its transcript, its pull request summary and its refusal
+  record's reply. Task 3.1 has every worker send the report, and task 4.7 checks how reliably
+  workers send it.
+- [#179](https://github.com/adamstallard/igor/pull/179) removes the worker's absolute time
+  ceiling, which decision 38 names among the ways a run can end without its report. Once #179
+  lands, that case is gone; the rest of the rule is unchanged.
+- [#188](https://github.com/adamstallard/igor/pull/188) sets how much its log keeps by a
+  *tier* chosen from the visibility of the store and the worked repository. Its `tools-only`
+  tier, for a public store and a private repository, keeps no command, while decision 38's
+  names-only form keeps a command's name. The spec keeps a flagged run's log within #188's
+  tier, so under `tools-only` the log keeps no command names at all.
+- [#153](https://github.com/adamstallard/igor/pull/153)'s *The code verifies text before it
+  publishes it* refuses, for a role that lists `prose`, model-written text that does not pass
+  `prose verify-post`. A question or miss file is model-written text the Igor publishes, so
+  under #153 a prose role's Igor would push none. Whether #153 exempts them is #153's to settle.
+- For [#153](https://github.com/adamstallard/igor/pull/153): under decisions 60 and 64, its model
+  steps after the worker, such as writing the pull request body, are part of the run.
+  `task-execution` here counts each as a worker run, so each must report the flag when it
+  meets a question with a category, and send a completed report; a step that sends none flags
+  the whole execution. #153 does not yet give its steps either, so as #153 stands every
+  execution with those steps would be flagged. That is #153's to add; this change does not
+  edit it.
+- [#212](https://github.com/adamstallard/igor/issues/212)'s body says this change's citation rule uses
+  its startup read of the destination repository's visibility. Under decision 37 the push rules read it
+  at each push; #212's body should say so.
+- `lore-firing`'s *An entry arrives with what a reader needs to judge it* uses "citations" for an
+  entry's provenance, while this change uses it for a record that an entry answered a question.
+  One of the two should be renamed.
+- `lore-firing`'s *Injected lore is trusted; the work item is not* says lore goes in the trusted
+  channel, while a search result marked as lore does not. That requirement should say
+  *injected* lore.
+- Decision 13's refusal record keeps "only the refusal's reason", and no scenario says whether
+  the record's other fields, such as its item and time, are kept.
+- `work-discovery`'s *State lives on an orphan branch of the destination* puts every execution's
+  transcript on the state branch; this change writes none for a flagged run and does not
+  modify that requirement. This change's next round should add a modified delta for it.
+- Decision 21 counts each refusal by reason, while the spec counts every refused
+  questions-branch file under one "refused" reason, as it counts citations. Whether to split
+  the count by format, credential, path and unasked question is open.
+- [#179](https://github.com/adamstallard/igor/pull/179) gives each `igor run` process a *run
+  id*, which it puts in the names of the worktrees that process creates, while this change's
+  run id names one execution of an item. The two could be confused, so one of the two should
+  be renamed. This change does
+  not edit #179.
+- A worker's report of a citation for a question with a category is the worker's to withhold:
+  only the worker's honesty stops it, not the Igor.
+  The Igor sees the categories a run met only in its flag (decision 97), which does not say
+  which citation or questions-branch file belongs to which question, and a flagged run pushes
+  nothing anyway; a steered worker that reports such a citation from an unflagged run gets it
+  pushed (decision 11).
+- [#153](https://github.com/adamstallard/igor/pull/153) (`signed-publishing`) requires skill
+  trailers on every commit an Igor makes for a role that lists those skills. A citation commit
+  is a machine record with no trailer (shared-skills #25's decisions 90 and 110). Adam decided
+  on 2026-10-20 that #153 should exempt citation commits; that is #153's to settle, and its
+  body says this change and #25 need the exemption. Under decision 20 the Igor also commits
+  question and miss files to the `questions` branch with no trailer, which #153's exemption
+  does not yet name.
+- [#171](https://github.com/adamstallard/igor/pull/171) renames *The worker is given an
+  explicit environment holding no credential but its seat's* by adding "token" to its end.
+  This change archives after #171 (decision 107). Once #171 merges, this change's `task-execution` delta
+  is rewritten against the renamed requirement, over #171's text, and the citation
+  requirement cites the new name (task 5.1). [#175](https://github.com/adamstallard/igor/pull/175) modifies the same
+  requirement too, adding `GIT_INDEX_FILE`. #175 archives before #171, which removes the
+  requirement and re-adds it under the new name keeping that rule, so the rule reaches this
+  change through #171's text.
+- [#179](https://github.com/adamstallard/igor/pull/179) also modifies `surface-adapter`'s *An
+  Igor that cannot act as its App does not start*, which this change modifies for decision
+  62's `igor-` check. Each delta replaces the requirement whole, and #179 archives first, so
+  this change carries #179's text, its rank-named `igor serve reviewer-1`, before it
+  archives (task 5.2).
+- [#179](https://github.com/adamstallard/igor/pull/179) removes `task-execution`'s *A killed
+  worker's failure names the limit it breached*, which decision 56's rule cites, and replaces
+  it with *A killed worker's failure names the silence it breached*, with no ceiling case.
+  #179 archives first, so this change points the citation at the new requirement and drops
+  the `time ceiling` example before it archives (task 5.2).
+- The run's transcript holds the worker's output, so it can repeat the id of a citation the
+  Igor refused, and #188's log of the worker's tool calls might too. Neither is the count
+  record that decision 12 keeps free of worker text. This change does not keep refused ids out
+  of either; whether to is open, and the log's part is
+  [#188](https://github.com/adamstallard/igor/pull/188)'s.
+- `lore-from-corrections` adds provenance to an existing entry when a correction restates its
+  rule, rather than proposing a duplicate. Under decision 6, a duplicate check during a run
+  cannot see an entry outside the run's role's scope, so a correction restating such an entry's
+  rule would be proposed as a new entry. That change may want to narrow its scenario; this
+  change does not edit it.
+- `lore-from-corrections` never proposes a candidate a reviewer has already rejected. Under
+  decision 6, a duplicate check during a run cannot see a rejection outside the run's role's
+  scope, or one that records no scope, so a correction restating that candidate would be
+  proposed again, for a reviewer to reject again. That change may want to say so; this change
+  does not edit it.
+- `lore-from-corrections` says no worker *receives* a `provisional` candidate until a person
+  merges it, and that nothing it proposes *reaches* a worker unreviewed. Decision 3 reads that
+  promise as being about injection. That change may want to narrow its wording to say so; this
+  change does not edit it.
+- Whether the destination repository's rulesets or branch protection let an Igor's App create and push
+  the orphan `questions` branch. `surface-adapter` requires the App to hold Contents
+  write on #208's lore repository, which is the destination repository unless `destination`
+  names another (see the item for #208 above). Task 4.3 checks. Until the App can, every citation the Igor tries to
+  push is counted as not pushed, and the branch holds none, so a review reports citations as
+  not checked.
+- **Found by the consistency read of decisions 46 to 53, for the author's next round:** `role-config` still calls `commands` "the
+  only thing" that lets a worker run anything, beside the `igor lore-search` exception; the
+  proposal calls the `repository` key where a question was asked from, while #25 has it name
+  the repository the question concerns; the visibility rule and the `owner/repo` guard are
+  stated both here and in #25; the item's repository, on which the visibility rules hinge, is
+  defined nowhere for a non-GitHub tracker; #25's `sk-ant-` prefix may in fact match the seat
+  token, which decision 28's reasoning and one scenario say it misses.
+- **Found by the consistency read of the #25 alignment, for later rounds.** Nothing says
+  `igor lore-search` exits with an error on empty input, which #25 relies on; the spec's
+  definition of a miss file is narrower than #25's and should point to it; no scenario covers
+  a failed fetch, how the push-side checks authenticate, or a flagged run under #188's
+  `tools-only` tier; the spec never defines a *flagged* run; *Status and scope are exact
+  filters, always applied* states no scope rule, which only `scopeMatches` holds; some
+  requirements still carry rationale.
+- **Found by the consistency reads of decisions 54 to 61,** for the author's next round, or
+  for other changes. Decisions 67, 68 and 69 settled the three questions they raised for Adam.
+  - `IGOR_RUN` shares a prefix with #171's `IGOR_RUN_TOKEN`, a seat token. One could be
+    renamed so that no prefix match or reader confuses a marker with a secret.
+  - *Status and scope are exact filters, always applied* and *An Igor runs its worker's lore
+    searches* each state the visibility order and the rule for an unreadable visibility,
+    beside the citation requirement; `task-execution` restates #188's tier rule. One place
+    should state each, and the others point to it.
+  - The transcript-withheld note points to an action log, which no run keeps until #188 is
+    built.
+  - Whether #25's credential prefixes match the seat token is unmeasured; task 4.9 checks.
+- **For `directed-interaction` (decision 74).** That open change says an Igor that cannot act
+  on an item as written "SHALL say what it needs rather than choose an interpretation".
+  It should name decision 73 as an exception: a flagged run says only `needs a person`. This
+  change does not edit it.
+- **For [#211](https://github.com/adamstallard/igor/issues/211) (decision 75).** #211's
+  decisions 7, 9 and 10 have the handback comment carry a question to the inquisitor role,
+  with a label such as `igor:question`. A flagged run's handoff carries neither, so #211's
+  role never sees a flagged run's question; only a person picks the item up. #211's body
+  should say so.
+## Why
+
+The requirement *Lore reaches the worker unbidden* forbids offering a worker a search over the
+store, because a worker needs no search: anything it would think to look up is reachable by
+reading the codebase. Two cases contradict that:
+
+- **Firing does not always deliver every entry.** When the in-scope entries exceed the token
+  budget, none are injected (*Exceeding the budget is reported, never silently resolved*), and
+  the relevance mechanism that the budget requirement anticipates would inject only some. A
+  search lets a worker find a recorded answer that was not injected.
+- **The inquisitor searches lore before an agent asks a person anything.** The shared
+  `inquisitor` skill (shared-skills #25) runs filters before an agent asks a question, and the
+  first looks for an answer already recorded, in lore among other places.
+  [#211](https://github.com/adamstallard/igor/issues/211)'s decision 9 has an Igor run those
+  filters when a question it cannot settle stops its work, so an Igor would search lore before
+  asking anyone. That search avoids interrupting a person; it is not looking up how to do the
+  work, which is all the ban's reason speaks to.
+
+## What Changes
+
+- `lore-firing`'s *Lore reaches the worker unbidden* is removed and re-added as *Lore reaches the worker unbidden, beside a search it may run*, since openspec will not archive a modified requirement that drops a scenario in force. It keeps injection, now saying it happens
+  whenever the entries fit the firing budget, and replaces the ban on a search with igor's
+  search, which every worker is offered.
+- *Lore reaches the worker unbidden, beside a search it may run* also defines a search, a search during a run, and when a scope covers a role.
+  It holds a search during a run to firing's scope rule for lore entries, puts every
+  file on the Igor's destination repository's `questions` branch in scope, lets it return in-scope entries that
+  are not `active` with a label, keeps its results out of the injected-lore channel and out of
+  the firing record, and says what a duplicate check may compare against.
+- The scenario *No search affordance offered* is removed. Seven are added: *Injection does not
+  wait on a search*, *A search never shows an out-of-scope entry*, *A search shows a
+  questions-branch file from any repository*, *A search labels in-scope
+  entries that are not active*, *Search results never arrive as injected lore*, *A search hit
+  is not a firing*, and *A duplicate check is curation, not a search*.
+- A new `lore-firing` requirement, *An Igor publishes the citations its worker reports*, says
+  who writes a citation during a run, including one from an inquisitor run the Igor starts
+  itself, which citations the Igor accepts, what the file holds, where it may go, and that a
+  citation it refuses, withholds or cannot push is counted, under one reason in a fixed order.
+  It has the Igor read the destination repository's visibility from GitHub at each push. It is the
+  one statement of the
+  Igor's push rules, which shared-skills #25 points to. It sits in
+  `lore-firing` beside *What fired is recorded on the state branch*, the other record of an
+  entry's use. For the file's format, it points to shared-skills #25's *A citation file has one
+  format* instead of stating its own. Under `igor run` the Igor fetches the `questions`
+  branch only to push (decision 58). It has twenty-four scenarios.
+- A second new `lore-firing` requirement, *An Igor publishes the questions-branch files its
+  worker reports*, has the Igor push a worker's question and miss files under the citation
+  rules, refusing a file that claims a person's answer to a question the Igor's own record
+  says it did not ask, replaces one on the branch, or holds a credential by #217's matcher.
+  The Igor sets each file's `asked_from` key to the item's repository, refusing a worker's
+  file that already holds one, and sets an answered file's `authority` itself by #25's checks.
+  It records the questions of each handback comment on `igor-state` as hashes, with no text.
+  The Igor sets a relay App's answer's `answered_by` as well as its `authority`, and records
+  the linked comment's whole text, never the worker's line, as the answer. It has thirty-two
+  scenarios (decisions 20, 21, 24, 28, 30, 33, 34, 41, 42, 45, 59, 67, 70, 73, 77 and 78, and the
+  alignments with #25).
+- A third new `lore-firing` requirement, *An Igor runs its worker's lore searches*, specifies
+  `igor lore-search`: it reads a question's text or terms on its standard input, the Igor runs
+  it for the role of the run whose channel carried it, every worker has it without its role
+  listing it and no role can remove it, it returns no `questions`-branch file about a more
+  private repository than the item's, judging a file by the more private of its `repository`
+  and `asked_from` and by visibility alone, and it is read-only. Under `igor serve` the Igor
+  fetches the `questions` branch when a run starts; `igor run` reads it as last fetched. The
+  command labels each question and miss file it returns as #25's filter 1 does, labelling a
+  question file that holds no answer as unanswered. The Igor runs #25's authority checks
+  before it labels a file an answer, and shows the file as input, labelled as unconfirmed,
+  when a check fails or cannot be run, judging a linked comment by #25's reduced equality
+  with no model call (decision 72), and reading the relay files for #25's relay rule. It matches,
+  ranks and caps results by #25's filter 1 rule, filters `project:` entries by visibility, and
+  serves the Igor's own
+  inquisitor run too. The requirement has thirty-three scenarios (decisions 15, 23, 27, 29, 31,
+  34, 35, 42, 43, 44, 45, 49, 52, 53, 72 and 78).
+- `lore-firing`'s *Status and scope are exact filters, always applied* keeps a `project:`
+  entry from firing into a run whose item's repository is more visible than the repository
+  the scope names, and says which repository that is, with four new scenarios (decisions 54
+  and 55). The search's filter of `project:` entries points to it.
+- `role-config`'s *A role declares its sources, lane, behaviour, permissions, and reviewers*
+  makes `igor lore-search` the one command a worker may run that its role's `commands` need
+  not list, and its scenario *Declared commands bound what the worker may run* says so.
+  *Merge semantics differ by field kind* puts the command outside the monotonic rule, with a
+  new scenario (decision 23).
+- `task-execution`'s *Only reversible artifacts are produced* exempts pushing a run's citations
+  and its question and miss files from the role's `allow` list, with two new scenarios.
+- `task-execution`'s *The worker is given an explicit environment holding no credential but
+  its seat's*, which #171 renames by adding "token" (task 5.1), has the Igor set `IGOR_RUN`, which carries no secret, in a worker's environment
+  and its own inquisitor run's, keeps each worker run's Claude state private by #174's design,
+  and runs no worker for a seat that names no token, with four new scenarios: two for
+  `IGOR_RUN` and two for decision 87.
+- `task-execution`'s *Transcripts and outcomes are captured to the state branch* writes no
+  transcript for a run that met a question with a category, and for such a run puts no excerpt
+  of the worker's result in the pull request body, and has a refusal record keep only the
+  limit and reset time Igor read, while any other refused run keeps the provider's whole
+  reply. A run that ends before its worker completes its report, for any reason, counts as
+  having met such a question (decisions 19 and 38). An execution counts as flagged when any of
+  its worker runs does (decision 22). A flagged run's transcript path holds a one-line note,
+  its ledger row keeps each denied command by name only, and #188's log of its tool calls
+  keeps names only (decisions 36 and 38), and its ledger row's `reason` keeps only fixed
+  words for the kind of reason, such as `error`, or for a worker killed for a limit the hang's
+  kind and the limit's duration (decisions 51 and 56). A model step igor runs after the worker,
+  such as #153's, is part of the run and counts as a worker run (decisions 60 and 64). It gains
+  twenty-one scenarios, and
+  *Transcript persisted off the main line* applies only to a run that met none and whose
+  worker runs all completed their reports (decisions 13, 19 and 38).
+- `lore-review`'s *An entry already in the store is never overwritten by proposing* reports an
+  out-of-scope collision during a run only as "id taken", and then proposes nothing for that
+  candidate in the run, with two new scenarios (decisions 6 and 14).
+- `surface-adapter`'s *An Igor that cannot act as its App does not start* refuses to start an
+  Igor whose App's slug does not start with `igor-`, with two new scenarios, and requires the
+  App on the destination repository too (decision 66); *An Igor
+  knows its own bot account* renames its example App to `igor-acme-reviewer` (decision 62).
+  `docs/deployment.md` tells a person to name the App with the prefix.
+- `graceful-handoff`'s *A handoff states what was done, what remains, and who could continue*
+  has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
+  no failure detail or worker's reason and point to the item's transcript path, and has a
+  flagged run's handoff ask no question, add no question label and keep its question on the
+  host, with twenty-eight new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97, 101, 102, 128
+  and 133).
+- `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
+  from rerunning an item a flagged run handed back, and lets only an edit by someone with
+  write access release it, keeps a flagged-held item flagged-held whatever its handoff carries and with a
+  record that never expires, and lets the operator release it with `igor release`, which
+  keeps the item flagged-held when a delete is refused; a release by an edit deletes the files the
+  same way, done by any live process on the state directory the entry names, and also keeps the item flagged-held when a
+  delete is refused. Each flagged run's question is a flagged hold of its own, with an entry naming
+  its state directory's id and its question file, cleared only by deleting that file once the
+  run's `needs a person` row exists, and a lost record is rebuilt from the ledger; a stuck
+  release, and any mismatch between the record, the ledger and the files on a state
+  directory, opens a notice of its own, and `igor release` releases in a batch only flagged
+  holds with no question file left to read. It has thirty-seven new scenarios, including those for
+  `igor release`, and four changed (decisions 76, 79, 82, 83, 84, 102, 104, 108, 110, 111, 113
+  to 117, 120, 121, 125 to 132, 134 to 144, 146 and 149). The `work-triage` delta keeps `condition-backoff`'s rule, in force since #101 merged, that a
+  handoff caused by a fact about
+  the Igor is not suppressed, with that rule's scenario.
+- `stuck-conditions` gains *A notice opens at once, stops nothing, and stays open while an
+    item is affected*, a kind of condition of its own with no stored record, with five
+  scenarios, and *Each notice points its operator to a runbook*, with one (decision 143), and
+  modifies #82's *Every open condition is readable without naming a role* so
+  `igor conditions` lists a notice, with one new scenario (decisions 85, 111, 118, 122, 129
+  and 130).
+- `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
+  search hit is not a firing and that a review counts citations from the destination repository's
+  `questions` branch, and §4.1 says the worker never *has* to search.
+- `docs/deployment.md` gains *Flagged holds and their notices*: how to release a flagged-held
+  item, and a runbook for each of the three notices (decision 143).
+
+## Capabilities
+
+### New Capabilities
+
+None.
+
+### Modified Capabilities
+
+- `lore-firing`: *Lore reaches the worker unbidden, beside a search it may run* allows a search over the store and says what
+  a search may return. *Status and scope are exact filters, always applied* keeps a `project:`
+  entry about a more private repository from firing. Three new requirements have the Igor run its worker's searches and
+  publish its worker's citations and its question and miss files.
+- `lore-review`: an id collision with an out-of-scope entry or rejection, during a run, is
+  reported without naming it, and the candidate is not proposed in that run.
+- `role-config`: `igor lore-search` is the one command a worker may run without its role's
+  `commands` listing it.
+- `surface-adapter`: an Igor refuses to start when its App's slug does not start with
+  `igor-`.
+- `graceful-handoff`: a flagged run's handoff states why it stopped only in fixed words,
+  points to its transcript path, asks no question, and keeps that question on the host, and
+  a failed write does not block it, and copying a live state directory is unsupported
+  (decisions 71, 73, 75, 76, 80 and 133).
+- `work-triage`: a reply does not rerun an item a flagged run handed back; it stays flagged-held, and
+  only `igor release` or an edit by someone with write access releases it (decisions 76, 79,
+  82 to 84, 102, 104, 108, 110, 111, 113 to 117, 120, 121, 125 to 132, 134 to 144, 146 and 149); any
+  mismatch between its record, the ledger and the files opens a notice, and `igor release`
+  releases in a batch only flagged holds with no question file left to read.
+- `stuck-conditions`: a notice, a kind of condition of its own, opens on its first
+  occurrence, stops no scope, and clears only when no item is still affected; the three
+  flagged-hold conditions are notices, and `igor conditions` lists them; and each notice names
+  its runbook in the deployment guide (decisions 85, 111, 118, 122, 129, 130, 140 and 143).
+- `task-execution`: pushing a run's citations and its question and miss files is exempt from
+  the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run
+  that met a question with a category stores no transcript; a question it could not keep is
+  recorded as `question not kept` (decision 80); each worker run has its own
+  private Claude state, by #174's design (decision 87).
+
+## Impact
+
+- `test/firing.test.ts`: the test *offers a worker no way to search the store* checks the removed
+  scenario, and is deleted in gate two.
+- `src/firing.ts`: its header comment gives the old reason for having no search, and is rewritten
+  in gate two.
+- [#196](https://github.com/adamstallard/igor/pull/196) (`spec-trace`) tags that test with
+  `@scenario lore-firing: No search affordance offered`. Whichever of #196 and this change
+  merges second removes the tag with the test.
+- `lore-from-corrections` and `lore-from-reviews` each compare a candidate against existing
+  entries, and neither limits that by scope. Where such a check runs during an Igor's run, it
+  must not compare against an entry outside the role's scope (decision 6).
+- `lore-from-corrections` says no worker receives a `provisional` candidate until a person
+  merges it. That promise is about injection, and a search result is not injected (decision 3),
+  so the change leaves it as written.
