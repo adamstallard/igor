@@ -119,12 +119,16 @@ export interface ExecutionResult {
   apiErrorStatus?: number | string
   /**
    * Only where `cures` includes `seat:<id>:credential`: a full hash of the credential the provider
-   * refused. Off every other run, where it would publish a digest nothing reads.
+   * refused, which tells that seat's credentials apart, so a replaced one starts a new count. Off
+   * every other run: the execution log is committed, and there it would publish a digest of the
+   * credential that nothing reads.
    */
   tokenFingerprint?: string
   /**
-   * Set where no worker started, as on a catch-up whose merge came out clean in the clone. Such a
-   * run is an outcome only of a condition it meets, never evidence that one has cleared.
+   * Set where no worker started. A catch-up, the Igor bringing its own pull request up to date
+   * with its base, runs no worker when the merge comes out clean in the clone. Such a run counts
+   * toward a condition it meets, but never as evidence that a condition has cleared: it presented
+   * no credential and ran no command.
    */
   workerless?: true
   /** Only on a budget stop or a failure. */
@@ -1438,16 +1442,20 @@ export async function execute(
    * built, so a key added late in the run is not lost to an earlier copy.
    */
   const minted = new Set<string>()
-  /** Named only where a seat is, since the key is about that seat's credential and no other. */
+  /** `seat:<id>:credential` for this run's seat; none without a seat, as it names one. */
   const credentialKey = options.seat === undefined ? undefined : credentialCure(options.seat)
-  /** A hash of the credential the worker ran under, once its environment is built. */
+  /**
+   * A hash of the token variables in the worker's environment, set once that is built. Stays
+   * undefined for a `~/.claude` login, which is in no variable.
+   */
   let credential: string | undefined
   /** Whether a worker was started, whatever became of it. */
   let asked = false
   /**
-   * What the run says about conditions, spread into every result: the keys it minted and, where
-   * no worker started, that it observed nothing else. A run that presented no credential and ran
-   * no command cannot show that a condition has stopped recurring.
+   * What the run says about conditions, spread into every result: the cure keys it minted, the
+   * refused credential's hash where it minted `credentialKey`, and `workerless` where no worker
+   * started. A run that presented no credential and ran no command cannot show that a condition
+   * has stopped recurring.
    */
   const cured = () => {
     const unobserved = asked ? {} : { workerless: true as const }
@@ -1528,22 +1536,28 @@ export async function execute(
 
     /**
      * The denials and the session id, kept whatever the outcome: both answer questions asked after
-     * a run, not during it.
+     * a run, not during it. Also mints the cure keys the run met: each denial's, and the seat's
+     * credential key on a 401.
      *
-     * `finished` is true where the worker exited zero, which the envelope cannot be asked for.
+     * `finished` is true where the worker process exited zero. The caller passes it in because the
+     * envelope, the worker's final JSON result, does not carry the exit status.
      */
     const trace = (output: WorkerOutput | undefined, finished = false) => {
       const denials = denialsFrom(output?.permission_denials, role.name)
       for (const d of denials) if (d.cure !== undefined) minted.add(d.cure)
-      // The 401 check below is deliberately not a `limitSignals` member: a limit and a refused
-      // credential want opposite responses. Read as a limit, an authentication failure would hand
-      // items back to wait for a reset that never comes, and fill `refusals/` with captures.
+      // The 401 check below is deliberately not a `limitSignals` member: a usage limit and a
+      // refused credential want opposite responses. Read as a limit, an authentication failure
+      // would hand items back to wait for a reset that never comes, and fill `refusals/` with
+      // captures.
       //
-      // "Did not finish" is asked differently on the two paths in, because this decides whether
-      // to stop using a seat rather than what to write down. A non-zero exit has already said the
-      // run did not finish, so an envelope silent about erroring is still a refusal there. A run
-      // that exited zero, and may have published, must state that it errored: minting on silence
-      // would stop a working seat, and every clean probe on it would meet the condition again.
+      // Whether the run failed is asked differently for the two callers: the path where the worker
+      // threw, and the path where it returned. A worker that exited non-zero (`finished` false)
+      // has already failed, so an envelope that never says it errored
+      // still counts as refused. A worker that exited zero may have published, so its envelope
+      // must say `is_error: true`. Counting its silence as a refusal would stop a working seat,
+      // and every clean probe on that seat, the one item let through after the cooldown to test
+      // it, would meet the condition again. This is stricter than the test for keeping
+      // `limitEnvelope`, because it decides whether to stop using a seat, not what to write down.
       const refused = finished ? output?.is_error === true : output?.is_error !== false
       if (credentialKey !== undefined && output !== undefined && refused && Number(output.api_error_status) === 401) {
         minted.add(credentialKey)

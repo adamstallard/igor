@@ -44,9 +44,10 @@ describe('what gh says, read back whole', () => {
   })
 
   it('carries the status where the response had no JSON body, which gh prints bare', async () => {
-    // With no JSON to read a message from, gh prints only `gh: HTTP <code>`. If `GhError.status`
-    // were left unset here, a claim GitHub refused would look like one GitHub never answered,
-    // and the discovery watermark would be held below that item, triaging it again every cycle.
+    // With no JSON message to print, as for this proxy's HTML page, gh prints only a bare
+    // `gh: HTTP <code>` line. If `GhError.status` were left unset here, a claim GitHub refused
+    // would look like one GitHub never answered, and discovery would hold its watermark below
+    // that item and triage it again every cycle.
     fakeGh('<html>Forbidden</html>', { stderr: 'gh: HTTP 403\n', code: 1 })
     const error = await gh(['api', 'repos/o/r/issues/1/labels', '--method', 'POST']).catch((e: unknown) => e)
     expect((error as GhError).status).toBe(403)

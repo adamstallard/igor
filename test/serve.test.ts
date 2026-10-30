@@ -854,7 +854,8 @@ describe('a condition whose cooldown has passed lets exactly one item through', 
     const { d } = deps([issue(1), issue(2)])
     const { events, onEvent } = collect()
     const stopped: Gate = { exhausted: () => true, reason: 'role "triage" is stopped: `role:triage:commands` met 3 times' }
-    // Open for triage and the first item; the first item's outcome is what opens the condition.
+    // The gate passes its first two asks, for triage and the first item, and stops every later
+    // one, standing for the first item's run opening the condition.
     let asked = 0
     const gate = async () => (++asked <= 2 ? open : stopped)
     await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent, gate })

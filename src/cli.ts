@@ -445,8 +445,11 @@ program
         process.stdout.write(`\nnot working ${item.id}: ${gate.reason}\n`)
         return undefined
       }
-      // Read before the probe row goes in. Reading the lore throws on a malformed entry, and a
-      // throw after the probe row would leave a probe that never runs, holding the role for hours.
+      // Read the lore before the probe row goes in. The probe row tells every Igor that this item
+      // is the one let through to test a condition. Reading the lore throws on a malformed entry,
+      // and a throw after the probe row would leave a probe that never runs, holding what the
+      // condition stops until the row ages out after `SWEEP_AFTER_MS`, the longest a run can
+      // hold a tree (about seven hours).
       const lore = loreFor(item)
       const probes = gate.probes ?? []
       if (probes.length > 0) await probe(probes, 'taken', item.id)
@@ -547,10 +550,11 @@ program
       // read lazily, so a cycle with nothing to triage never pays for a seat's usage reading.
       gate: gateFor,
       stopped,
-      // The discovery watermark is saved by `settle()` at the end of this command, once it is known
-      // which items were taken. An item this cycle chose to claim and did not take, because of
-      // `--max-items`, the budget, a condition or a tracker that did not answer its claim, keeps
-      // the mark below it.
+      // `planCycle` leaves the discovery watermark unsaved. The watermark is a time per source;
+      // discovery does not reconsider an item last updated before it. `settle()` at the end of this
+      // command saves it, once the command knows which items it took. An item this cycle chose to
+      // claim and did not take keeps the mark below it, whether `--max-items`, the budget, a
+      // condition or a tracker that did not answer its claim held it back.
       markAfterWork: true,
     })
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
@@ -594,8 +598,9 @@ program
     const settle = () =>
       report.settle?.(
         report.toClaim
-          // A directed item is found by its label each cycle, whatever the watermark says, so it
-          // never needs the mark held back for it.
+          // A directed item, one a person handed to this Igor, is found each cycle by its holder
+          // field (the `igor:<role>` label on GitHub), whatever the watermark says, so it never
+          // needs the mark held back for it.
           .filter((c) => c.directed !== true && !taken.has(c.candidate.id))
           .map((c) => c.candidate.id),
       )
