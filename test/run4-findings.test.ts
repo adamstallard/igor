@@ -42,11 +42,14 @@ describe('run 4 findings', () => {
       '@igor-frontend' + '—-'.repeat(10000) + 'x',
       'igor-frontend '.repeat(5000),
     ]
+    // CPU time rather than elapsed, so time spent waiting for a core on a loaded machine does not
+    // count. Backtracking that runs away costs seconds of CPU, far past the bound.
     for (const body of bodies) {
-      const t = performance.now()
+      const before = process.cpuUsage()
       isStop(body, FRONTEND, { ...IGORS, a: 'igor' })
       isGoAhead(body, FRONTEND, { ...IGORS, a: 'igor' })
-      expect(performance.now() - t).toBeLessThan(200)
+      const { user, system } = process.cpuUsage(before)
+      expect((user + system) / 1000).toBeLessThan(200)
     }
   })
 

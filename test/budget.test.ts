@@ -163,8 +163,9 @@ describe('a seat is read through its own credential', () => {
   it('refuses a token_command that hangs, rather than waiting on it forever', async () => {
     // A short timeout stands in for the real one, so the test does not wait 10s on a command
     // that is never going to answer — `pass`/`op` blocked on an interactive prompt is exactly
-    // this shape.
-    await expect(resolveToken({ tokenCommand: 'sleep 0.2' }, {}, 50)).rejects.toThrow(/timed out/)
+    // this shape. The command outlives any delay a loaded machine adds to the timer, so the
+    // timeout always lands first; `exec` makes the shell the sleep, so the kill reaches it.
+    await expect(resolveToken({ tokenCommand: 'exec sleep 60' }, {}, 50)).rejects.toThrow(/timed out/)
   })
 
   it('names the credential when it carries no subscription, rather than blaming the parser', async () => {
