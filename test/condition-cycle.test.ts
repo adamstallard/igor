@@ -91,10 +91,12 @@ describe('a role stopped on a condition takes no work', () => {
     expect(report.toClaim).toEqual([])
     expect(report.condition?.key).toBe('role:web:commands')
     expect(report.untriaged.map((u) => u.reason)).toEqual([UNTRIAGED_CONDITION, UNTRIAGED_CONDITION])
-    // An untriaged item holds the discovery watermark below it, so it is read again once the
-    // condition clears.
+    // The stopped cycle must save a watermark below its untriaged items, so they are read again
+    // once the condition clears. The items are 30 minutes older than `NOW`. The second cycle runs
+    // eight days later, past the seven days a source with no saved watermark looks back, so a
+    // stopped cycle that saved none would lose the items and this test would fail.
     const after = await planCycle(deps([candidate(1), candidate(2)]), role('web'), {
-      now: NOW, identity: 'igor-web', triage, budget: open, stopped: async () => undefined,
+      now: NOW + 8 * 24 * 60 * 60_000, identity: 'igor-web', triage, budget: open, stopped: async () => undefined,
     })
     expect(after.fresh).toBe(2)
     expect(asked).toEqual([['1', '2']])

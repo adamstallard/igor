@@ -191,11 +191,36 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    wants `igor observe` run on the owner's machine, and from a seat that has run out, which
    wants waiting.
 
-`igor budget` reading a seat is necessary and not sufficient. Reading inherits this process's
-environment, so an ambient login or a keychain can answer for a seat that names no token source
-at all — while a worker's environment is written out rather than inherited and has no such
-fallback. `budget` says so explicitly where it applies, and the cure is a token source that
-resolves.
+`igor budget` reading a seat is necessary and not sufficient. `budget` reads a seat under its own
+environment: for a seat that names no token source, that includes whatever login the operator
+running it has, such as a keychain login. A worker gets a smaller environment, written out:
+`PATH`, `HOME`, the proxy and CA variables, and the seat's token. For a seat that names no token
+source, a worker gets `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` from the environment in
+place of a token, where either is set. So `budget` also runs `claude auth status` under the
+environment a worker on each readable seat would get. It adds a line where the answer is
+anything but the seat's subscription:
+
+- **A worker would not be logged in.** `budget` warns that the seat cannot pay. The usual cause
+  is a seat that names no token source and is read through a keychain login, which needs `USER`,
+  and a worker does not get `USER`. Give the seat a `token_env` or `token_command` that resolves.
+- **A worker would pay with an API key or a cloud provider.** The key may be the environment's
+  `ANTHROPIC_API_KEY`, on a seat that names no token source; one set in `claude`'s settings under
+  `HOME`; or one an `apiKeyHelper` there supplies. The provider is one such as Bedrock, set in
+  those settings. `budget` warns, naming where the key comes from or which provider, because
+  Igor's loop spends no API credits (#195). Remove the key or the provider setting from where
+  `budget` names. A key in `claude`'s settings or from a helper outranks a seat token, so this
+  can happen on a seat whose token resolves.
+- **A worker would pay with a login stored under `HOME`**, such as `~/.claude/.credentials.json`,
+  where `claude` keeps its login on Linux. This line is a note, not a warning: the seat can pay.
+  Every seat that names no token source spends that one login. A seat stops after repeated
+  refusals of one credential, and Igor tells credentials apart by a hash of the variable holding
+  each. This login is in no variable, so a refusal of it never stops the seat.
+
+`claude auth status` cannot tell a token set in `claude`'s settings under `HOME`, such as a
+gateway's `ANTHROPIC_AUTH_TOKEN`, from a seat token: it reports both as `oauth_token`. Such a
+token overrides every seat's own. On a seat that names no token source, `budget` notes it as a
+credential in `claude`'s settings. On a seat with its own token, `budget` prints no line for it.
+Keep tokens out of the service user's `~/.claude/settings.json`.
 
 ### Keeping the token out of your shells
 
