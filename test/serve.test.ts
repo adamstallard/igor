@@ -814,3 +814,71 @@ describe('a stop said while the cycle works another item', () => {
     expect((comments['github:o/r#2'] ?? []).some((m) => m.body.includes("stopped at bob's request"))).toBe(true)
   })
 })
+
+describe('a condition whose cooldown has passed lets exactly one item through', () => {
+  const probing: Gate = { ...open, probes: ['role:triage:commands'] }
+
+  it('says the item is the probe before it is claimed, and nothing more once it has an outcome', async () => {
+    const said: string[] = []
+    const { d } = deps([issue(1)])
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      gate: async () => probing,
+      probe: async (keys, outcome) => {
+        said.push(`${outcome} ${keys.join(',')}`)
+      },
+      worker: async () => {
+        said.push('worked')
+        return { result: 'no change needed', total_cost_usd: 0 }
+      },
+    })
+    expect(said).toEqual(['taken role:triage:commands', 'worked'])
+  })
+
+  it('says the probe ended with no outcome where the item was never worked, so the next may probe', async () => {
+    const said: string[] = []
+    const { d } = deps([issue(1)], { verdict: { status: 'lost', by: 'someone-else' } })
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      gate: async () => probing,
+      probe: async (keys, outcome) => {
+        said.push(`${outcome} ${keys.join(',')}`)
+      },
+    })
+    expect(said).toEqual(['taken role:triage:commands', 'void role:triage:commands'])
+  })
+
+  it('takes no further item once a condition stops the role mid-cycle, and says which', async () => {
+    const { d } = deps([issue(1), issue(2)])
+    const { events, onEvent } = collect()
+    const stopped: Gate = { exhausted: () => true, reason: 'role "triage" is stopped: `role:triage:commands` met 3 times' }
+    // Open for triage and the first item; the first item's outcome is what opens the condition.
+    let asked = 0
+    const gate = async () => (++asked <= 2 ? open : stopped)
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent, gate })
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(1)
+    const stopping = events.find((e) => e.kind === 'stopping')
+    expect(stopping?.kind === 'stopping' && stopping.reason).toContain('role:triage:commands')
+  })
+})
+
+describe('iteration 3: a probe that never reached its run', () => {
+  it('leaves no probe row standing where the lore could not be read', async () => {
+    const said: string[] = []
+    const { d } = deps([issue(1)])
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      gate: async () => ({ ...open, probes: ['role:triage:commands'] }),
+      loreFor: () => {
+        throw new Error('malformed entry')
+      },
+      probe: async (keys, outcome) => {
+        said.push(`${outcome} ${keys.join(',')}`)
+      },
+    })
+    expect(said).not.toEqual(['taken role:triage:commands'])
+  })
+})
