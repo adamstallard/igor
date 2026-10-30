@@ -112,3 +112,18 @@ describe('a stop a go-ahead to another Igor answered', () => {
     expect(labelVerdictFrom(self, ['igor:frontend'], [], comments, '2026-10-11T10:00:00Z', IGORS, true).status).toBe('held')
   })
 })
+
+describe('a stop addressed further on, whatever the spelling of the identity', () => {
+  // The name is matched as `bareName` spells the identity: without `@` or `[bot]`, in any case.
+  it('reads the mention whether or not the identity carries `@`, `[bot]` or capitals', () => {
+    for (const identity of ['igor-backend', '@igor-backend', 'igor-backend[bot]', 'IGOR-Backend[BOT]']) {
+      expect(isStop('Thanks. @igor-backend stop', identity, IGORS)).toBe(true)
+      expect(isStop('Thanks. @IGOR-BACKEND[bot] stop', identity, IGORS)).toBe(true)
+    }
+  })
+
+  it('reads nothing for an identity that is only `@` or `[bot]`', () => {
+    expect(isStop('Thanks. @ stop', '@', IGORS)).toBe(false)
+    expect(isStop('Thanks. [bot] stop', '[bot]', IGORS)).toBe(false)
+  })
+})

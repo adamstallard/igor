@@ -139,12 +139,15 @@ export async function writeState(
   return true
 }
 
+/** The extension a log and each of its day partitions end in. */
+const NDJSON_EXTENSION = /\.ndjson$/
+
 /**
  * Where a record stamped `at` belongs. One file per UTC day, so a log stops growing at
  * midnight and an append re-uploads a day of traffic rather than all of history.
  */
 export function partitionPath(path: string, at: string): string {
-  return `${path.replace(/\.ndjson$/, '')}/${at.slice(0, 10)}.ndjson`
+  return `${path.replace(NDJSON_EXTENSION, '')}/${at.slice(0, 10)}.ndjson`
 }
 
 /** Names of the `.ndjson` files in a directory, sorted. An absent directory reads as empty. */
@@ -191,13 +194,13 @@ export async function readLog(
   branch = STATE_BRANCH,
   now: number = Date.now(),
 ): Promise<string> {
-  const dir = path.replace(/\.ndjson$/, '')
+  const dir = path.replace(NDJSON_EXTENSION, '')
   const today = new Date(now).toISOString().slice(0, 10)
   const names = await listPartitions(repo, dir, branch)
   const parts = await Promise.all(
     names.map(async (name) => {
       const key = `${repo}\u0000${branch}\u0000${dir}/${name}`
-      const settledDay = name.replace(/\.ndjson$/, '') < today
+      const settledDay = name.replace(NDJSON_EXTENSION, '') < today
       if (settledDay) {
         const hit = settled.get(key)
         if (hit !== undefined) return hit

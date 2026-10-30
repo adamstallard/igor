@@ -44,6 +44,7 @@ import { repoFromCheckout } from './github.js'
 import { staleBuildWarning } from './staleness.js'
 import { provenanceFromCitations, ProvenanceInputError } from './entry.js'
 import type { Entry, Status } from './entry.js'
+import { oneLine } from './text.js'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -159,7 +160,7 @@ program
       const expert = s.expertSupport > 0 ? ` expert:${s.expertSupport}` : ''
       process.stdout.write(
         `${entry.status.padEnd(11)} support:${String(s.support).padEnd(4)} newest:${s.newestAt ?? '(none)'}${expert}  ${entry.id}\n` +
-          `            ${entry.scope}  ${entry.claim.replace(/\s+/g, ' ').trim()}\n`,
+          `            ${entry.scope}  ${oneLine(entry.claim)}\n`,
       )
     }
 
