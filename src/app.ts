@@ -1,5 +1,6 @@
 import { createPrivateKey, createSign } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { rememberKey, rememberSecret } from './redact.js'
 
 /**
  * An Igor acting on GitHub as its GitHub App: the credentials, the tokens minted from them, and
@@ -94,14 +95,19 @@ export function readCredentials(identity: string, env: NodeJS.ProcessEnv): AppCr
     const raw = env[KEY_VARIABLE]!.trim()
     // An environment file holds one line per variable, so a key there is usually written with
     // `\n` escapes. A key that already has line breaks is taken as it is.
-    return { identity, appId, key: raw.includes('\n') ? raw : raw.replaceAll('\\n', '\n') }
+    const key = raw.includes('\n') ? raw : raw.replaceAll('\\n', '\n')
+    rememberKey(key)
+    return { identity, appId, key }
   }
   const file = env[KEY_FILE_VARIABLE]!.trim()
+  let key
   try {
-    return { identity, appId, key: readFileSync(file, 'utf8') }
+    key = readFileSync(file, 'utf8')
   } catch (error) {
     throw new AppError(`the private key for "${identity}" at ${file} cannot be read: ${(error as Error).message}`)
   }
+  rememberKey(key)
+  return { identity, appId, key }
 }
 
 const base64url = (data: string | Buffer): string => Buffer.from(data).toString('base64url')
@@ -124,13 +130,16 @@ export function appJwt(credentials: AppCredentials, now: number = Date.now()): s
   const claims = base64url(JSON.stringify({ iat: seconds - 60, exp: seconds + 540, iss: credentials.appId }))
   const signer = createSign('RSA-SHA256')
   signer.update(`${header}.${claims}`)
+  let jwt
   try {
-    return `${header}.${claims}.${base64url(signer.sign(key))}`
+    jwt = `${header}.${claims}.${base64url(signer.sign(key))}`
   } catch (error) {
     throw new AppError(
       `the private key for "${credentials.identity}" cannot sign: ${(error as Error).message}`,
     )
   }
+  rememberSecret(jwt, (seconds + 540) * 1000)
+  return jwt
 }
 
 /** Permission name to access level, as the installation token response reports them. */
@@ -267,6 +276,7 @@ export class GitHubApp {
     const permissions = (typeof body['permissions'] === 'object' && body['permissions'] !== null
       ? body['permissions']
       : {}) as Permissions
+    rememberSecret(body['token'], expiresAt)
     return { token: body['token'], expiresAt, permissions }
   }
 

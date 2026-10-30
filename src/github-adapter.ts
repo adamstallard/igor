@@ -1,6 +1,7 @@
 import { gh, GhError, ghGraphql, ghPaginated } from './gh.js'
 import type { BotAccount } from './app.js'
 import { type Accounts, bareName, isGoAhead, isStop, namesToResolve } from './signals.js'
+import { redact } from './redact.js'
 import {
   AdapterError,
   type Artifact,
@@ -575,7 +576,7 @@ export class GitHubTracker implements Tracker {
     // write may have landed and was not confirmed — the one thing a throw cannot say.
     const created = await gh<{ id?: number; html_url?: string }>(
       ['api', `repos/${candidate.repo}/issues/${candidate.native}/comments`, '--method', 'POST', '--input', '-'],
-      JSON.stringify({ body: message }),
+      JSON.stringify({ body: redact(message) }),
     )
     return created.html_url ?? (created.id === undefined ? undefined : String(created.id))
   }
@@ -617,7 +618,7 @@ export class GitHubTracker implements Tracker {
   async createIssue(repo: string, title: string, body: string): Promise<string> {
     const created = await gh<{ html_url?: string }>(
       ['api', `repos/${repo}/issues`, '--method', 'POST', '--input', '-'],
-      JSON.stringify({ title, body }),
+      JSON.stringify({ title: redact(title), body: redact(body) }),
     )
     if (typeof created?.html_url !== 'string') throw new AdapterError(`GitHub did not say where the issue in ${repo} is`)
     return created.html_url
