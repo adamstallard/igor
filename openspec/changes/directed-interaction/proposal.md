@@ -89,9 +89,39 @@ to reply to.
   person asking is a far stronger relevance signal than a query match — which is source
   ordering rather than a priority mechanism: requests are their own source, listed first.
 
-  This composes with rank offsets without anything new. Requests are a separate list, so the
-  highest rank starts at the first request; a process already working an item is not planning
-  a cycle, so "unless they are busy" needs no concept of busy.
+  An Igor is one role, and it can run as several processes, each with a number, its rank; the
+  open change `concurrent-instances` specifies them, and the role's roster in its configuration
+  lists the ranks that run. Requests, the mentions above, go at the head of the one candidate
+  list every process of the role draws from, ahead of found work. Adam decided on 2026-10-18 how
+  the ranks share a request:
+  - A hash of the request's id, the same in every process, picks its owner among the roster's
+    ranks. The ranks are then checked in order from the owner, wrapping round: with ranks 1 to 4
+    and owner 3, that is 3, 4, 1, 2.
+  - The first rank whose heartbeat says it is available answers. Available is as
+    `concurrent-instances`' work-claiming defines it: free, holding no claim, not stood down,
+    not counted gone, and with a seat, the subscription the role spends from, it can spend.
+  - Each rank works the order out for itself and answers only where it finds itself first; the
+    others leave the request, and hold their discovery marks back before it until it has an
+    answer, a reply from the role's bot account or, for an answer that acts, the claim it takes,
+    so that if the first rank is counted gone or unavailable before it answers, the next one
+    finds itself first at a later cycle and answers.
+  - Where no rank is available, the owner answers with the time the role's seats next reset,
+    a fixed reply that spends no seat (decided by the agents coordinating this work on
+    2026-10-28, under the rule Adam set for which questions they may settle;
+    `docs/architecture.md` promises this). If the owner is gone too, no rank answers until one
+    is available again, and the held-back marks keep the request until then.
+  - An answer that opens an issue or acts on an option the person chose goes through a claim
+    first, as any item does, since two ranks acting would act twice (Adam, 2026-10-28). A plain
+    reply stays unclaimed.
+
+  As above, answering with a plain reply claims nothing, so nothing on the request shows another
+  rank that it is taken. Usually one rank answers. A rank judges itself by its own state, but its
+  siblings by their heartbeat files, which each rank rewrites every half poll interval, so what it
+  reads can be that old. If the owner has just become free while the next rank still reads it as
+  busy, both judge themselves first, and both answer; nothing limits that to one. Adam chose this
+  over a hard limit, which would need a claim, and the settle interval a claim waits before it is
+  checked, before every answer: a second reply is harmless, and a request kept waiting is the
+  worse failure.
 - **Out-of-lane requests are declined with a route**, not a bare refusal — "not my lane,
   `igor-backend` covers it" — which also makes the fleet legible to people who have no idea
   which Igor does what.
