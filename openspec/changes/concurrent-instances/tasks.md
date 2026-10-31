@@ -176,11 +176,15 @@
       (decisions 53 and 57). Test: a mention reply whose model text ends in
       `Igor-Rank: 1` and `Igor-Supersedes: 2` is posted with both lines indented, and no process
       reads it as a claim message
-- [ ] 2.21 A process counts its role as run by several processes while any other process's
-      heartbeat file, a serving rank's or a run's, is on the state branch and not gone, as well
-      as while its roster declares several ranks (decision 56). Test: with the roster grown from
-      `[1]` to `[1, 2]` and rank 1 still on the old one, rank 1 contests a hand-over once rank 2's
-      file is there
+- [ ] 2.21 A process counts its role as run by several processes while its roster declares
+      several ranks, or while it knows of a sibling it does not count gone: any process, a
+      serving rank or a run, whose heartbeat file it has read since it started, kept in its own
+      memory so a lost state branch does not end it; and for one maximum poll interval after its
+      own start, whatever the files show (decisions 56 and 69). Tests: with the roster grown
+      from `[1]` to `[1, 2]` and rank 1 still on the old one, rank 1 contests a hand-over once
+      rank 2's file is there; after a lost state branch removes rank 2's file, rank 1 still
+      contests a hand-over until it counts rank 2 gone; a process in its first maximum poll
+      interval contests a hand-over with no sibling file present
 
 ## 3. Contention
 
@@ -206,6 +210,20 @@
       next cycle (proposal, decision 58). Tests: of two available ranks reading one message, only
       its owner creates the issue; with the owner's heartbeat showing it unavailable, the next
       rank creates it
+- [ ] 3.7 A rank that passes over a chat message, or a mention, because another rank is first in
+      its order leaves the channel's read marker before that chat message, or its discovery mark
+      before that mention, until it has an answer, which is one of: a reply from the role's bot
+      account; for a chat message, an issue linking it; or, for a mention whose answer acts, the
+      claim it takes. No rank answers a message that already has one (decision 70). Tests: with the first
+      rank gone before answering, the next rank answers at a later cycle; with it answering, the marker and the mark then pass the message
+- [ ] 3.8 On an item a person handed over that waits, for work in flight or another Igor's label,
+      only the first available rank in its order posts the one comment (decision 71). Test: two
+      ranks find such an item, and one comment is posted
+- [ ] 3.9 A mention whose answer opens an issue or acts on an option the person chose goes
+      through a claim, as any item does; a plain reply stays unclaimed. Where no rank has a seat
+      to spend, the mention's owner answers with the time the role's seats next reset
+      (decisions 62 and 67; #140 builds the answering). Tests: two ranks reading one acting
+      mention act once; with no seat, the owner's reply gives the reset time
 
 ## 4. Recovery
 
@@ -232,7 +250,8 @@
       `<tree>-git` and `<tree>-prompt` directories, where there are any. Each tree and its
       outbox are removed as the worker user of the rank that made it, as #175's release removes
       them, and each `<tree>-git` and `<tree>-prompt` as the service user. A serving process never removes a tree of rank 0. Each `igor run`
-      picks a run id of eight lowercase letters and digits at its start, names every tree it
+      picks a run id of eight lowercase letters and digits, the first a letter (decision 68), at
+      its start, names every tree it
       makes `<role>-0-<id>` with an id starting with that run id, and removes each of its own
       trees as it releases it when the task ends, under its own user. Each run holds an
       exclusive lock on `<role>-0-<run id>.lock` in the trees' directory while it runs; at its
@@ -330,7 +349,9 @@
       reads the item's claim messages (#173's test): another process's message counting means
       silence; its own message holding means a withdrawal, out loud, whose removal follows a
       fresh read of the heartbeat files and claim messages and happens only where its own
-      message still holds the item; no message counting means out loud, with #173's refusal and
+      message still holds the item; no message counting means out loud, with #173's refusal, which, where its own
+      claim message failed to post, is posted only within half a settle interval of setting the
+      label and otherwise not at all (decision 65), and
       the label left, except as 4.26 says; a failed read means nothing now and a reread at the next cycle's
       start, or before `igor run` exits, which decides the same way. A reread that fails again
       is #173's unreadable claim: it counts one `tracker` failure toward the item's breaker, and
@@ -346,13 +367,23 @@
       claim message posted between the test and the removal keeps the label on; a failed test
       is read again at the next cycle; a failed post sends the removal of the label it set
       while under half a settle interval has passed since it started setting it, and later
-      sends no removal and leaves the label; the holder sets an item down; a stop on a handed-over item a sibling
+      sends no removal and leaves the label; the refusal after that failed post is posted under
+      the same half settle interval and not after it (decision 65); the holder sets an item down; a stop on a handed-over item a sibling
       works is ignored by the other rank; a stop on a hand-over nobody has claimed is answered
-- [ ] 4.24 A heartbeat read is used only to judge whether each file changed and whether its
-      rank is available. A process does not stop for anything it finds in its own file, such
-      as another process's id after a lost or rolled-back state branch: keeping one serving
-      process per rank is the operator's. Test: a lost or rolled-back state branch stops no
-      process
+- [ ] 4.24 Each heartbeat also carries its writer's host name and process id. A process that
+      reads, in its own rank's file, a start id other than its own whose counter advanced between two
+      of its reads after its own first write stops taking new items, stops its worker as a
+      stand-down does, keeps its claim in silence, writes itself as not available, and opens the
+      condition `instance:<role>-<rank>:duplicate` naming both writers' hosts and
+      operating-system process numbers, the host once where they share one, recorded in the
+      execution log; it clears with no probe item once three of the maximum poll interval pass
+      with no other start id advancing (decisions 63 and 72). The process reads its own file at
+      every heartbeat firing. Measure how often a lost or rolled-back state branch happens, to
+      size decision 72's known gap, a rollback followed by a restore, which the proposal's
+      *Still open* names. Tests:
+      two processes serving one rank both stop, and the condition names both; a rolled-back
+      branch restoring an older copy, under the process's own id or its predecessor's, raises
+      no condition and is read as a loss; the condition clears after the foreign writer stops
 - [ ] 4.25 A process exiting because the roster no longer declares its rank logs the line below,
       as written, and exits with status 0. Test: the status and the line
 
@@ -371,7 +402,7 @@
       declarations when it detects a loss or rollback of the state branch: a serving rank's file it
       had read is missing, not a run's, which a run removes as it exits or a serving process
       removes once it counts the run gone, or a sibling file's counter
-      is lower than the one last read under the same process id; a new id is a restart, not a
+      is lower than the one last read under the same start id; a new start id is a restart, not a
       loss. It counts a sibling
       gone after three of the longest of its own current interval and the intervals it keeps for
       that sibling, or after three of the maximum poll interval, 30 minutes, where it keeps none; it stands down after two of its
@@ -410,9 +441,12 @@
       exhausted budget. #101 is merged and archived; the block matches its in-force text apart
       from the stand-down and the rewording of #101's watermark sentence that the proposal's *Still
       open* lists
-- [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark
+- [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark,
+      except an item #173 has set down, until #173's *What lifts a set-down* lifts it (decision
+      64)
 - [ ] 5.8 Tests: a crash between triage and the claims leaves the items above the mark; a crashed
-      rank's claim below every mark is taken over
+      rank's claim below every mark is taken over; a set-down item still labelled is not claimed
+      until its deferral ends
 - [ ] 5.9 A sibling rank's mark counts only once this process has seen that rank's heartbeat change
       since it started; its own rank's mark always counts. Test: after a restart, a
       dead rank's old mark does not hold the mark down
@@ -456,7 +490,9 @@
 - [ ] 6.3 `docs/architecture.md` calls a role's processes interchangeable: in §2, under
       *Processes of an Igor are interchangeable*, and in the passages on Discord polling and on
       one identity per role. Restate each: a role's processes share one identity and differ
-      only by rank, which decides who recovers a claim and the order and wait of contention
+      only by rank, which decides who recovers a claim and the order and wait of contention; and
+      the Discord passage also says the read marker stays before a chat message another rank is
+      first for until it has an answer (decision 70)
 - [ ] 6.4 Every place that starts a role by its name alone gives the rank: `README.md` and
       `docs/deployment.md` say `igor serve <role>-<rank>`, `deploy/docker-compose.yml` runs
       `igor serve maintenance-1`, and the unit's header comment installs `igor@<role>-<rank>`

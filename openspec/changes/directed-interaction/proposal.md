@@ -97,14 +97,25 @@ to reply to.
   - A hash of the request's id, the same in every process, picks its owner among the roster's
     ranks. The ranks are then checked in order from the owner, wrapping round: with ranks 1 to 4
     and owner 3, that is 3, 4, 1, 2.
-  - The first rank whose heartbeat says it is available answers. Available means free, with no
-    item in hand, and with room left on a seat, the subscription the role spends from.
+  - The first rank whose heartbeat says it is available answers. Available is as
+    `concurrent-instances`' work-claiming defines it: free, holding no claim, not stood down,
+    not counted gone, and with a seat, the subscription the role spends from, it can spend.
   - Each rank works the order out for itself and answers only where it finds itself first; the
-    others leave the request. Where no rank is available, each rank tries the request again at
-    its own next cycle.
+    others leave the request, and hold their discovery marks back before it until it has an
+    answer, a reply from the role's bot account or, for an answer that acts, the claim it takes,
+    so that if the first rank is counted gone or unavailable before it answers, the next one
+    finds itself first at a later cycle and answers.
+  - Where no rank is available, the owner answers with the time the role's seats next reset,
+    a fixed reply that spends no seat (decided by the agents coordinating this work on
+    2026-10-28, under the rule Adam set for which questions they may settle;
+    `docs/architecture.md` promises this). If the owner is gone too, no rank answers until one
+    is available again, and the held-back marks keep the request until then.
+  - An answer that opens an issue or acts on an option the person chose goes through a claim
+    first, as any item does, since two ranks acting would act twice (Adam, 2026-10-28). A plain
+    reply stays unclaimed.
 
-  As above, answering a request claims nothing, so nothing on the request shows another rank
-  that it is taken. Usually one rank answers. A rank judges itself by its own state, but its
+  As above, answering with a plain reply claims nothing, so nothing on the request shows another
+  rank that it is taken. Usually one rank answers. A rank judges itself by its own state, but its
   siblings by their heartbeat files, which each rank rewrites every half poll interval, so what it
   reads can be that old. If the owner has just become free while the next rank still reads it as
   busy, both judge themselves first, and both answer; nothing limits that to one. Adam chose this

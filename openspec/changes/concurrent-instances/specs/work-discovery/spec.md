@@ -167,7 +167,14 @@ than the look-back a source with no watermark gets.
 A cycle SHALL append its mark only after it has attempted every candidate it will attempt, and a
 cycle whose process crashes first appends none. A cycle that stops early, a cycle whose process stood down
 included, holds its mark back as *Watermarks reduce reconsideration without governing it*
-(`condition-backoff`, #101) says, a stand-down among the reasons it lists.
+(`condition-backoff`, #101) says, a stand-down among the reasons it lists. A rank that passes
+over a request, a mention of the Igor, because another rank is first in its order SHALL hold its
+mark back before that request until the request has an answer: a reply to it from the role's bot
+account, or, for a request whose answer acts, the claim that answer takes, which counts as the
+answer once it is made, before the action is done. If the rank first in the request's order is
+counted gone or unavailable before it answers, the next rank in that order finds itself first at
+a later cycle and answers it. A rank
+SHALL NOT answer a request that already has an answer.
 
 #### Scenario: A lagging rank holds the mark down
 
@@ -210,10 +217,24 @@ included, holds its mark back as *Watermarks reduce reconsideration without gove
 - **WHEN** one rank saves a mark for a source and later saves a later one
 - **THEN** only the later one counts for that rank
 
+#### Scenario: A mention another rank owns holds the mark back
+
+- **WHEN** rank 1 passes over a mention because rank 2 is first in its order, and rank 2 has not
+  answered it by the end of rank 1's cycle
+- **THEN** rank 1's mark stays before the mention, and if rank 2 is counted gone before it answers, rank 1
+  answers the mention at a later cycle
+
 ### Requirement: Every cycle considers the items its role's label holds
 
 Every cycle SHALL consider, besides the items updated after the mark discovery uses, every open
-item that carries its role's label, whatever that item's update time.
+item that carries its role's label, whatever that item's update time, except an item
+`pre-worker-breaker` (#173) has set down, which SHALL be passed over before claiming, though it
+carries the label, until #173's *What lifts a set-down* lifts it.
+
+#### Scenario: A set-down item is passed over though labelled
+
+- **WHEN** #173 has set an item down and the role's label is still on it
+- **THEN** no rank claims it until #173's *What lifts a set-down* lifts the set-down
 
 #### Scenario: A crashed rank's claim below every mark is recovered
 

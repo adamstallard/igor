@@ -881,36 +881,70 @@ safety at the first three ratios only, since the model does not cover probes, an
 be shorter than the bound, so that a process has stopped its worker before a sibling counts it
 gone. The settle interval stays configurable but must be shorter than the poll interval.
 
-### Decisions of 2026-10-28
+### Decisions of 2026-10-28 and 2026-10-30
 
 The consistency read of 2026-10-21 left seven questions for Adam, listed in the proposal's
-*Still open*. Adam answered two on 2026-10-28, and the agents coordinating this work settled the
-five that had one good option or an answer already given (proposal, decisions 62 to 68). The
-spec deltas and tasks that follow from these decisions are still to be written.
+*Still open*. Adam answered two on 2026-10-28, and the agents coordinating this work, under the
+rule Adam set for which questions they may settle (one with a single option that fits, an answer
+already given, or a proof or cheap reversal behind it; such a decision stands until he overrides
+it), settled the five that had one good option or
+an answer already given (proposal, decisions 62 to 68). On 2026-10-30 the agents closed, under
+the same rule, the four correctness gaps a consistency read of 2026-10-24 found, with decisions
+69 to 71, decision 70 closing
+two of them, the read marker and the discovery marks, and settled the question decision 63 left, how a second writer is told from a rollback
+(decision 72). The spec deltas and tasks carry all of them.
+
+None of decisions 62 to 72 changes what the TLA+ model checks, so no configuration was run
+again. The model has no mentions, chat messages or one-comment rules (62, 67, 70, 71), no hosts
+or second process on a rank (63, 72), no set-down or #173 posts (64, 65), and does not spell run
+ids, only distinguish them (68). Decision 69 changes nothing the model checks either. Remembering a
+sibling, and counting the role as several during a process's first maximum interval, only make
+a process contest a hand-over where it might otherwise work it at once, and the model contests
+every hand-over whenever `HandoverContest` is TRUE, as every configuration sets it. Decision 66 is a request to #171.
 
 - **A mention that acts goes through a claim** (decision 62, Adam). Decision 37 lets a mention
   go unclaimed because a second reply costs nothing. Under #140 an answer can open an issue or
   carry out an option the person chose, which is not harmless twice, so such an answer takes the
   claim any item takes.
-- **Two processes on one rank are detected** (decision 63, Adam). A second writer of a rank's
-  heartbeat file shows as the file's write counter going back under the reader's own process id,
-  or as another host or process id writing it; the rank then stops with a condition naming the
-  hosts. The model has no hosts, so a task and a test cover it.
+- **Two processes on one rank are detected** (decisions 63, Adam, and 72). Each heartbeat
+  carries its writer's host and operating-system process id, besides the start id the writer
+  picks when it starts and the counter it raises at each write. A process that sees, between two
+  of its reads of its own rank's file after its own first write, the counter go up under a start
+  id other than its own stops
+  taking items and raises a condition naming both writers. A rolled-back branch restores an older copy, which does not advance by itself, so
+  it is read as a loss, as decision 49 says; only a later restore after the rollback can make an
+  old id seem to advance, the gap the proposal's *Still open* names. The model has no hosts, so a task and a test cover it.
 - **The deferral wins over the label** (decision 64). A set-down, #173's deferral of an item
   after repeated failures before its worker, follows a third claim in a row whose claim messages
   cannot be read, and leaves the role's label on. Every cycle considers each labelled item, so
   without this rule the unreadable claim would be tried again every cycle; a deferred item is
-  passed over before claiming until the deferral ends or a person adds the label again.
-- **The refusal and set-down posts share decision 42's bound** (decision 65). Decision 42 lets a
+  passed over before claiming until #173's *What lifts a set-down* lifts it.
+- **A failed post's refusal shares decision 42's bound** (decision 65). Decision 42 lets a
   process whose claim message failed to post remove the label only within half a settle interval
-  of setting it, so that no sibling's claim comes after; #173's refusal and set-down posts take
-  the same bound, for the same reason.
+  of setting it, so that the removal comes before any sibling's claim; that process's refusal
+  takes the same bound. Every other refusal comes at least a settle interval after the label is
+  set, and the set-down a cycle later, so half a settle interval has always passed by then; the
+  bound would silence them every time, so they keep #173's out-loud rule.
 - **#171 is asked to let a read-cleared condition take clearing rules** (decision 66). #171's
   read-cleared kind clears on any later passing read and lets a citing rule add none, while
   #208's `lore:config:<role>` needs its own limits; #208 asked #171 to allow them, and this is
   reported to #171, which decides.
 - **A mention with no rank available gets the seat's reset time** (decision 67), from its hash
   owner, as `docs/architecture.md` promises.
+- **A process knows its siblings from memory** (decision 69), so a lost state branch that
+  removes a sibling's file does not make the role read as one process. And for one maximum poll
+  interval after its own start it counts the role as several processes, because a sibling writes
+  at least every half maximum, so by then the process has read every live sibling's file.
+- **No marker passes an unanswered request another rank owns** (decision 70): a rank does not
+  move the Discord read marker past a chat message, nor its discovery mark past a mention, that
+  another rank is first for, until the message has an answer: a reply from the role's bot account, for a chat message an
+  issue linking it, or for a mention whose answer acts the claim it takes. A later rank in the
+  order then finds itself first once the first rank is counted gone or unavailable, and answers.
+  A cycle already holds its mark back the same way before an untaken item.
+- **Only the first available rank posts the one comment** (decision 71): the comment saying a
+  handed-over item waits, for work in flight or for another Igor's label, which the in-force
+  rules allow once per item. No rank holds such an item, so the holder rule, that only the rank whose claim message holds an item acts on it,
+  cannot choose one.
 - **A run id starts with a letter** (decision 68). A rank is digits only and a role's name may
   end in a dash and digits, so a run id of digits could make a run's heartbeat file name read as
   another role's rank, as `heartbeats/web-0-12345678.json` does.
@@ -940,12 +974,13 @@ CI runs TLC, the TLA+ model checker, on it (`.github/workflows/tla-concurrent-in
 **TLC finds no violation in the change as specified, within what the model covers.** The model
 leaves out decision 54's removal of a run's heartbeat file, decision 55's state-directory id
 and the probe keepalive, none of which a modelled invariant reads. It also never grows a roster.
-Decision 56 makes a role count as run by several processes while any sibling's heartbeat file is
-live, so its contest on a hand-over differs from the roster's count only when a rank is added,
-which the model does not do. Each rule the model checks is a constant,
+Decision 56 makes a process count its role as run by several processes, and so contest a
+hand-over, while any sibling's heartbeat file is live; the model contests every hand-over, so
+that rule can only add contests the model already makes. Each rule the model checks is a constant,
 TRUE in the change as specified. The twenty-one configurations CI runs, and `ConcurrentInstancesPollSkewFull.cfg`, set every rule TRUE.
-Each of the twenty-one passes every invariant it checks, and `PollSkewFull` had found no violation
-when this revision was pushed (*Bounds and results*). Each file in `model/negative/` turns one rule off and checks only the property that
+Each of the twenty-one passes every invariant it checks, and so does `PollSkewFull`, run once
+locally, though a likely fingerprint collision left a few of its states unchecked, as *Bounds and
+results* explains. Each file in `model/negative/` turns one rule off and checks only the property that
 breaks without it; TLC finds that violation, which shows the rule is needed. CI checks both: the
 configurations beside the model must pass, and every negative file must fail.
 
@@ -1258,11 +1293,20 @@ minutes when stopped. So CI runs it split into the two `RunRankZero` files above
 
 `ConcurrentInstancesPollSkewFull.cfg` puts every poll-interval fault in one run: the head changes
 the interval twice, any rank may crash twice, the branch may be lost or rolled back once, and any
-rank may miss three heartbeats. It is too large for CI and runs here only. When this revision was
-pushed it had found no violation after 69,453,138 distinct states, at depth 19, with 26,645,804
-states still on its queue, on 4 workers; a later commit records how it ends. Only it covers a
-crash, a lost branch and three missed heartbeats together with a change of interval; the split
-files cover them with one missed heartbeat.
+rank may miss three heartbeats. It is too large for CI and runs here only. It finished on
+2026-10-28 with no error found: 3,210,473,091 distinct states, a complete search to depth 94, in
+3 days 21 hours on 4 workers, part of that time paused while the other configurations ran. TLC
+printed two estimates of whether two distinct states shared a fingerprint, so that some state
+went unchecked: `val = 4.1`, which TLC calls optimistic because it assumes evenly spread
+fingerprints rather than because it is lower, and `val = 1.0`, computed from the fingerprints
+actually seen. TLC reports these as probabilities, and a value of 1 or more means a collision is
+likely rather than giving its odds, so a few of the 3.2 billion states were probably not
+checked. The run is strong evidence, not an exhaustive proof. It need not be repeated with another fingerprint seed unless the modelled rules change: a second
+run would take about four days and would miss a different few states, while the split
+configurations CI runs each combine a change of interval with some of these faults and check
+that combination in full, and none combines all of them: only `PollSkewFull` puts a crash, a lost branch and three missed
+heartbeats with a change of interval in one run, where the split file that combines a crash with
+a lost branch allows one missed heartbeat.
 
 Each of the twenty-four files in `model/negative/` finds its violation on one worker, which is how
 CI runs them, the slowest, `NoCeiling.cfg`, in 5 min 12 s, and all of them in 17 min 53 s added

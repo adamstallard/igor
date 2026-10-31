@@ -112,7 +112,7 @@ declared rank, of a rank that is not gone, or of another role, whatever its age.
 
 Rank 0 is `igor run`'s (`work-claiming`'s *A run by hand runs as rank 0*). The roster declares no
 rank 0, but a serving process SHALL NOT remove a rank-0 tree. Each `igor run` SHALL pick a run id
-of eight lowercase letters and digits when it starts. The id in each tree's name,
+of eight lowercase letters and digits, the first a letter, when it starts. The id in each tree's name,
 `<role>-0-<id>`, SHALL be that run id followed by an id of the tree's own, of any length, so two
 runs of one role at once never share a tree and a run tells its own trees by the first eight
 characters of their id. A run SHALL remove each of its own trees as it releases it when the

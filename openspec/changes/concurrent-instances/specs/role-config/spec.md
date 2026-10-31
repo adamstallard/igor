@@ -106,8 +106,14 @@ value someone guesses differently each time. The exceptions, none of which is co
   after it writes* fixes in code;
 - #228's probe settle interval, the wait before reading which probe row decides, fixed there
   too;
-- the probe lapse, three of the maximum poll interval, which `stuck-conditions`' *A probe lapses
-  when its Igor stops keeping it alive in the log* fixes.
+- the probe lapse, three of the maximum poll interval, and the keepalive append's deadline, half
+  a poll interval, which `stuck-conditions`' *A probe lapses when its Igor stops keeping it alive
+  in the log* fixes; it is a fraction of the poll interval like the four derived timings,
+  but is listed apart from them because `stuck-conditions` sets it, so a change to it is made
+  there;
+- `work-claiming`'s window of one maximum poll interval after a process starts, in which it
+  counts its role as run by several processes, and its three maximum poll intervals after which
+  the condition for a second process on a rank clears.
 
  The defaults are: a **settle interval** of 10 seconds before a claim
 is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
