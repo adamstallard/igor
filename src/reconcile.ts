@@ -1,5 +1,5 @@
 import { basename } from 'node:path'
-import type { Config } from './config.js'
+import { ConfigError, type Config } from './config.js'
 import type { Entry } from './entry.js'
 import {
   ENTRIES_DIR,
@@ -13,6 +13,9 @@ import {
   StoreError,
 } from './store.js'
 import {
+  comment,
+  comments,
+  commentsSince,
   fileAtRef,
   landedFiles,
   listPullRequests,
@@ -20,8 +23,11 @@ import {
   proposedFiles,
   proposingCommitFiles,
   repoFromCheckout,
+  type IssueComment,
   type PrState,
 } from './github.js'
+import { GhError } from './gh.js'
+import { newestNudge, nudgeBody, type Nudge } from './nudge.js'
 import { readState, writeState } from './state.js'
 
 /** Where the closed-pull-request floor lives on the destination's state branch. */
@@ -75,7 +81,22 @@ export interface Stale {
   pr: number
   url: string
   assignees: string[]
+  /** The day it went quiet, which once it is nudged comes from the nudge and not the pull request. */
   lastActivity: string
+}
+
+/** A quiet proposal this run commented on. */
+export interface Nudged {
+  pr: number
+  /** Who the comment notified, by assignment. Empty means nobody was. */
+  assignees: string[]
+}
+
+/** A nudge this run owed and could not deliver, which fails the run. */
+export interface Unnudged {
+  /** Absent where the failure was not about one pull request. */
+  pr?: number
+  reason: string
 }
 
 /** An entry file that is there and cannot be read — broken frontmatter, or unreadable on disk. */
@@ -99,6 +120,9 @@ export interface Reconciliation {
   promoted: Promoted[]
   declined: Declined[]
   stale: Stale[]
+  nudged: Nudged[]
+  /** Nudges owed and not delivered. Any at all and the run has failed. */
+  unnudged: Unnudged[]
   deferred: number[]
   /** Held over for the next run and reported nowhere else in here. */
   carried: Carried[]
@@ -173,6 +197,55 @@ async function isProposal(repo: string, number: number): Promise<boolean> {
 }
 
 /**
+ * Whether anything has happened on a pull request since its nudge.
+ *
+ * Strictly later, and against the instant: posting a comment sets the pull request's
+ * `updated_at` to that comment's `created_at` exactly, so the nudge alone never satisfies this.
+ * A day-truncated comparison against a nudge posted the same day would be a coin flip.
+ */
+function activeSince(pr: PrState, nudge: Nudge): boolean {
+  return Date.parse(pr.updatedAtInstant) > Date.parse(nudge.at)
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Why a nudge could not be posted, naming the permission where that is likely what is missing.
+ * A token that may read pull requests and not write to them is refused with 403, and so is a
+ * secondary rate limit, so GitHub's own words go with it.
+ */
+function cannotPost(error: unknown): string {
+  if (error instanceof GhError && error.status === 403) {
+    return (
+      'not permitted to comment on the pull request — the token needs write access to pull ' +
+      'requests, which for the merge-triggered workflow is `pull-requests: write`. GitHub ' +
+      `said: ${message(error)}`
+    )
+  }
+  return `the nudge could not be posted: ${message(error)}`
+}
+
+/**
+ * The comments posted since `since`, by pull request. One read for the whole destination: a
+ * nudge is activity, so a proposal nudged recently looks active, and only its comments can say
+ * the activity was ours.
+ *
+ * The caller passes the earliest last activity among the open pull requests inside the window.
+ * A nudge that is a pull request's last activity was posted at that pull request's
+ * `updatedAtInstant` exactly, so none is earlier than that floor, and the floor is always a date
+ * GitHub gave us.
+ */
+async function recentComments(repo: string, since: string): Promise<Map<number, IssueComment[]>> {
+  const byPr = new Map<number, IssueComment[]>()
+  for (const c of await commentsSince(repo, since)) {
+    byPr.set(c.number, [...(byPr.get(c.number) ?? []), c])
+  }
+  return byPr
+}
+
+/**
  * How far the floor may move: to the newest closed pull request the scan actually read.
  *
  * Nothing is held back here, because a floor is a prefix and holding it behind one pull request
@@ -229,6 +302,14 @@ export async function reconcile(
 ): Promise<Reconciliation> {
   const now = options.now ?? new Date()
   const staleAfterDays = options.staleAfterDays ?? 7
+  // Refused before anything is read. Under a window that is not a positive number of days, no
+  // pull request counts as active, so every open proposal would be nudged, even one touched a
+  // minute ago.
+  if (!Number.isFinite(staleAfterDays) || staleAfterDays <= 0) {
+    throw new ConfigError(
+      `--stale-after must be a positive number of days, and was given ${String(staleAfterDays)}`,
+    )
+  }
   const repo = await repoFromCheckout(config.destination)
   const stored = await readState<ReconcileState>(repo, STATE_PATH)
   const since = typeof stored?.closedSeen === 'string' ? stored.closedSeen : undefined
@@ -255,6 +336,8 @@ export async function reconcile(
     promoted: [],
     declined: [],
     stale: [],
+    nudged: [],
+    unnudged: [],
     deferred: [],
     carried: unread.map((pr) => ({ pr, reason: 'pull-request' as const })),
     evicted: [],
@@ -269,18 +352,75 @@ export async function reconcile(
   /** Pull requests this run left something to do on, whichever half they came from. */
   const unfinished: number[] = []
 
+  // From the instant, never the day: counted from midnight, a proposal touched at 23:59 would
+  // be nudged a day early, and under a window of hours one touched a minute ago would be.
+  const inWindow = (pr: PrState): boolean =>
+    daysBetween(pr.updatedAtInstant, now) < staleAfterDays
+  let recent = new Map<number, IssueComment[]>()
+  const active = prs.filter((p) => p.state === 'open' && inWindow(p))
+  if (active.length > 0) {
+    const since = active
+      .map((p) => p.updatedAtInstant)
+      .reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b))
+    try {
+      recent = await recentComments(repo, since)
+    } catch (error) {
+      result.unnudged.push({
+        reason:
+          `the comments posted since ${since} could not be read, so a proposal nudged since ` +
+          `then is missing from the stale lines: ${message(error)}`,
+      })
+    }
+  }
+  const stale = (pr: PrState, quietSince: string): void => {
+    result.stale.push({ pr: pr.number, url: pr.url, assignees: pr.assignees, lastActivity: quietSince })
+  }
+
   for (const pr of prs) {
     if (pr.state === 'open') {
-      // The window is tested before the files are: a quiet pull request is the only open one
-      // this reports on, so a backlog of active ones costs no request at all.
-      if (daysBetween(pr.updatedAt, now) < staleAfterDays) continue
+      if (inWindow(pr)) {
+        // Active by its date, and quiet all the same where the activity is our own nudge. The
+        // nudge was posted only after the pull request was confirmed a proposal, so it is not
+        // asked again.
+        const nudge = newestNudge(recent.get(pr.number) ?? [])
+        if (nudge !== undefined && !activeSince(pr, nudge)) stale(pr, nudge.quietSince)
+        continue
+      }
+      // The window is tested before the files are, and the files before the comments: only a
+      // pull request both quiet and a proposal costs the read that says whether it was nudged.
       if (!(await isProposal(repo, pr.number))) continue
-      result.stale.push({
-        pr: pr.number,
-        url: pr.url,
-        assignees: pr.assignees,
-        lastActivity: pr.updatedAt,
-      })
+      let nudge: Nudge | undefined
+      try {
+        nudge = newestNudge(await comments(repo, pr.number))
+      } catch (error) {
+        // Posting without knowing is how a proposal collects one nudge per run. No stale line
+        // either: where it was nudged, the pull request's last activity is the nudge, and only
+        // the nudge holds the day it went quiet.
+        result.unnudged.push({
+          pr: pr.number,
+          reason:
+            `quiet past the window, but its comments could not be read, so when it went quiet ` +
+            `and whether it was already nudged are unknown: ${message(error)}\n  ${pr.url}`,
+        })
+        continue
+      }
+      // One nudge per quiet spell. A spell nobody answers keeps the nudge it has, forever.
+      if (nudge !== undefined && !activeSince(pr, nudge)) {
+        stale(pr, nudge.quietSince)
+        continue
+      }
+      stale(pr, pr.updatedAt)
+      try {
+        await comment(
+          repo,
+          pr.number,
+          nudgeBody(pr.updatedAtInstant, now, pr.assignees, config.reviewers),
+        )
+        result.nudged.push({ pr: pr.number, assignees: pr.assignees })
+      } catch (error) {
+        // Recorded nowhere as delivered, so the next run tries again once the cause is cured.
+        result.unnudged.push({ pr: pr.number, reason: cannotPost(error) })
+      }
       continue
     }
     if (!pr.merged) {
@@ -443,6 +583,15 @@ export function renderReconciliation(r: Reconciliation, reviewers: readonly stri
     const assigned = s.assignees.join(', ') || '(nobody)'
     const escalate = reviewers.join(', ') || '(no store reviewers configured)'
     out += `stale     #${s.pr} last active ${s.lastActivity}, assigned ${assigned} — escalate to ${escalate}\n  ${s.url}\n`
+  }
+  for (const n of r.nudged) {
+    out +=
+      n.assignees.length === 0
+        ? `nudged    #${n.pr} — commented on the pull request, but nobody is assigned, so nobody was notified\n`
+        : `nudged    #${n.pr} — commented on the pull request, notifying ${n.assignees.join(', ')}\n`
+  }
+  for (const u of r.unnudged) {
+    out += u.pr === undefined ? `unnudged  ${u.reason}\n` : `unnudged  #${u.pr} — ${u.reason}\n`
   }
   if (r.deferred.length > 0) {
     out += `deferred  ${r.deferred.map((n) => `#${n}`).join(', ')} (closed unmerged)\n`

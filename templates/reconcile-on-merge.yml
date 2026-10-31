@@ -17,11 +17,13 @@ on:
   push:
     branches: [main]
 
-# Scopes the automatic token. Reading pull requests is what reconciliation does that promotion
-# never did; `gh` picks the token up from GH_TOKEN in the run step's environment.
+# Scopes the automatic token; `gh` picks it up from GH_TOKEN in the run step's environment.
+# Pull requests are written to as well as read, because a proposal gone quiet is told so in a
+# comment on it. That comment goes through the issues endpoint and is still governed by
+# `pull-requests`, so `issues: write` is not needed, and is not granted: this job opens nothing.
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: reconcile-lore
@@ -55,7 +57,10 @@ jobs:
           npm --prefix .igor ci --silent
           .igor/node_modules/.bin/tsx .igor/src/cli.ts reconcile
 
+      # Runs even where reconcile failed. A nudge that could not be posted fails that step, after
+      # the promotions and rejections are written, and they still have to be committed.
       - name: Commit what reconciliation wrote
+        if: ${{ !cancelled() }}
         run: |
           rm -rf .igor
           # A rejection record is a new file, which `git diff` cannot see. Stage first, then

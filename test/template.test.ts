@@ -20,7 +20,10 @@ const workflow = parse(source) as {
   concurrency: { group: string; 'cancel-in-progress': boolean }
   jobs: Record<
     string,
-    { if?: string; steps: { name?: string; env?: Record<string, string>; run?: string }[] }
+    {
+      if?: string
+      steps: { name?: string; if?: string; env?: Record<string, string>; run?: string }[]
+    }
   >
 }
 
@@ -46,13 +49,25 @@ describe('the merge-triggered workflow', () => {
     expect(workflow.on.push?.['paths']).toBeUndefined()
     expect(workflow.on.push?.['paths-ignore']).toBeUndefined()
     expect(Object.values(workflow.jobs).every((j) => !('if' in j))).toBe(true)
-    expect(steps.every((s) => !('if' in s))).toBe(true)
+    expect(steps.filter((s) => s !== commitStep).every((s) => !('if' in s))).toBe(true)
     expect(runSteps.some((s) => s.run?.includes('git diff --name-only'))).toBe(false)
   })
 
   it('scopes the automatic token and exports it to the step that shells gh', () => {
-    expect(workflow.permissions).toEqual({ contents: 'write', 'pull-requests': 'read' })
     expect(reconcileStep?.env?.['GH_TOKEN']).toBe('${{ secrets.GITHUB_TOKEN }}')
+  })
+
+  it('may comment on a pull request and may open nothing', () => {
+    // Exactly these two: `issues: write` would let the job open an issue, and a quiet
+    // proposal's comment is governed by `pull-requests` without it.
+    expect(workflow.permissions).toEqual({ contents: 'write', 'pull-requests': 'write' })
+  })
+
+  it('commits what reconcile wrote even when reconcile fails', () => {
+    // A nudge that cannot be posted fails the reconcile step after promotions and rejections
+    // are written. The default `success()` would skip the commit and discard them with the
+    // runner. The condition is a status check and never a gate on which files changed.
+    expect(commitStep?.if).toBe('${{ !cancelled() }}')
   })
 
   it('stages rejected/ alongside entries/, and stages before it tests', () => {
