@@ -319,6 +319,20 @@
     2026-10-24), as #216 defines it. The system's temporary directory is one other users of the
     host can write, and #143 keeps its probe's directories out of it too.
 
+**Decided on 2026-10-31 by the agents coordinating this work, under Adam's rule**
+
+Adam's rule lets these agents settle a question that has a single option fitting the rest of
+the change, an answer already given, or a proof or cheap reversal behind it. Such a decision
+stands until he says otherwise.
+
+40. **A flagged execution's hold is in place before the execution counts as ended** (settled by
+    the TLA+ model in `model/`). Decision 38 spares an execution that left a flagged hold, so
+    Igor must see the hold at the moment another execution's end looks for it. If an execution
+    could count as ended before #216 had put its hold, an end in between would delete the
+    copies of an execution that is about to be flagged. The model finds exactly that once this
+    rule is off (`model/negative/NoHoldAtEnd.cfg`), and with it on, finds no deletion of a
+    flagged execution's copies.
+
 **Still open:**
 
 - **The ambient login until #171 archives.** Until #171 archives, the in-force `seat-budget`

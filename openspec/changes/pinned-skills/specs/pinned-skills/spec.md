@@ -307,7 +307,9 @@ release of its hold, whether by `igor release` or by an edit to the item from so
 access. When an execution of a work item ends, flagged or not, Igor SHALL delete, in its own state
 directory, the copies of every execution of the same item that meets all three of these: it
 started before the one that just ended; it has ended, or its process has stopped; and it left no
-flagged hold (Adam, 2026-10-24). Copies in another host's state
+flagged hold (Adam, 2026-10-24). An execution that leaves a flagged hold SHALL count as ended
+only once that hold is in place, so that no other execution's end, coming after this execution
+stops working and before its hold exists, can delete its copies. Copies in another host's state
 directory stay until an execution of the item ends on that host, and where the item never runs
 there again, they stay. Igor's state directory
 is the directory on each host where Igor keeps its files, which #216 defines in its `graceful-handoff` requirement *A handoff states what was done, what remains, and who could continue*.
@@ -353,6 +355,12 @@ record may name a copy Igor has deleted.
   execution of the same item on the same host ends
 - **THEN** Igor deletes the stopped execution's log copies, and those of any unflagged execution
   before it
+
+#### Scenario: A flagged execution's hold is in place when it counts as ended
+
+- **WHEN** an execution of an item stops working, flagged, and a later execution of the same
+  item on the same host ends before #216 has put the flagged hold
+- **THEN** the flagged execution does not yet count as ended, so the later end keeps its copies
 
 #### Scenario: Igor deletes no flagged execution's log copies
 

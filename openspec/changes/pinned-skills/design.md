@@ -554,6 +554,55 @@ link (measured 2026-10-11 and 2026-10-18). So at or after that commit a skill ru
 scripts, under the path #153's code uses, and the worker needs no instruction about where its
 skills are (task 4.1).
 
+### Session log copies when executions overlap: the TLA+ model
+
+Decision 38 deletes an item's earlier session log copies when one of its executions ends, and
+#216 lets two executions of one item run at once. Whether one execution's end can delete a copy Igor
+must keep depends on how the executions interleave, so `model/LogCopies.tla` checks it with TLC, the TLA+
+model checker. CI runs it (`.github/workflows/tla-pinned-skills.yml`).
+
+The model holds one item's executions, numbered in the order they start. Each runs on one host,
+makes its copies while it runs, and then ends, flagged or not, or stops because its Igor process
+stopped. #216 may release a flagged hold at any time, which deletes that execution's files. When
+an execution ends, Igor deletes on its host the copies decision 38 names. The model checks four
+invariants. Each proves one or two of the scenarios of *The worker's session log outlives the
+reset*, and the model names those scenarios above each invariant:
+
+- `NoCopyDeletedWhileRunning`: no execution's copies are deleted while it runs (*A running
+  execution's log copies stay*).
+- `FlaggedCopiesWaitForRelease`: only #216's release deletes a flagged execution's copies (*Igor
+  deletes no flagged execution's log copies*).
+- `LatestCopiesKept`: Igor never deletes the copies of the latest execution to start on a host
+  (*An unflagged execution's log copies last until the item's next execution ends*).
+- `NoStaleCopies`: an unflagged execution that ended or stopped keeps no copies once a
+  later-started execution on its host has ended after it (the same scenario, and *A crashed
+  execution's log copies go when the next execution ends*).
+
+Each rule decision 38 and decision 40 rely on is a constant, TRUE as specified. Each file in
+`model/negative/` turns one off, and TLC must find the violation it names:
+
+| Rule turned off | File | Violation |
+| --- | --- | --- |
+| an end deletes only executions that started before it | `NoStartedBefore.cfg` | `LatestCopiesKept` |
+| an end deletes only executions that ended or stopped | `NoFinishedOnly.cfg` | `NoCopyDeletedWhileRunning` |
+| a stopped process's execution counts as finished | `NoStoppedCounts.cfg` | `NoStaleCopies` |
+| an end deletes no execution that left a flagged hold | `NoFlagCheck.cfg` | `FlaggedCopiesWaitForRelease` |
+| a flagged hold is in place when its execution ends | `NoHoldAtEnd.cfg` | `FlaggedCopiesWaitForRelease` |
+
+The last rule was not in the spec before the model. Decision 40 adds it.
+
+Results with `tla2tools.jar` v1.7.4, on 4 workers of a 10-core Mac, 2026-10-31:
+
+| Configuration | Executions | Hosts | Distinct states | Depth | Time |
+| --- | --- | --- | --- | --- | --- |
+| `LogCopies.cfg` | 4 | 2 | 1,249,323 | 17 | 4 s |
+| `LogCopiesOneHost.cfg` | 5 | 1 | 2,763,390 | 21 | 9 s |
+
+Both pass. Each negative file finds its violation within a second on one worker. The model
+leaves out what each host's deletion cannot see: another host's copies, which a host never
+deletes, and #216's move of a flagged execution's copies, which changes where they are, not
+whether they exist.
+
 ## How it composes
 
 ### With #153 (`signed-publishing`, branch `spec-signed-replies`)

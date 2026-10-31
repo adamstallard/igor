@@ -172,12 +172,15 @@
       directory the session log copies of every execution of the item that started before it,
       has ended or whose process has stopped, and left no #216 flagged hold, so never one still
       running; leave a flagged execution's copies to #216's deletion of that execution's files
-      (proposal, decision 38).
+      (proposal, decision 38). Record an execution as ended only after #216 has put any flagged
+      hold it leaves (decision 40), a rule the TLA+ model in `model/` shows is needed.
       Tests: after an unflagged execution and then a flagged one of the same item, the first's
       copies are gone and the second's remain; after a flagged execution and then an unflagged
       one, the flagged one's copies remain; after an execution whose process was killed and then
       an unflagged one, the killed one's copies are gone; with an earlier execution still
-      running when a later one ends, the earlier one's copies remain
+      running when a later one ends, the earlier one's copies remain; with a later execution
+      ending after a flagged one stops working and before its hold is recorded, which the test
+      arranges by holding back #216's hold write, the flagged one's copies remain
 
 ## 3. Startup check
 
