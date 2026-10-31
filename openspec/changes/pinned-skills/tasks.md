@@ -189,15 +189,24 @@ the gate names one at start, otherwise just before the first model call, once a 
 probed or the gate names one. A failing
 check exits 78 wherever it runs.
 
-- [ ] 3.1 Run `claude -p --model haiku --plugin-dir <skills_dir> --setting-sources user
+- [ ] 3.1 Run `claude -p --model haiku --tools "" --plugin-dir <skills_dir> --setting-sources user
       --strict-mcp-config --output-format stream-json --verbose`
       with the one-word prompt `ok` on stdin (#175), from an empty directory, and an
       environment of `PATH`, the host's network settings, a `HOME` that is another empty
       directory, and one seat's token. Under `igor serve`, make it the first seat probe after
       the start, through #143's probe code, in the two directories #143 places under
-      `/var/lib/igor/probes`, recording its `rate_limit_event` as that seat's reading; where no
+      `/var/lib/igor/probes`, recording its `rate_limit_event` as that seat's reading (proposal, decision 42: like #143's probe,
+      it denies every tool). Where #143 refuses to start that probe because one of its directories
+      is writable by other users, refuse to start, exiting 78, naming the directory (proposal,
+      decision 41). Message (may be reworded):
+
+      ```
+      the startup check is the first probe of seat <seat>, and #143 refused to start it because <dir> is writable by other users; fix the directory's permissions and start Igor again
+      ```
+
+      Where no
       seat may be probed, because none is due or #143's hourly limit or back-off holds off every
-      seat that is, spend the seat the budget gate chose (proposal, decision 36). Under `igor run`, spend the
+      seat that is due, spend the seat the budget gate chose (proposal, decision 36). Under `igor run`, spend the
       implicit local seat, with the token in `IGOR_RUN_TOKEN`, from two new directories under
       Igor's state directory (proposal, decisions 28 and 39). Let the call run to its `result` event and record its
       cost against that seat as any call's is. Where no seat can be probed and the gate names
@@ -250,7 +259,8 @@ check exits 78 wherever it runs.
       skill igor:<name>: commit not checked (<resolved dir>): <git's error, or the clone's owner>
       ```
 - [ ] 3.3 Tests: each refusal above with its message; a passing check starts; the check's
-      arguments carry `--model haiku`; the commit read carries `-c safe.directory=<clone root>`
+      arguments carry `--model haiku` and `--tools ""`; a startup check whose probe #143 refuses
+      for a directory other users can write exits 78 naming that directory; the commit read carries `-c safe.directory=<clone root>`
       and `-c core.fsmonitor=false` for a root-owned clone; a clone another user owns runs no
       git command and reports not checked; a missing or empty `skills/`, and a `hooks/` in
       `skills_dir`, each refuse the start before any call; the check runs from an empty

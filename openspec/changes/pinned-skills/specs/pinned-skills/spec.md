@@ -395,8 +395,8 @@ record may name a copy Igor has deleted.
 
 ### Requirement: Igor confirms its skills load before its first model call
 
-The startup check is itself a model call. Before any other model call, Igor SHALL run `claude -p --model haiku --plugin-dir
-<skills_dir> --setting-sources user --strict-mcp-config --output-format stream-json --verbose`.
+The startup check is itself a model call. Before any other model call, Igor SHALL run `claude -p --model haiku --tools ""
+--plugin-dir <skills_dir> --setting-sources user --strict-mcp-config --output-format stream-json --verbose`.
 It runs from an empty directory, with an environment holding only `PATH`, the network settings
 the host is configured with, a `HOME` that is another empty directory, and one seat's token. Its
 prompt is one word, such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude on
@@ -411,8 +411,11 @@ Which seat it spends:
   with its own token*. It spends that seat, as any probe does,
   so the budget gate chooses no seat for it. Igor SHALL record its `rate_limit_event` as that
   seat's reading. Every limit and exclusion of a probe applies to it, such as #143's hourly
-  limit and its skip of a refused seat, but the call keeps the arguments above. Its two directories
-  are the ones #143's *A seat probe runs where only the Igor can write* places and checks.
+  limit and its skip of a refused seat. Like #143's probe it runs with no tools; its other arguments are
+  those of the command above. Its two directories are the ones #143's *A seat probe runs where only
+  the Igor can write* places and checks. Where #143 refuses to start the probe because one of
+  those directories fails that check, the startup check SHALL fail: Igor refuses to start, naming
+  the directory, rather than wait for a later probe.
 - **Under `igor serve` where no seat may be probed when Igor starts,** because each has an
   unexpired reading or #143's hourly limit or back-off holds it off, the call spends the seat the
   gate chooses for it, as for any call, and does not wait for a held-off seat (Adam,
@@ -504,6 +507,13 @@ checked, and the check still passes on the list alone.
 - **THEN** Igor refuses to start, naming what it found, and makes no call
 - **AND** the process exits with status 78
 
+#### Scenario: A probe #143 refuses stops the start
+
+- **WHEN** the startup check is a seat's first probe under `igor serve`, and #143 refuses to start
+  it because one of its two working directories is writable by other users
+- **THEN** Igor refuses to start, naming that directory
+- **AND** the process exits with status 78
+
 #### Scenario: No init event stops the start
 
 - **WHEN** the call exits without a `system/init` event
@@ -512,7 +522,7 @@ checked, and the check still passes on the list alone.
 #### Scenario: The check runs on haiku, with one seat's token
 
 - **WHEN** Igor runs the check
-- **THEN** its arguments include `--model haiku`
+- **THEN** its arguments include `--model haiku` and `--tools ""`, so the call has no tools
 - **AND** it runs from an empty directory, with `HOME` set to another empty directory
 - **AND** the call's environment holds one seat's token, and no other seat's token and no API
   key

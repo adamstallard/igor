@@ -177,7 +177,9 @@
     one. Decision 29 also cites #217's *Credential redaction replaces every credential the Igor
     knows*, but #204 archives #217 before this change, so that citation is not ahead and needs
     no acceptance. Until the four archive, the in-force text cites rules not yet in force; every cited change
-    archives in the same series.
+    archives in the same series. On 2026-10-31 Adam extended this permission to a fifth
+    change, #216 (`lore-search`), which #204 also archives after this change and which decision
+    32 cites.
 22. **In same-user mode the reset may follow a link** (Adam, 2026-10-19). The worker can make
     `~/.claude` or `~/.claude.json` a link to a file the person owns, and a reset run as the
     person may then remove or overwrite that file. `igor run` has no sandbox, and this is one of
@@ -332,6 +334,19 @@ stands until he says otherwise.
     copies of an execution that is about to be flagged. The model finds exactly that once this
     rule is off (`model/negative/NoHoldAtEnd.cfg`), and with it on, finds no deletion of a
     flagged execution's copies.
+41. **A startup check whose probe #143 refuses fails the start** (one good option, cheap to
+    reverse). Where the startup check is a seat's first probe and #143 refuses to start it,
+    because one of the probe's two working directories is writable by other users of the host,
+    the check fails: Igor refuses to start, naming the directory, and exits with status 78.
+    A refused probe is refused again until a person fixes the directory, so waiting for the next
+    probe only delays the error, by up to five hours, #143's back-off. On a deployment with one
+    seat, no other seat can make the first model call in the meantime.
+42. **The startup check denies every tool, as #143's probe does** (settled by measurement,
+    `design.md`, *Measured on 2026-10-31*). A `claude -p` call with `--tools ""` still lists the
+    plugin's skills in its `system/init` event, so the check loses nothing by denying tools. It
+    therefore stays #143's minimal probe, differing only in what the check needs: `--plugin-dir`;
+    `--setting-sources user` and `--strict-mcp-config`, which keep the call to that plugin; and
+    `--model haiku` (decision 18).
 
 **Still open:**
 
@@ -342,20 +357,6 @@ stands until he says otherwise.
   28), and every other call comes after it. This item is a note, not a question: #171's code is
   built first (decision 30), so the code never runs on the ambient login, and the item records
   only that the archived specs allow it until #171 archives.
-- **Questions from the 2026-10-21 consistency reads, for Adam,** none yet answered:
-  - **The check as a probe denies no tools.** #143's probe runs with no tools and on
-    `TRIAGE_MODEL`; the check carries `--plugin-dir` and `--model haiku`, and whether a call
-    with no tools still lists its skills in `system/init` is unmeasured. Adam chooses: the check
-    keeps its own arguments as an exception to #143's minimal probe, or it denies tools once a
-    measurement shows the list survives. No recommendation until that measurement.
-  - **A probe #143 refuses to spawn.** Where #143's check of the probe's two directories (*A
-    seat probe runs where only the Igor can write*) fails, the probe is
-    recorded as errored and held off by the hourly limit and the five-hour back-off. Whether
-    the check has then failed, exiting 78, or waits for the next probe, is unsaid; waiting can
-    hold a one-seat deployment's first model call for five hours.
-  - **Permission to cite #216 ahead.** #204 places #216 after this change, and decision 21's
-    permission to cite changes that archive later names #171, #82, #179 and #153, but not #216.
-    *Recommendation:* extend decision 21 to #216, as decision 32 already assumes.
 - **For #153 to amend, reported** (same read): #153's `role-config` delta says a role's
   `skills` list does not decide what loads, and its scenario has `igor run` load every
   installed skill, where decision 37 has the list decide what `igor run` links. #190's
@@ -393,9 +394,6 @@ stands until he says otherwise.
   - A dry run is `igor run --plan`, so decision 20's fallback covers it. Whether `--plan`
     assembles a plugin directory is unsaid; #179 has `--plan` change nothing, so assembling one
     would break that.
-  - The startup check that is a seat's first probe keeps its own arguments in the spec, though
-    the first question for Adam above leaves that open; the spec should say it waits on his
-    answer.
   - Decision 13's kill, by user or by the user's systemd slice: #175 measured that on Debian a
     process `sudo` starts is not in that slice, so the spec should drop the slice.
   - The execution record names a log copy's host path, which #216 may move, and which puts a

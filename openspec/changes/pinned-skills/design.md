@@ -226,6 +226,27 @@ Each line says what was measured and what it showed.
 Code version the server runs. Nor is what `claude -p` does with a plugin directory that does not
 exist, so Igor never passes one (decision 20).
 
+## Measured on 2026-10-31: the skill list survives a call with no tools
+
+The question was whether the startup check can deny every tool, as #143's probe does, and still
+read its skills. Claude Code 2.1.316 on macOS, on Adam's normal login, ran one call from an
+empty directory, against a throwaway plugin named `igor` that holds one trivial skill, `canary`:
+
+```
+claude -p --tools "" --plugin-dir <plugin> --model haiku --output-format stream-json --verbose "Reply with OK."
+```
+
+- **The `system/init` event listed `igor:canary` in its `skills`,** and the plugin in its
+  `plugins`. Its `tools` held no built-in tool, only the MCP tools of Adam's own configuration.
+  The check also passes `--strict-mcp-config`, which loads no MCP server the command line does
+  not name, so it has none; this call did not pass that flag.
+- **The model call itself was refused,** with a `rate_limit_event` whose status was `rejected`,
+  since Adam's login had reached its weekly limit. The init event comes before the model call,
+  so the refusal does not affect the result. The call is the case the spec already covers: one
+  that fails after printing the event, which Igor still judges on its list.
+
+So denying tools does not hide the skill list, and the check denies them (proposal, decision 42).
+
 ## Decisions
 
 ### `skills_dir` is `/opt/igor/skills`, overridden only by the server's environment
@@ -488,9 +509,15 @@ starts, the check's call is that first probe: it spends
 the seat it reads, needs no choice by the gate, and its `rate_limit_event` is the seat's first
 reading. It runs from the working directory and the `HOME` that #143 creates under
 `/var/lib/igor/probes` and checks for every probe. Both are empty, so the check still runs
-with an empty `HOME`, as the paragraph above requires. The check keeps its own arguments,
-`--model haiku` and `--plugin-dir`; whether #143's probe, which runs with no tools on its own
-model, may differ in that way is a question for Adam in the proposal's *Still open*. Where every seat already has an unexpired reading at start, no probe is due, and the
+with an empty `HOME`, as the paragraph above requires. Like #143's probe it denies every
+tool, with `--tools ""`, which costs it nothing: the skill list still arrives (*Measured on
+2026-10-31*, above; proposal, decision 42). It adds `--plugin-dir`; `--setting-sources user`
+and `--strict-mcp-config`, which keep the call to that plugin; and `--model haiku` (proposal,
+decision 18). Where #143 refuses to start the probe because
+one of its two directories is writable by other users, the check fails and Igor exits 78, naming
+the directory. Otherwise it would wait for #143's next probe of that seat, which #143's
+back-off can delay by up to five hours, and that probe would be refused again until a person
+fixes the directory (proposal, decision 41). Where every seat already has an unexpired reading at start, no probe is due, and the
 check spends the seat the gate chooses. `igor run` makes no probe (#171), so there the check
 spends the run's implicit local seat, the one seat `igor run` makes from the token in
 `IGOR_RUN_TOKEN`, through the gate, from two new directories under Igor's state directory
