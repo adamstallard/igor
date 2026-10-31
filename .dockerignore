@@ -1,0 +1,12 @@
+# The build reads only package.json, the lockfile, tsconfig.json, src, templates and the example
+# config. Credentials and a lore checkout are listed too, so they never reach the build context.
+.git
+.claude
+.idea
+node_modules
+dist
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+deploy/lore
