@@ -68,8 +68,10 @@
       holding `igor.config.yaml` in the lore checkout; where the result lies inside the checkout, read that path in the
       worktree, and where it lies outside, read that file
 - [ ] 2.4 Each cycle report names the commit applied
-- [ ] 2.5 Tests: the scenarios of *`igor serve` fetches its lore repository once per poll
-      interval* and *A process applies one lore commit at a time, whole*
+- [ ] 2.5 Tests: the scenarios of every requirement from *`igor serve` fetches its lore repository
+      once per poll interval* through *A working tree that cannot be put back leaves the rank on
+      its last passing read*, and of *A pull can be forced with SIGHUP* and *`igor run` reads the
+      checkout as it finds it*
 
 ## 3. Starting and applying
 
@@ -88,25 +90,21 @@
 - [ ] 3.3 At the start of each cycle, read the commit `fetched` names, decrypting seat files as
       #171 says. A configuration that no longer declares the process's role, or lacks its role
       file, fails. A roster that drops the rank does not fail the read; the rank retires as #179
-      says. An App check GitHub does not answer fails no read: the cycle runs on the applied
-      commit with no condition. A passing read moves `applied` to it. A refused read keeps the commit `applied`
-      names, with the seats task 4.1 leaves out, and opens the read-cleared condition
-      `lore:config:<role>` where it is not open, whose report names the commit, the file and the
-      check and quotes no value from the file, and records the refused commit. A passing read by
-      any rank of the role clears it in two cases. One: the commit read is the refused one or
-      descends from it (`git merge-base --is-ancestor`). Two: the commit read is the rank's
-      fetched head, it does not descend from the refused commit, the fetch that brought it
-      started after the rank first knew the condition was open (keep, in memory, whether each
-      fetch began after that; compare no clock with another process's), and the rank's object
-      store holds the refused commit. A passing read of any other commit leaves it open. The
-      clearing record names the commit read. A refused read of the refused commit, or of the
-      clearing commit or one of its ancestors, does not reopen it, unless the App check refused
-      it or the read is at process start. Task 3.5 writes the tests for every scenario of the
-      requirement; the six this rule adds are *A force-push that drops the refused commit clears
-      it*, *A force-push back to the refused commit's parent clears it*, *A head fetched before
-      the refusal clears nothing*, *A rank that rereads the refused commit does not reopen it*,
-      *A commit before the fix does not reopen it* and *A new bad commit after the fix reopens
-      it*
+      says. An App check GitHub does not answer, or whose credential GitHub refuses, fails no read:
+      the cycle runs on the applied commit with no condition. A passing read moves `applied` to it.
+      A refused read keeps the commit `applied` names, with the seats task 4.1 leaves out, and
+      opens the read-cleared condition `lore:config:<role>` where it is not open, whose report
+      names the commit, the file and the check and quotes no value from the file, and records the
+      refused commit. A passing read by any rank of the role clears it in two cases. One: the
+      commit read is the refused one or descends from it (`git merge-base --is-ancestor`). Two: the
+      commit read is the rank's fetched head, it does not descend from the refused commit, the
+      fetch that brought it started after the rank first knew the condition was open (keep, in
+      memory, whether each fetch began after that; compare no clock with another process's), and
+      the rank's object store holds the refused commit. A passing read of any other commit leaves
+      it open. The clearing record names the commit read. A refused read of the refused commit, or
+      of the clearing commit or one of its ancestors, does not reopen it, unless the App check
+      refused it or the read is at process start. Task 3.5 writes the tests for every scenario of
+      the `lore:config:<role>` requirements
 - [ ] 3.3b A read that fails while putting the commit in the worktree or reading a file from it,
       the stages `design.md` names, is a local fault: run the cycle on `applied`, open or clear
       no `lore:config:<role>`, and read again at the next cycle start. At the third such cycle
@@ -114,9 +112,9 @@
       fault, with no path outside the checkout and no text of git's error; the process's next read
       that is not a local fault clears it
 - [ ] 3.4 A fetch never changes the configuration or lore entries of the cycle already running
-- [ ] 3.5 Tests: the scenarios of *`igor serve` starts on the newest commit that passes*, *A lore
-      read at each cycle start applies what passes and refuses what fails* and *Processes apply
-      new commits independently*
+- [ ] 3.5 Tests: the scenarios of every requirement from *`igor serve` starts on the newest commit
+      that passes* through *Three local faults in a row open `lore:read:<role>-<rank>`*, and of
+      *Processes apply new commits independently*
 
 ## 4. Removed seat files
 
@@ -147,7 +145,8 @@
       deleted or renamed (git's rename detection pairs a renamed file with a deleted one), create
       `notices/seats/<seat-id>/<commit-id>.json` on the state branch with that write, the commit
       being the most recent one that changed the file. Post only where the write created it;
-      retry a write that failed otherwise at each later passing read while the process runs
+      retry a write that failed otherwise, and a post that failed after its write, at each later
+      passing read while the process runs
 - [ ] 5.4 Post on the merged pull request that brought that commit, found through GitHub's list
       of pull requests for a commit; where none, post a commit comment. For a changed file,
       mention the owner the file names in the first parent of 5.3's commit, the most recent one
@@ -167,13 +166,15 @@
       If you did not expect it, revoke your token at Anthropic.
       ```
 - [ ] 5.5 Tests: the scenarios of *Igor posts at most one notice for each seat-file change it
-      applies*, with three processes applying one commit and exactly one notice posted
+      applies* and of the five seat-notice requirements after it, with three processes applying one
+      commit and exactly one notice posted
 - [ ] 5.6 Where the lore repository is private or `internal` and the store public, as #220's
       visibility read finds them, or where GitHub does not answer the read of the lore repository
-      or of the store, a condition's report and a seat notice's record name commits and seats by
-      id and checks by name, and hold no path, file content, commit message or git error text.
-      Call #220's visibility read for the lore repository too. Tests: the scenarios of *A lore
-      read writes nothing of a private repository to a public state branch*
+      or of the store, a condition's report and a seat notice's record name commits and seats by id
+      and checks by name, and hold no path, file content, commit message or git error text. Call
+      #220's visibility read for the lore repository too. Tests: the scenarios of *Igor reads the
+      lore repository's and the store's visibility as `visibility-guard` does* and *A lore read
+      writes nothing of a private repository to a public state branch*
 
 ## 6. Removing what called pulling future work
 

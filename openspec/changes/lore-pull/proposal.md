@@ -447,6 +447,11 @@ fixed. None of the items below is fixed:
 - For #179: its scenario that a configuration setting a 45-minute poll interval makes a starting
   process exit 78 contradicts this change's start on the applied commit where the fetched commit
   fails the startup checks.
+- For #179, optional: its *A roster that fails a check at a cycle is refused* says
+  `lore:config:<role>` opens and clears as this change's *A lore read at each cycle start applies
+  what passes and refuses what fails* says. The citation still holds, since that requirement
+  points to the four requirements whose names begin with `lore:config:<role>`, which hold the
+  rules. Citing those four directly would save #179's reader a step.
 
 **Measurements**, each a task: that fetches into distinct refs and checkouts of distinct
 worktrees, from several processes sharing one object store, do not fail on each other's git
