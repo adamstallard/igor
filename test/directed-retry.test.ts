@@ -3,7 +3,8 @@ import type { Candidate, Source, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 
 vi.mock('../src/state.js', () => ({
-  readState: async () => undefined, writeState: async () => true, appendRecord: async () => {},
+  readState: async () => undefined, readStateForUpdate: async () => ({ value: undefined }), writeState: async () => true,
+  appendRecord: async () => {},
 }))
 const { runItem, planCycle } = await import('../src/loop.js')
 

@@ -5,7 +5,8 @@ import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
 vi.mock('../src/state.js', () => ({
-  readState: async () => undefined, writeState: async () => true, appendRecord: async () => {},
+  readState: async () => undefined, readStateForUpdate: async () => ({ value: undefined }), writeState: async () => true,
+  appendRecord: async () => {},
 }))
 const { runItem, planCycle } = await import('../src/loop.js')
 const { shouldDefer } = await import('../src/deferred.js')
