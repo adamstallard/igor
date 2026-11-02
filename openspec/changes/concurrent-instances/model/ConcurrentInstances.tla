@@ -113,7 +113,8 @@
 (* commit it last fetched, at its own cycle start (`rv`, `plen`), so      *)
 (* processes run on different commits at once. The lore head, the newest  *)
 (* commit of the lore repository's branch, may drop a rank (`Retire`) or  *)
-(* double the poll interval (`ChangePoll`); a process applies the head,   *)
+(* change the poll interval to its longer value, double or triple the     *)
+(* shorter by `LongLen` (`ChangePoll`); a process applies the head,       *)
 (* or keeps what it had, at each cycle start; the head may change back.  *)
 (* With the poll interval able to change, time is counted in the shorter  *)
 (* interval. Each heartbeat declares its process's interval (`decl`). A    *)
@@ -124,8 +125,9 @@
 (* down after two of the shortest interval it has applied since it started *)
 (* (`minLen`). It writes a heartbeat every half of its own interval, and   *)
 (* one write lands per shorter interval: on the shorter interval two       *)
-(* writes count as one, and on the longer each write counts                *)
-(* (`WriteHeartbeat`).                                                     *)
+(* writes count as one, and on the longer each write counts, though on   *)
+(* the tripled interval real writes are one and a half shorter intervals  *)
+(* apart (`WriteHeartbeat`, and design.md's What the model assumes).     *)
 (*                                                                         *)
 (* A person may edit a claim message (`EditMsg`), and an edited message   *)
 (* counts for nothing, so an edit removes it from the messages that       *)
@@ -159,6 +161,9 @@ CONSTANTS
                        \* or 2, the second changing it back
     StartLen,          \* the head's poll interval when every process starts:
                        \* 1, or 2 as after a change made before they started
+    LongLen,           \* the longer poll interval, in shorter intervals: 2,
+                       \* or 3 for the 30-minute maximum over the 10-minute
+                       \* default
     CeilLen,           \* the maximum poll interval a configuration may set,
                        \* at least every interval the configuration uses
     MissOnly,          \* 0, or the one process that may miss heartbeats, to
@@ -204,9 +209,18 @@ CONSTANTS
                        \* gone rank's message stops counting for good; FALSE:
                        \* it posts, and the gone rank's message counts again
                        \* once the rank returns
-    TimerHalts,        \* Igor's own timer, every half poll interval, checks
-                       \* for a stand-down and stops the worker itself, so a
-                       \* stood-down worker stops within the interval; FALSE:
+    HaltOnShortest,    \* Igor's timer checks for a stand-down every half of
+                       \* the shortest poll interval the process has applied
+                       \* since it started, which it tracks under
+                       \* DeclaredInterval. It checks every half of its
+                       \* current interval, at the firings that write its
+                       \* heartbeat, where this rule is FALSE, and also
+                       \* where DeclaredInterval is FALSE
+    TimerHalts,        \* Igor's own timer checks for a stand-down and stops
+                       \* the worker itself, so a stood-down worker stops
+                       \* within the shorter interval it stood down in, or the
+                       \* next where the timer checks every half of a tripled
+                       \* interval (HaltGap); FALSE:
                        \* at the worker's next event, up to CheckpointGap
                        \* intervals later
     HolderReleases,    \* a claim given back before its worker starts removes
@@ -267,13 +281,14 @@ Rank(p) == IF IsRun(p) THEN 0 ELSE p
 Me(p) == IF IsRun(p) /\ ~RunIds THEN 0 ELSE p
 
 \* Time is counted in the shorter poll interval; a process on the longer
-\* one has plen = 2. Counts are capped where no threshold reads beyond.
-MaxLen == IF MaxPollChanges > 0 \/ StartLen = 2 THEN 2 ELSE 1
+\* one has plen = LongLen, 2 or 3. Counts are capped where no threshold reads
+\* beyond.
+MaxLen == IF MaxPollChanges > 0 \/ StartLen > 1 THEN LongLen ELSE 1
 Cap == Bound * (IF CeilLen > MaxLen THEN CeilLen ELSE MaxLen)
 \* Declarations are tracked wherever two intervals can differ, the maximum
 \* counted among them.
 Tracked == DeclaredInterval /\ (MaxLen > 1 \/ CeilLen > 1)
-ASSUME CeilLen >= MaxLen
+ASSUME CeilLen >= MaxLen /\ LongLen \in {2, 3} /\ StartLen \in {1, LongLen}
 
 \* The states between setting the label and verifying, and the withdrawal
 \* after the test. "postnew" is a "post" whose process set the label in
@@ -303,10 +318,11 @@ VARIABLES
     reread,    \* reread[r]: the item whose claim messages r reads again at
                \* its next cycle's start, after a failed test; 0 for none
     rv,        \* rv[r]: the roster r applied at its latest cycle start
-    plen,      \* plen[r]: the poll interval r applied then, 1 or 2
-    spanned,   \* spanned[r]: r is on the longer poll interval, and an
-               \* interval has ended since r set the label for the claim
-               \* in hand
+    plen,      \* plen[r]: the poll interval r applied then, 1 or LongLen
+    spanned,   \* spanned[r]: how many shorter intervals have ended since r
+               \* set the label for the claim in hand; counted only where
+               \* the interval may change, and allowed above 0 only for a
+               \* process on the longer interval
     seenDecl,  \* seenDecl[r][q]: the longest poll interval r saw q's file
                \* declare in a write, since r started and, under Ceiling,
                \* since the last loss (LoseBranch clears it); 0 for none;
@@ -322,7 +338,7 @@ VARIABLES
                \* file; DeclaredInterval
     \* configuration: the lore head
     roster,    \* the ranks the head's roster declares
-    pollHead,  \* the head's poll interval, 1 or 2
+    pollHead,  \* the head's poll interval, 1 or LongLen
     \* tracker
     label,     \* label[i]: the role's label is on item i
     msgs,      \* msgs[i]: ranks of claim messages that count since i's latest
@@ -414,18 +430,26 @@ StoodDown(r) == StandDownOnMisses /\ missed[r] >= StandDownAt * StandLen(r)
 \* (Exit). Leaving the roster alone does not make it stand down.
 Retiring(r) == ~IsRun(r) /\ r \notin rv[r]
 
-\* A process that stood down for missed heartbeats has stopped its worker by
-\* the end of the interval in which it stood down, under TimerHalts, or else
-\* by the end of the CheckpointGap-th interval counting that one. missed
-\* reaches the threshold at the Tick that starts the interval in which the
-\* process stands down, and Tick checks this before it advances missed, so
-\* the HaltGap intervals end when missed reaches the threshold plus
-\* HaltGap - 1. The timer fires every half of the process's own interval:
-\* on the shorter interval every half of one, and on the longer one every
-\* shorter interval. Either way it fires within one shorter interval.
-HaltGap == IF TimerHalts THEN 1 ELSE CheckpointGap
+\* A process that stood down for missed heartbeats has stopped its worker
+\* within HaltGap(r) intervals counting the one in which it stood down:
+\* under TimerHalts by the end of that interval, or of the next where the
+\* timer checks every half of a tripled interval; or else by the end of
+\* the CheckpointGap-th interval counting that one. Say the
+\* threshold is 2 and the gap 1. The Tick that takes missed to 2 starts
+\* the interval the process stands down in; the next Tick, which would take
+\* it to 3, ends that interval. Tick does not fire while MustHaveHalted
+\* holds of a busy process, so for the worker to be halted before that next
+\* Tick, MustHaveHalted must already hold at missed = 2, which is the
+\* threshold plus HaltGap - 1. The timer checks every half of an interval:
+\* under HaltOnShortest the shortest the process has applied, or else its
+\* current one. Half of one or of two shorter intervals ends within the
+\* shorter interval the stand-down falls in; half of three, one shorter
+\* interval and a half, may end in the next one, so the gap is 2.
+HaltLen(r) == IF HaltOnShortest THEN StandLen(r) ELSE plen[r]
+HaltGap(r) == IF TimerHalts THEN Max({1, (HaltLen(r) + 1) \div 2})
+              ELSE CheckpointGap
 MustHaveHalted(r) ==
-    StandDownOnMisses /\ missed[r] >= StandDownAt * StandLen(r) + HaltGap - 1
+    StandDownOnMisses /\ missed[r] >= StandDownAt * StandLen(r) + HaltGap(r) - 1
 
 \* What the earliest claim message on item i that counts, in r's view,
 \* names: the earliest whose process is not gone; NoHolder if none.
@@ -559,7 +583,7 @@ Init ==
     /\ reread = [r \in Procs |-> 0]
     /\ rv = [r \in Procs |-> Roster]
     /\ plen = [r \in Procs |-> StartLen]
-    /\ spanned = [r \in Procs |-> FALSE]
+    /\ spanned = [r \in Procs |-> 0]
     /\ seenDecl = [r \in Procs |-> [q \in Procs |-> 0]]
     /\ minLen = [r \in Procs |-> StartLen]
     /\ hbAge = [q \in Procs |-> 0]
@@ -678,7 +702,7 @@ Choose(r) ==
               \* Post supersedes.
               THEN /\ cur' = [cur EXCEPT ![r] = i]
                    /\ pc' = [pc EXCEPT ![r] = "post"]
-                   /\ spanned' = [spanned EXCEPT ![r] = FALSE]
+                   /\ spanned' = [spanned EXCEPT ![r] = 0]
                    /\ IF ReleaseOnTakeover /\ overGone /\ ~pr[i]
                         THEN /\ msgs' = [msgs EXCEPT ![i] = <<>>]
                              /\ fresh' = [fresh EXCEPT ![i] = TRUE]
@@ -697,7 +721,7 @@ Choose(r) ==
               /\ cur' = [cur EXCEPT ![r] = i]
               /\ pc' = [pc EXCEPT ![r] = IF fails < MaxFails THEN "postnew"
                                                              ELSE "post"]
-              /\ spanned' = [spanned EXCEPT ![r] = FALSE]
+              /\ spanned' = [spanned EXCEPT ![r] = 0]
               /\ label' = [label EXCEPT ![i] = TRUE]
               /\ Touch(i)
               /\ IF ReleaseOnTakeover /\ overGone
@@ -781,7 +805,7 @@ GiveBackAfterTest(r, i, back, newLabel) ==
     ELSE IF Holder(r, i) = Me(r) \/ ~SettleWithdraw
       THEN /\ cur' = [cur EXCEPT ![r] = i]
            /\ pc' = [pc EXCEPT ![r] = "withdraw"]
-           /\ spanned' = [spanned EXCEPT ![r] = FALSE]
+           /\ spanned' = [spanned EXCEPT ![r] = 0]
            /\ UNCHANGED trackerVars
     ELSE /\ cur' = [cur EXCEPT ![r] = 0]
          /\ pc' = [pc EXCEPT ![r] = back]
@@ -1038,7 +1062,9 @@ WriteHeartbeat(r) ==
 \* process's poll intervals has passed, which is how the model makes
 \* verification come within one poll interval of the message: a process on
 \* the shorter interval lets no interval end between setting its label and
-\* verifying, and one on the longer lets one end there. Every release's second has passed.
+\* verifying, and one on the longer lets one fewer shorter interval end
+\* there than its interval holds: one on the doubled interval, two on the
+\* tripled. Every release's second has passed.
 Tick ==
     /\ LET M == {r \in Procs : up[r] /\ ~beat[r]}
        IN  /\ misses + Cardinality(M) <= MaxMisses
@@ -1047,9 +1073,10 @@ Tick ==
     /\ \A r \in Procs : (up[r] /\ MustHaveHalted(r)) => ~Busy(r)
     /\ VerifyWithinPoll =>
          \A r \in Procs : (up[r] /\ pc[r] \in Window)
-                            => (plen[r] = 2 /\ ~spanned[r])
+                            => spanned[r] < plen[r] - 1
     /\ spanned' = IF MaxPollChanges = 0 THEN spanned
-                  ELSE [r \in Procs |-> up[r] /\ pc[r] \in Window]
+                  ELSE [r \in Procs |-> IF up[r] /\ pc[r] \in Window
+                                         THEN spanned[r] + 1 ELSE 0]
     /\ watch' = [r \in Procs |-> IF ~up[r] THEN watch[r] ELSE [q \in Procs |->
                    IF q = r THEN 0 ELSE Older(watch[r][q])]]
     /\ missed' = [r \in Procs |-> IF up[r] THEN Older(missed[r]) ELSE missed[r]]
@@ -1221,7 +1248,7 @@ Retire(q) ==
 \* Each process applies it at a cycle start of its own.
 ChangePoll ==
     /\ pollChanges < MaxPollChanges
-    /\ pollHead' = 3 - pollHead
+    /\ pollHead' = IF pollHead = 1 THEN LongLen ELSE 1
     /\ pollChanges' = pollChanges + 1
     /\ UNCHANGED <<procVars, branchVars, roster, trackerVars, behind,
                    crashes, losses, stops, misses, handovers, retires,
@@ -1308,10 +1335,10 @@ TypeOK ==
     /\ alive \in [Procs -> [Procs -> BOOLEAN]]
     /\ missed \in [Procs -> 0..Cap]
     /\ rv \in [Procs -> SUBSET (1..NRanks)]
-    /\ plen \in [Procs -> {1, 2}]
+    /\ plen \in [Procs -> {1, LongLen}]
     /\ hbAvail \in [Procs -> {"available", "unavailable", "none"}]
     /\ roster \subseteq 1..NRanks
-    /\ pollHead \in {1, 2}
+    /\ pollHead \in {1, LongLen}
     /\ label \in [Items -> BOOLEAN]
     /\ stop \in [Items -> BOOLEAN]
     /\ done \in [Items -> BOOLEAN]
@@ -1324,7 +1351,8 @@ TypeOK ==
 \* Requirements: "A claim names the process that took it", "Assignment
 \* expresses a claim; ordering resolves it", "A hand-over among one role's
 \* ranks is contested like found work", "A claim left on the Igor's open
-\* pull request is caught up" and "A run by hand runs as rank 0"
+\* pull request is caught up", "A run by hand runs as rank 0" and "A process
+\* checks for a stand-down every half of its shortest interval"
 \* (work-claiming).
 \* Never two live workers on one item, a catch-up's and an `igor run`'s
 \* included.

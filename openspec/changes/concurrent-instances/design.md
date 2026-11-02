@@ -8,7 +8,7 @@ identity. Everything here follows from refusing to conflate the two.
 
 Adam decided 1 to 52 on 2026-10-13, 2026-10-17, 2026-10-18, 2026-10-19 and 2026-10-21, and
 rewrote some of them on 2026-10-24, each marked with that date, such as 22 and 49. On 2026-10-24 he also made 55 and 58 himself, and approved 53, 54, 56 and 57, which this change drew up for him; those he approved count as his too. He made 62 and 63 on 2026-10-28, 74 on 2026-11-01 and 75 on 2026-11-02. The agents coordinating this work decided 59 and 61 on 2026-10-24,
-64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30 and 73 on 2026-11-01, under a rule Adam set, kept outside this
+64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 on 2026-11-02, under a rule Adam set, kept outside this
 repository, on which questions they may settle without him: one with a single option that fits
 the rest of the change, an answer already given, or a proof or cheap reversal behind it. These
 stand until he says otherwise. They also made 60 and withdrew it, as *Open Questions* records.
@@ -95,8 +95,8 @@ The sections after this list give the reasoning. Decisions 39 to 52 are his answ
     it. That condition, like every condition, never makes the process exit.
 17. **A process that cannot write its heartbeat for two intervals stands down,** starting no
     claim, and keeps the claim in silence, since a sibling may already have taken the item over.
-    Igor's heartbeat timer checks for a stand-down at each firing and stops the worker itself,
-    without waiting for a worker event.
+    Igor's timer checks for a stand-down every half of the shortest poll interval the process
+    has applied since it started (decision 76) and stops the worker itself, without waiting for a worker event.
 18. **`ABSOLUTE_CEILING_MS` is removed.** A person's stop ends a worker that never finishes.
     Working trees are named `<role>-<rank>-<id>`, kept where #175 puts them, which every rank
     on the host sees, and swept by rank, never by age. A sibling removes the trees of a gone
@@ -525,6 +525,27 @@ sign that no rollback gives.
       is an open issue to make Igor tell the operator when a condition keeps a scope, such as
       this rank, from taking items.
 
+**Decided on 2026-11-02 by the agents coordinating this work, under Adam's rule**
+
+76. **Igor's timer checks for a stand-down every half of the shortest poll interval the process
+    has applied since it started,** on a schedule of its own, apart from the firings that write
+    the heartbeat every half of its current interval. The agents could settle it under Adam's
+    rule because a proof stands behind it: TLC finds the failure without the rule and none with
+    it. A process stands down after two of the shortest interval it has applied, and a sibling
+    counts it gone after three of the longest it saw declared (decision 49). TLC's trace, with
+    `HaltOnShortest` FALSE in `NoHaltOnShortest.cfg`, has rank 2 start on 10 minutes and write a
+    heartbeat declaring 10, apply a commit that triples its interval to 30, and then fail every
+    write. It stands down 20 minutes after its last heartbeat, two of its 10. A check only at
+    the heartbeat's firings, every 15 minutes, comes at 15 and then 30, so its worker may still
+    be running 30 minutes after that heartbeat. Rank 1, on 10 minutes and having seen only 10
+    declared, may count rank 2 gone at that same moment and take the item over: the two events
+    can fall in either order, so two workers can run on the item at once (`NoTwoWorkers`). On a
+    doubled interval the firings come every 10 minutes, so one falls at 20, before the 30-minute
+    verdict; on the tripled one the next firing after 20 is at 30. With the check every half of
+    the shortest interval, every 5 minutes here, the worker stops within 25 minutes of the last
+    heartbeat. The check reads only the process's own state, so it costs no request.
+    `ConcurrentInstancesPollTriple.cfg` passes with it.
+
 ### How the decisions were made
 
 Adam decided in two rounds on 2026-10-17: first the answers to two reviews' questions, then a
@@ -535,9 +556,9 @@ what round three left open, marked *round four*. His latest answers, given after
 list numbers them 29 to 38. His answers of 2026-10-21 are dated, and the list numbers them
 39 to 52. Decisions 45 to 48 the agent writing this change drew up from what other changes reported, and
 Adam confirmed them on 2026-10-21. On 2026-10-24 he rewrote some earlier decisions in place,
-which keep their numbers and carry that date, such as 22 and 49, and the list numbers that day's new ones 53 to 58. The agents made 59 and 61 on 2026-10-24, 64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30 and 73 on 2026-11-01, under his rule, as the list's opening says.
+which keep their numbers and carry that date, such as 22 and 49, and the list numbers that day's new ones 53 to 58. The agents made 59 and 61 on 2026-10-24, 64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 on 2026-11-02, under his rule, as the list's opening says.
 
-Where this file says *decision n*, it means decision n in the list above. The numbered rules 1 to 24
+Where this file says *decision n*, it means decision n in the list above. The numbered rules 1 to 25
 under *Each decision, and what breaks without it* are a separate list, the model's rules, each
 named there by its constant. Adam's rounds, above, are rounds of answers. 
 
@@ -1076,9 +1097,11 @@ down, a sibling may already count it gone and have taken the item over, so a rel
 the sibling's fresh claim. That is the stated exception to *A claim that cannot be kept is given
 back, out loud*. A sibling takes the claim over once the rank is gone.
 
-**The heartbeat timer stops a stood-down worker** (Adam, 2026-10-18, round three). At each firing,
-every half poll interval, the timer that writes the heartbeat also checks whether the process has
-stood down, and if it has, stops the worker itself. Deciding to stand down needs no tracker read,
+**The heartbeat timer stops a stood-down worker** (Adam, 2026-10-18, round three). One timer of
+Igor's own runs two schedules: it writes the heartbeat every half of the current poll interval,
+and, on a schedule of its own, checks every half of the shortest interval the process has
+applied since it started whether the process has stood down (decision 76). Where it has, the
+timer stops the worker itself. Deciding to stand down needs no tracker read,
 so the timer needs nothing from the worker. On `main`, by contrast, a checkpoint is the claim
 re-read in `src/execute.ts`, made on a worker event at most once every 30 seconds
 (`CHECKPOINT_INTERVAL_MS`). `claude -p` runs with `--output-format stream-json` and no partial
@@ -1091,7 +1114,7 @@ the timer needs none. A person's stop is still seen on worker events, as on `mai
 
 Round one had two rules for the event gap: a worker reaching a checkpoint at least every two poll
 intervals, and a process standing down at one missed heartbeat where its worker could go longer
-than one. With the timer stopping a stood-down worker within half an interval, neither can
+than one. With the timer stopping a stood-down worker within half the shortest interval, neither can
 matter, and both are removed. The model checks the timer against workers whose events come two
 intervals apart (`TimerHalts`).
 
@@ -1392,14 +1415,17 @@ pass without one. The model does not cover probes; #228's model covers the race 
 
 ### Derived timings are fixed multiples of the poll interval
 
-Four timings follow the role's poll interval and have no setting of their own: a rank is gone
+Five timings follow the role's poll interval and have no setting of their own: a rank is gone
 after three intervals, a heartbeat is written every half interval, and a process stands down
-after two intervals without one (Adam, 2026-10-18, round four); and a probe's keepalive is
-appended every interval (decision 22, Adam, 2026-10-24). The in-force `role-config` said every
+after two of the shortest interval it has applied without one (Adam, 2026-10-18, round four); a probe's keepalive is
+appended every interval (decision 22, Adam, 2026-10-24); and a process checks for a stand-down
+every half of the shortest interval it has applied (decision 76). The in-force `role-config` said every
 interval is configurable; this change's MODIFIED *Timing values are configurable with stated
-defaults* keeps the poll interval configurable, and its ADDED *Igor fixes its maximum poll interval and the timings derived from it* makes these four the exception. The model does
-not cover probes, so TLC checked safety only at the first three: gone after three intervals, a
-heartbeat every half interval, and a stand-down after two. Safety depends on those three. The
+defaults* keeps the poll interval configurable, and its ADDED *Igor fixes its maximum poll interval and the timings derived from it* makes these five the exception. The model does
+not cover probes, so TLC checked safety at the other four: gone after three intervals, a
+heartbeat every half interval, a stand-down after two, and the stand-down check every half of
+the shortest interval, which `NoHaltOnShortest.cfg` shows is needed. Safety depends on those
+four. The
 stand-down after two intervals must come before the three intervals after which a sibling counts
 a process gone, so that a process has stopped its worker before a sibling counts it gone. The settle interval stays configurable but must be shorter than the poll interval.
 
@@ -1731,7 +1757,21 @@ no `design.md` held a reason, it moved here.
     carries no `MODIFIED` copy of that requirement, whose text says a stop takes effect
     immediately; this is left as it is, since a copy would conflict with #237, an open pull
     request that shortens that requirement's text on main. Whether to add one once #237 merges
-    is the author's to decide.
+    is the author's to decide. `surface-adapter` on main also defines "immediately" as on
+    detection and without further condition, and this wait adds a further condition, so it is
+    an exception to that definition too; #236, an open pull request,
+    restates that definition; #236 should hear of the exception.
+- **From the consistency read of 2026-11-02 after decision 76.**
+  - *For a person to decide:* a process that started on 10 minutes and applied 30 writes its
+    heartbeat every 15 minutes but stands down 20 minutes after its last write, so a single
+    failed write, or one landing more than 5 minutes late, stands it down and stops its worker.
+    Writing the heartbeat every half of the shortest interval
+    applied, every 5 minutes here, would remove that at the cost of three times the writes on the
+    tripled interval. On 10 minutes, writing every 5, it takes about three failed or late
+    writes in a row. Approval does not wait on it.
+  - #208's decision 20 fetches on every second firing of this change's heartbeat timer. The
+    stand-down checks of decision 76 are apart from those firings, so #208's fetch rate is
+    unchanged.
   - *A run by hand runs as rank 0* says a rollback of the state branch no longer stops anyone,
     since no process reads its own file's id; under decisions 63 and 72 every process reads its
     own rank's file, so that section is stale.
@@ -1799,8 +1839,8 @@ and the probe keepalive, none of which a modelled invariant reads. It also never
 Decision 56 makes a process count its role as run by several processes, and so contest a
 hand-over, while it knows of a sibling it has not counted gone, or within a maximum poll interval of its start (decision 69); the model contests every hand-over, so
 that rule can only add contests the model already makes. Each rule the model checks is a constant,
-TRUE in the change as specified. The twenty-one configurations CI runs, and `ConcurrentInstancesPollSkewFull.cfg`, set every rule TRUE.
-Each of the twenty-one passes every invariant it checks, and so does `PollSkewFull`, run once
+TRUE in the change as specified. The twenty-two configurations CI runs, and `ConcurrentInstancesPollSkewFull.cfg`, set every rule TRUE.
+Each of the twenty-two passes every invariant it checks, and so does `PollSkewFull`, run once
 locally, though a likely fingerprint collision left a few of its states unchecked, as *Bounds and
 results* explains. Each file in `model/negative/` turns one rule off and checks only the property that
 breaks without it; TLC finds that violation, which shows the rule is needed. CI checks both: the
@@ -2031,6 +2071,12 @@ Each line gives the constant, its file in `model/negative/`, and what TLC finds 
     sibling were lost with the state branch counts that sibling gone after three of the shorter
     intervals, while the sibling, on the doubled interval, stands down only after four. TLC:
     `NoTwoWorkers` violated.
+25. **The timer checks for a stand-down every half of the shortest interval the process has
+    used** (`HaltOnShortest`, `NoHaltOnShortest.cfg`). Checking instead every half of its current
+    interval, at the heartbeat's firings, a process that tripled its interval and then fails
+    every heartbeat stands down after two of its old interval but may work until three, when a
+    sibling that saw only the old interval declared counts it gone and takes the item over. TLC:
+    `NoTwoWorkers` violated.
 
 ### Findings
 
@@ -2064,7 +2110,10 @@ missed heartbeats, each split so that one CI job stays well within its hour. A s
 one rank that misses heartbeats, or the one that crashes, and its twin swaps them. The two ranks
 are alike in the model, so each pair gives the same count.
 
-In CI, each must pass. *With the view* is the run CI makes, on this revision's model. *Without the
+In CI, each must pass. *With the view* is the count of the run CI makes. Each count was taken
+here on the model before decision 76 and is the same on the model as it is now, except
+`ConcurrentInstancesPollTriple.cfg`, run only on the model as it is now: the second paragraph
+below the table names the configurations run again after the change. *Without the
 view* is one run with no `VIEW`, on 4 workers, stopped after 40 minutes where it had not finished,
 made on the model at `5dc5273` and not repeated since.
 
@@ -2091,6 +2140,7 @@ made on the model at `5dc5273` and not repeated since.
 | `ConcurrentInstancesPollSkewCrash1.cfg` | 1 | as `PollSkewCrash`, with the ranks swapped | invariants | 53,324,134 | 9 min 10 s | not run |
 | `ConcurrentInstancesPollSkewCrashLoss.cfg` | 1 | the head changes the interval once; 1 crash, of rank 1; 1 lost or rolled-back branch; 1 missed heartbeat, by rank 2 | invariants | 47,548,114 | 10 min 2 s | not run |
 | `ConcurrentInstancesPollSkewCrashLoss1.cfg` | 1 | as `PollSkewCrashLoss`, with the ranks swapped | invariants | 47,548,114 | 9 min 54 s | not run |
+| `ConcurrentInstancesPollTriple.cfg` | 1 | as `PollSkew`, with the head tripling the interval: the longer interval, `LongLen`, and the maximum, `CeilLen`, are both three shorter intervals; 3 missed heartbeats, so a rank may triple its interval and then fail every heartbeat after the change | invariants | 5,976,903 | 1 min 3 s | not run |
 
 All pass with the view, in a run of every configuration on this revision's model, on 6 TLC workers
 of a 10-core Mac shared with `ConcurrentInstancesPollSkewFull.cfg`, below. The first two ran while
@@ -2129,9 +2179,22 @@ that combination in full, and none combines all of them: only `PollSkewFull` put
 heartbeats with a change of interval in one run, where the split file that combines a crash with
 a lost branch allows one missed heartbeat.
 
-Each of the twenty-four files in `model/negative/` finds its violation on one worker, which is how
-CI runs them, the slowest, `NoCeiling.cfg`, in 5 min 12 s, and all of them in 17 min 53 s added
-together. CI runs them in two jobs, by the first letter after `No`, to keep each well within its
+`ConcurrentInstancesPollTriple.cfg` was added on 2026-11-02 for decision 76, and the model gained
+`LongLen` and `HaltOnShortest` for it. It passes in a complete search, its longest path 67 steps.
+The run of every configuration described above predates it. After the change, seven
+configurations were run again and gave the same states as before: `ConcurrentInstances.cfg`
+48,487,914, `ConcurrentInstancesPollSkew.cfg` 5,194,943, `ConcurrentInstancesPollSkewLoss.cfg`
+45,836,405, `ConcurrentInstancesPollSkewCrash.cfg` 53,324,134, `ConcurrentInstancesLongGaps.cfg`
+582,427, `ConcurrentInstancesLiveness.cfg` 336,418 and `ConcurrentInstancesLivenessRankZero.cfg`
+91,700. Every negative file still finds its violation. The other configurations were not run
+again here; CI runs them. With `LongLen = 2`, the check with the rule on comes every half of a
+shorter interval and with it off every half of a doubled one, which is one shorter interval;
+either way it falls within the shorter interval the stand-down falls in, so
+the change alters nothing `ConcurrentInstancesPollSkewFull.cfg` checks, and its result stands.
+
+Each of the twenty-five files in `model/negative/` finds its violation on one worker, which is how
+CI runs them, the slowest, `NoCeiling.cfg`, in 5 min 12 s, and the twenty-four before decision 76
+in 17 min 53 s added together; `NoHaltOnShortest.cfg` takes about a minute. CI runs them in two jobs, by the first letter after `No`, to keep each well within its
 hour. `model/findings/EditedMessage.cfg` finds its violation, `NoTwoWorkers`, within a second.
 
 To reproduce a run, download `tla2tools.jar` from the TLA+ release v1.7.4
@@ -2165,8 +2228,11 @@ The model also assumes:
   `NoCounterLiveness.cfg` includes one to show what comparing times would break.
 - **A claim is visible at once.** The settle interval's length is not modelled.
 - **Igor's timer stops a stood-down process's worker within the interval in which it stood
-  down** (`TimerHalts`). With the rule off, the worker stops at its next event, up to
-  `CheckpointGap` intervals later.
+  down** (`TimerHalts`, `HaltOnShortest`): the timer checks every half of the shortest interval
+  the process has applied, at most two shorter intervals in the configurations here, so the
+  check comes within that interval. With `HaltOnShortest` off it checks every half of the
+  current interval, which on the tripled interval may come only in the next shorter interval. With `TimerHalts` off, the worker stops at its next event, up to `CheckpointGap` intervals
+  later.
 - **A claim given back before its worker starts** (`MaxFails`) fails at its post or at its
   verification, and the test that follows may itself fail. The model removes a failed post's
   label only in the same step as the failed post and its test, which stands for decision 42's
@@ -2181,8 +2247,17 @@ The model also assumes:
   good, which the liveness properties allow.
 - **Time is counted in the shorter poll interval where the interval may change.** A process on
   the doubled interval writes a heartbeat every half of its own interval, which is once per
-  shorter interval, and may let one shorter
-  interval end between setting its label and verifying. It counts a sibling gone after three of
+  shorter interval, and may let one shorter interval end between setting its label and
+  verifying. On the tripled interval, `LongLen = 3`, it writes every one and a half shorter
+  intervals, and may let two shorter intervals end before it verifies. The model lets it write
+  once per shorter interval, more often than it does. That loses no failure: a write the model
+  adds could only postpone a sibling's verdict that the process is gone, and any write may
+  instead be missed, which `MaxMisses` allows, so a process that writes less often than the
+  model lets it is one of the behaviours checked, within that bound. The model does not check
+  the real spacing of a healthy process's writes on the tripled interval, one and a half shorter
+  intervals; that is an assumption, resting on the spacing being well inside the three intervals
+  a sibling waits. `NoHaltOnShortest.cfg` shows that missed writes are enough to find the case
+  decision 76 fixes. It counts a sibling gone after three of
   the longest of its own interval and those it saw the sibling declare since it started and since
   the last loss, or else in `CeilLen`, the maximum, and stands down after two of the shortest it has applied. The
   head may change twice, the second time back. A process forgets every declaration at a loss or

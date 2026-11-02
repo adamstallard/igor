@@ -297,7 +297,7 @@
       it releases nothing, as 4.16 says
 - [ ] 4.13 A process that has failed to write its heartbeat for two poll intervals, as 4.27
       measures them, starts no claim,
-      and the timer of 4.15 stops its running worker at its next firing, leaving the claim and
+      and the timer of 4.15 stops its running worker at its next check, leaving the claim and
       saying nothing on the item, since a sibling may already have taken it over; it resumes once
       a heartbeat lands
 - [ ] 4.14 Tests for 4.10 to 4.13: a rolled-back heartbeat file only postpones a gone verdict; a
@@ -306,12 +306,16 @@
       heartbeat stands down before a sibling counts it gone, and posts nothing on the item, nor
       tests, rereads or refuses where its verification read then fails; a taker posts at once
       after its release
-- [ ] 4.15 Igor's own loop runs a timer, apart from the cycle and the worker, that fires every
-      half poll interval. Each firing writes the heartbeat (4.4) and checks whether the process
-      has stood down (4.13); where it has, the timer stops the running worker itself, without
-      waiting for a worker event. A stop said by a person is still seen where `main` sees it, at
-      the claim re-read `src/execute.ts` makes on a worker event. Test: a stand-down while the
-      worker emits no event stops the worker within half a poll interval
+- [ ] 4.15 Igor's own loop runs a timer, apart from the cycle and the worker. Every half of its
+      current poll interval it writes the heartbeat (4.4); every half of the shortest poll
+      interval it has applied since it started, which 4.27 keeps, it checks whether the process has stood
+      down (4.13); where it has, the timer stops the running worker itself, without waiting for
+      a worker event (decision 76). A stop said by a person is still seen where `main` sees it, at
+      the claim re-read `src/execute.ts` makes on a worker event. Tests: a stand-down while the
+      worker emits no event stops the worker within half the shortest poll interval applied, counted
+      from the stand-down; a
+      process that started on 10 minutes, applied 30 and then fails every heartbeat stops its
+      worker within 25 minutes of its last heartbeat
 - [ ] 4.16 A claim left by this process's predecessor or by a gone rank on an item with the Igor's
       own open pull request is caught up: the item is not re-worked, the pull request is brought
       up to date where it no longer merges, and the claim is given back as a catch-up gives it

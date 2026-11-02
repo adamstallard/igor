@@ -1177,7 +1177,7 @@ chooses a candidate, and again before it verifies a claim.
 
 ### Requirement: A second process on one rank stops taking items
 
-At each firing a process SHALL first read its rank's file. Where, between two such reads after
+At each heartbeat a process SHALL first read its rank's file. Where, between two such reads after
 its first write, the counter under another start id has risen, it SHALL stop taking items and
 its worker, keep its claims in silence, write itself not available, and open a condition
 `instance:<role>-<rank>:duplicate` on #175's instance scope naming each writer's host and process
@@ -1219,26 +1219,45 @@ start id advanced.
 
 ### Requirement: A process that cannot write its heartbeat stands down
 
-A process SHALL stand down once it has failed to write its heartbeat for two poll intervals, as
-*A heartbeat declares its process's poll interval* measures them. It then starts no claim and
-keeps its claims in silence, an exception to *A claim that cannot be kept is given back, out
-loud* and to `graceful-handoff`'s rule against silence; its timer SHALL stop a running worker at
-its next firing, without waiting for an event from it. It resumes once a heartbeat lands.
+A process SHALL stand down once it has failed to write its heartbeat for two of the shortest poll
+interval it has applied, as *A heartbeat declares its process's poll interval* says. It then starts
+no claim and keeps its claims in silence, an exception to *A claim that cannot be kept is given
+back, out loud* and to `graceful-handoff`'s rule against silence; its worker is stopped as *A
+process checks for a stand-down every half of its shortest interval* says. It resumes once a
+heartbeat lands.
 
 #### Scenario: A process that cannot write its heartbeat stands down
 
-- **WHEN** a process has failed to write its heartbeat for two poll intervals
-- **THEN** it starts no claim, and its timer stops its worker at its next firing, leaving the
+- **WHEN** a process has failed to write its heartbeat for two poll intervals, as *A heartbeat
+  declares its process's poll interval* measures them
+- **THEN** it starts no claim, and its timer stops its worker at its next check, leaving the
   claim, and the run says nothing on the item
 - **AND** it makes no test of the claim messages and gives nothing back
 - **AND** once a heartbeat lands, it resumes
+
+### Requirement: A process checks for a stand-down every half of its shortest interval
+
+A process's timer SHALL check whether the process has stood down every half of the shortest poll
+interval it has applied since it started, on a schedule separate from its heartbeat firings,
+which follow its current interval, and SHALL stop a running worker at the first check after the stand-down, without
+waiting for an event from it.
 
 #### Scenario: A silent worker is still stopped by the timer
 
 - **WHEN** a process stands down while its worker runs a tool that produces no event for longer
   than a poll interval
-- **THEN** the timer stops the worker within half a poll interval of the stand-down, without
-  waiting for an event
+- **THEN** the timer stops the worker within half the shortest poll interval the process has
+  applied, counted from the stand-down, without waiting for an event
+
+#### Scenario: A process that tripled its interval still stops its worker in time
+
+- **WHEN** rank 1 runs on 10 minutes, rank 2 applies a commit that triples its poll interval from
+  10 to 30 minutes, and every heartbeat rank 2 writes after that fails, so rank 1 has seen it
+  declare only 10 minutes
+- **THEN** rank 2's timer checks every 5 minutes, half of the 10 minutes it used before, so rank 2
+  stands down 20 minutes after its last heartbeat and stops its worker within 25 minutes of it
+- **AND** rank 1 counts rank 2 gone only 30 minutes after that heartbeat, so only one process
+  works each item
 
 ### Requirement: A process reads the roster and its configuration at each cycle start
 
@@ -1523,12 +1542,12 @@ claimed it yet or its holder is gone, the process that reaches the item SHALL an
 
 ### Requirement: A stop waits for a holder that has stood down or found a second process
 
-Where the process whose claim message holds an item has stood down, or stopped on finding a
-second process writing its rank's file, the label's removal and the stop receipt SHALL wait until
-it resumes and answers, or the first sibling to reach the item after counting it gone answers, an
-exception to *Stop is unconditional and open to anyone*. Where a sibling runs, a stand-down's wait
-is at most three of the longest poll interval its heartbeats declared: 90 minutes at the
-30-minute maximum.
+Where an item's holder has stood down, or stopped on finding a second process on its rank, label
+removal and the stop receipt SHALL wait until it resumes and answers, or the first sibling reaching
+the item after counting it gone answers, an exception to *Stop is unconditional and open to anyone*.
+A sibling counts a stood-down holder gone as *A heartbeat declares its process's poll interval*
+says, within 90 minutes of its file's last change; with no sibling or a second process, it is
+unbounded.
 
 #### Scenario: A stop waits for a holder that has stood down
 
@@ -1537,9 +1556,9 @@ is at most three of the longest poll interval its heartbeats declared: 90 minute
 - **THEN** no worker runs on the item, and no rank removes the label or posts the stop receipt yet
 - **AND** rank 2 answers the stop once a heartbeat lands and it resumes, or else the first sibling
   to reach the item after counting rank 2 gone answers it
-- **AND** rank 1, serving the same role, counts rank 2 gone once rank 2's file has not changed for
-  three of the longest poll interval rank 2's heartbeats have declared to rank 1: 90 minutes at
-  the 30-minute maximum
+- **AND** rank 1, serving the same role on 10 minutes and having seen rank 2 declare 10, counts
+  rank 2 gone once it has watched rank 2's file unchanged for 30 minutes; at the 30-minute
+  maximum, or with no declaration seen, 90 minutes
 
 #### Scenario: A stop waits for a lone process that has stood down
 

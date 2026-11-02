@@ -192,8 +192,9 @@ Explicitly out of scope:
   declares the ranks each role may run, a process is named `<role>-<rank>`, a role's name fits
   its worker users, and `igor serve` reads the role's environment file itself, which holds
   single-quoted or plain values. The poll interval stays configurable, the settle interval must
-  be shorter than it, and the four timings derived from it have no settings: the three of
-  `work-claiming` and the probe keepalive. The in-force scenarios that start `igor serve reviewer` give
+  be shorter than it, and the five timings derived from it have no settings: four under
+  `work-claiming`, which are the heartbeat period, the stand-down threshold, the stand-down check and the
+  abandonment bound, and the probe keepalive. The in-force scenarios that start `igor serve reviewer` give
   the rank.
 - `surface-adapter`: The in-force scenarios that start `igor serve reviewer` give the rank.
 - `graceful-handoff`: A rank that stood down, or that finds another rank's claim message holding

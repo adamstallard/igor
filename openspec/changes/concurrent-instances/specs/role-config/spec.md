@@ -87,7 +87,7 @@ skill's stored files, `GITHUB_APP_OWNER` or `GITHUB_APP_INSTALLATION_ID`.
 ### Requirement: Timing values are configurable with stated defaults
 
 Every interval SHALL be configurable and have a default, except the maximum poll interval, the
-four timings that follow the poll interval, and exactly those the scenario *A timing another
+five timings that follow the poll interval, and exactly those the scenario *A timing another
 requirement fixes has no setting* lists. The defaults are a 10-second settle interval before a
 claim is verified, a 1-hour cooldown before a stopped item returns to the pool, and a 10-minute
 poll interval. These defaults SHALL be recorded as starting points to tune against observation,
@@ -128,19 +128,19 @@ not as considered values.
 
 ### Requirement: Igor fixes its maximum poll interval and the timings derived from it
 
-Igor SHALL fix, with no setting, a *maximum poll interval* of 30 minutes, and four timings in
-multiples of the role's poll interval: under `work-claiming`'s rules, the heartbeat period, 0.5; the
-stand-down threshold, 2; the *abandonment bound*, 3; and under `stuck-conditions`', the probe
-keepalive, 1. A poll interval above the maximum, in a configuration or `igor serve --poll`, SHALL be
-refused, naming it and the maximum; a process refused at start for this exits with status 78.
+Igor SHALL fix, with no setting, a *maximum poll interval* of 30 minutes, and five timings in
+multiples of the role's poll interval: under `work-claiming`, the heartbeat period, 0.5; the
+stand-down threshold, 2, and the stand-down check, 0.5, both of the shortest interval a process has
+applied; the *abandonment bound*, 3; and under `stuck-conditions`, the probe keepalive, 1. A poll
+interval above the maximum SHALL be refused, naming it and the maximum.
 
 #### Scenario: The derived timings follow the poll interval
 
 - **WHEN** a role sets its poll interval to 4 minutes, every process of it applies that, and a
   watching process has seen its sibling declare it
 - **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, it
-  stands down after 8 minutes without writing one, and a process working a probe appends a
-  keepalive every 4 minutes
+  stands down after 8 minutes without writing one, its timer checks for a stand-down every 2
+  minutes, and a process working a probe appends a keepalive every 4 minutes
 
 #### Scenario: A poll interval above the maximum is refused
 
@@ -150,8 +150,8 @@ refused, naming it and the maximum; a process refused at start for this exits wi
 
 #### Scenario: A derived timing has no setting
 
-- **WHEN** a role file sets the abandonment bound, the heartbeat period, the stand-down threshold
-  or the probe keepalive interval
+- **WHEN** a role file sets the abandonment bound, the heartbeat period, the stand-down threshold,
+  the stand-down check or the probe keepalive interval
 - **THEN** the role's file under `roles/` is refused, naming the key, as for any key that file
   does not read
 
