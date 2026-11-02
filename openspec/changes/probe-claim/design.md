@@ -38,7 +38,90 @@ store's acceptance order, which no Igor can read. A second hazard sits beside it
 past day's partition for the life of the process, so a row accepted late into yesterday's file is
 never read by a process that cached the file first.
 
-## Decision: the first row accepted decides, read again after a settle interval
+## Decisions
+
+1. **Adopt *Exactly one Igor takes a due probe, decided by the log after it writes*** as a new
+   `stuck-conditions` requirement. It adds to the in-force probe rules and modifies none of them.
+2. **The oldest unended probe row decides, in the order a fresh read of the log returns rows, read again after a settle interval.** An Igor
+   that finds the probe due appends its probe row, waits until any append that could land ahead
+   of it has landed, reads the log again, and takes the item only when its own row is the oldest
+   probe row that has not ended. This is #226's suggested fix with two corrections: a void names
+   its row rather than its item (decision 3), and the read waits a settle interval rather than
+   come at once (this decision). It orders rows
+   by storage order, the order a fresh read of the log returns them, and uses no conditional write, as `work-claiming` already requires of
+   claims, and lets the earliest row decide, as #179 does among one role's processes. *Rejected:* a conditional append from the read that decided,
+   because the store would refuse a pending probe append whenever any write to the state branch,
+   by any role, landed first; a lock
+   file per condition, because it is condition state stored apart from the log; a designated
+   prober, because seat scopes span roles whose processes cannot see each other's heartbeats; the
+   newest row deciding, because a stale re-read then gives two Igors the item. *Rejected*, below,
+   gives each in full.
+3. **A void row names its probe row, not its item.** Two processes of one role can pick the same
+   item, and a void by item would end the winner's probe too. This corrects #226, which had a void
+   end its item's probe.
+4. **Every Igor whose row does not decide voids it, and so does one whose append failed or may
+   have failed.** A row nobody is working would otherwise hold the scope until it lapses.
+5. **An item that would probe several conditions probes them one at a time, in key order, and is
+   taken only where its rows decide for all of them** (Adam, 2026-10-24, replacing bids for every
+   key at once). Adam's words were "one condition at a time, the one whose key sorts first",
+   which could also mean that an item probes only its first-sorting condition. The agent
+   coordinating this work for Adam confirmed the same day the reading taken here: the Igor
+   appends a probe row for each key in turn, each only once its row for the previous key
+   decides. Where a row does not decide, the Igor voids every row it appended for the item,
+   those that had decided included, as decision 4 voids a row that does not decide. With bids
+   for every key at once, two Igors could each win one key, void both, bid again at their next
+   item, and collide the same way without end; bidding in one shared order leaves only the
+   holder of the first key bidding for the second.
+6. **A lapse is judged alike by every Igor in the scope, from the log.** Otherwise Igors disagree on
+   the oldest unended row. This change decides only that property; it does not choose the lapse
+   rule. The code on `main` lapses a row older than `SWEEP_AFTER_MS`, the worker's run ceiling
+   plus an hour, counted from the timestamp in the row, which every Igor reads alike, and this
+   change leaves that rule as it is. #179 removes the run ceiling, and Adam decided on 2026-10-24
+   that #179's task 4.9 replaces the rule with a keepalive: the Igor working a probe item
+   appends a row naming its probe row every poll interval of its own role, and the probe lapses
+   once 90 minutes, three times #179's 30-minute maximum poll interval, pass with no such row.
+   A process of any role can judge that lapse from the log alone. A rank's heartbeat, the rule
+   #179 first had, could not be judged that way, since a process sees only its own role's
+   heartbeat files.
+7. **A TLA+ model, `model/ProbeClaim.tla`, proves the requirement**, with one negative
+   configuration per rule, run by `.github/workflows/tla-probe-claim.yml`.
+8. **A lapse that compares a log timestamp with a reader's clock allows 5 minutes of clock
+   skew** (2026-10-24, at Adam's request to bound the skew; the figure is this change's choice).
+   Every lapse rule's bound must cover it, so no Igor reads a live Igor's row as lapsed while
+   the hosts' clocks agree within 5 minutes, as NTP keeps them. Hosts further apart are outside
+   what the requirement covers; the model holds no clocks. Igors whose clocks differ can still
+   disagree on a row near its bound. That delays a probe but takes no item twice, since an Igor
+   that still counts the row as holding takes no item.
+9. **The append deadline and the probe settle interval are fixed in code** (Adam, 2026-10-24),
+   an exception to `role-config`'s rule that every interval is configurable. An Igor's probe settle interval has to outlast every other Igor's append deadline, not only its own; were either configurable, one Igor's settle interval could end while another's append is still within its deadline. The deadline is set from this change's task 4.1, a
+   measurement of an append. The settle interval is the longer of twice the deadline and the
+   deadline plus 5 minutes (Adam, 2026-10-24, amending "twice the deadline"): twice is a margin
+   chosen because a probe is rare, so the wait costs little. The 5 minutes cover the clock skew
+   the requirement assumes: at midnight a slow host can begin a row up to 5 minutes after another Igor's row landed in the new day's partition, yet stamp it before midnight by its own clock, so the row is filed in the earlier day's partition, ahead of that row in storage order; such a row lands within the deadline, so it has landed once the deadline plus 5 minutes have passed.
+10. **Of the appends to the log, this change gives a deadline only to a probe row's** (Adam,
+    2026-10-24). A void row's append has none, and nor does any other append this change
+    leaves as it is; #179 gives its own keepalive append a deadline of its own. Once #179
+    archives, its rule that a conflicted state write is retried until it succeeds applies to
+    the appends without a deadline, and it is met once #179's code, which builds that retry, is
+    built. Until then, a void row whose append fails is not retried, and its probe row holds the
+    scope until it lapses.
+11. **This change stays second in #204's archive order** (Adam, 2026-10-24). Issue #204 sets
+    the order in which open changes archive. First is #101, already archived, so this change is
+    the first still open, and so this fix to a rule in force waits behind no change it does not
+    depend on.
+12. **The midnight gap is accepted** (2026-11-01, settled by the agents coordinating this work
+    under the rule Adam set for which questions they may settle without him; it stands until he
+    says otherwise). The gap: at midnight, a probe-row write that the store accepts after its
+    Igor gave up on it can land ahead of a row already read as deciding, and so give a second
+    probe (*The settle interval, and its one gap*, below). It needs that late write, at
+    midnight, while two Igors race for one probe. Its cost is one extra probe, a worker run
+    against a fault that is probably still there, and it shows in the log as two probe rows
+    that each led to a run. The conditional append under *Rejected*, below, would close the
+    gap; revisit it if a double probe is ever seen. How the late row escapes the void its Igor
+    appends is not spelled out, so the gap may be narrower than described (*Open Questions*);
+    the acceptance holds either way.
+
+## How decision 2 works: the oldest row in storage order decides, read again after a settle interval
 
 An Igor that finds the probe due appends its probe row, waits a settle interval, reads the log
 again, and takes the item only when its own row is the oldest probe row for the condition that
@@ -71,10 +154,11 @@ processes of one role can name the same item, so a void by item ends the winner'
 immediately. At midnight a row can land ahead of one already read, so the read waits a settle
 interval: `NoSettle.cfg` shows the second probe without it.
 
-**The settle interval, and its one gap.** The interval only has to outlast an append, so each
-probe row's append, and no other, gets a deadline (proposal, decision 10). The deadline covers the
+**The settle interval, and its one gap.** Only a probe row landing late can change which row
+decides, so the interval only has to outlast a probe row's append, and only that append gets a
+deadline (decision 10). The deadline covers the
 append's retries, once #179's retry of a conflicted write is built, and the probe settle interval
-is the longer of twice the deadline and the deadline plus 5 minutes (proposal, decision 9). An append
+is the longer of twice the deadline and the deadline plus 5 minutes (decision 9). An append
 past its deadline is treated as failed: its Igor takes no item and voids the row. The read that
 decides reads every partition from yesterday on fresh (task 2.3), so a late row in yesterday's
 file is read. A row lands in the partition of the day its writer's clock gives it, within its
@@ -82,16 +166,15 @@ deadline and so within minutes, so no partition from before yesterday can take a
 cache, which saves a request per day of history (`docs/architecture.md`), still serves those. The
 gap is a write the store accepts after its client gave up on it. Only at midnight can such a write
 land ahead of a row already read as deciding, and it then gives a second probe. Clock skew gives
-no second gap: a slow host's clock can stamp a row it begins up to 5 minutes after another Igor's row landed with a time before midnight, filing it in the earlier day's partition, ahead of that row; such a row lands within the deadline, so it has landed once the deadline plus 5 minutes have passed. Closing the gap means
+no second gap: a slow host can begin a row up to 5 minutes after another Igor's row landed in the new day's partition, yet stamp it before midnight by its own clock, so the row is filed in the earlier day's partition, ahead of that row in storage order; such a row lands within the deadline, so it has landed once the deadline plus 5 minutes have passed. Closing the gap means
 taking the log's order from the state branch's commit history rather than its files, which is a
-larger change than the race it would close. Whether to accept the gap is the proposal's first open
-question.
+larger change than the race it would close. Decision 12 accepts the gap.
 
 **One item, several conditions.** An item can probe a role's condition and a seat's at once, and
 `probe` in `src/wiring.ts` appends one probe row per key at once. Bidding for every key at once
 lets two Igors each win one key, void both, and repeat without end. So the Igor bids for the keys
 one at a time, in key order, bidding for the next only once its row for the previous decides, and
-takes the item only where its row decides for every key (proposal, decision 5). Every Igor bids in
+takes the item only where its row decides for every key (decision 5). Every Igor bids in
 that one order, so of the Igors whose items probe both keys, only the one holding the first bids
 for the second. An Igor whose item probes only the second key can still win the second key from
 that holder, and then takes its own item. Where items probe different but overlapping sets of
@@ -102,21 +185,19 @@ for. That is argued, not checked.
 
 - **A conditional append, from the read that decided.** The append would name the state branch's
   commit the Igor read the probe as due from, and the store would refuse it if the branch had
-  moved since. It decides in one step, with no settle interval and no midnight gap. Rejected for
-  two reasons. Every write to the state branch moves that commit, run rows and discovery marks of
-  every role included, so on a busy fleet a probe append is refused for reasons unrelated to it
-  and retried, each retry re-reading whether the probe is still due. `appendRecord` already
-  writes a day's partition back with a compare-and-set on the file, and retries a conflict by
-  reading the partition again; this change makes no conditional write of its own. A conditional
-  append from the deciding read would be conditional on the whole log, so every conflict would
-  mean making the deciding read again, not just the partition's. It is the alternative to revisit if the
-  midnight gap turns out to matter.
+  moved since. It decides in one step, with no settle interval and no midnight gap. Rejected
+  because every write to the state branch moves that commit, run rows and discovery marks of
+  every role included. On a busy fleet a probe append would be refused for reasons unrelated to
+  it, and each retry would mean making the deciding read again. `appendRecord`'s own
+  compare-and-set, its PUT carrying the partition file's sha, is narrower: it conflicts only
+  with a write to that day's file, and is not a decision about the probe. It is the
+  alternative to revisit if the midnight gap turns out to matter.
 - **A lock file per condition**, created only if absent. It is condition state stored apart from
   the log, which the in-force *A condition's scope is its cure's scope* forbids ("No condition
   state is stored apart from the log"), and it needs the same conditional create.
 - **A designated prober**, such as the lowest rank of the lowest-named role. Seat and Igor scopes
   span roles, and under #179 a process watches only its own role's heartbeats, so no process can
-  tell whether another role's designee is alive (the conflict #179's proposal records with #101).
+  tell whether another role's designee is alive (the conflict #179's `design.md` records with #101, under its decision 22).
   A dead designee holds every probe until somebody notices.
 - **Letting the newest row decide, with a re-read.** It is the smaller edit to `probeRunning`, and
   wrong: an Igor whose re-read is stale sees its own row as newest, while another Igor reading the
@@ -157,10 +238,12 @@ vacuously.
 **What the model does not cover.** A lapse is modelled as possible only for a row whose Igor
 crashed or whose end was lost: under `SWEEP_AFTER_MS` because the lapse is longer than any
 run, and under #179's keepalive because a live Igor's keepalives keep its row from lapsing. Each
-bound leaves more than the assumed 5 minutes of clock skew between hosts (the proposal's
-decision 8) beyond what a live Igor needs: `SWEEP_AFTER_MS` an hour beyond the run ceiling, and
+bound leaves more than the assumed 5 minutes of clock skew between hosts
+(decision 8) beyond what a live Igor needs: `SWEEP_AFTER_MS` an hour beyond the run ceiling, and
 the keepalive's 90 minutes, three times #179's 30-minute maximum poll interval, 60 minutes
-beyond the longest gap between two keepalives. The model holds no clocks. A live run outlasting
+beyond the longest gap between two keepalives. Whether the keepalive bound also keeps that
+margin before the first keepalive is an open question (*Open Questions*). The model holds no
+clocks. A live run outlasting
 `SWEEP_AFTER_MS`, which no run does while the run ceiling stands, is out of scope here, as it is
 in #101. A clean run of an item that was already running when
 the scope stopped also ends the condition; the model starts with nothing running, so it leaves
@@ -208,3 +291,47 @@ change edits it.
   requirement, so the two do not collide in `openspec archive`.
 - **#143's seat probe** is a different thing that shares the name: a minimal model call that
   spends no item. It writes a check row, not a probe row, and this change does not touch it.
+
+## Open Questions
+
+Each is a fact nobody has measured, with a task that measures it:
+
+- **Whether GitHub's contents API returns every write another client had landed.** The probe
+  settle interval assumes it; task 4.2 measures it, and reports to Adam before task 2.1 ships
+  where it does not hold.
+- **Whether each lapse bound keeps its 5 minutes of margin.** Both bounds count from the probe
+  row's time. Before the first run row or keepalive, an Igor waits one probe settle interval
+  per key, then `work-claiming`'s claim settle interval, which each role configures, and, under
+  #179, up to one poll interval before its first keepalive. With two keys and #179's
+  30-minute maximum poll interval, #179's 90-minute bound keeps the margin only while two probe
+  settle intervals plus the claim settle interval stay under 55 minutes. A claim settle
+  interval of 30 minutes, for example, needs each probe settle interval under 12.5 minutes,
+  and so an append deadline under about 6 minutes, since the interval is at least twice the
+  deadline. Task 4.3 checks it once task 4.1 sets the deadline.
+- **How the midnight gap gives a second probe.** An Igor that gives up on its probe-row
+  append voids the row (decision 4), and a void ends the row it names once both have landed.
+  *The settle interval, and its one gap* does not say how a late row still gives a second
+  probe: whether through a deciding read between the row landing and its void, or a void whose
+  append fails, which decision 10 leaves unretried until #179's retry is built. Decision 12
+  accepts the gap whatever its exact size.
+- **Whether bidding for several keys in one order always lets some Igor win every key it bids
+  for.** It is argued under *One item, several conditions*, not checked: the model has one
+  condition.
+
+## Still to settle with other changes
+
+- #171 keeps the in-force scenario *A probe is taken once*. Its "a row saying it is taking the
+  probe" is, in this change's terms, a bid that may lose, so the scenario should say so. #171's
+  copy is where to reword it, and the request to #171 has yet to be made.
+- The in-force *A condition clears by not recurring, and a probe is what observes that* says
+  "After a cooldown the affected scope SHALL take exactly one item", with no exception, and
+  #171's copy keeps those words. This change's requirement leaves out the midnight gap that
+  decision 12 accepts, so the two disagree in that one case. #171's copy is where to name the
+  gap, and that request has yet to be made too.
+- #179's `work-discovery` retries, until it lands, every conflicted write to a state file that
+  several processes write, and names no exception for a probe row's append, which this change
+  gives up on at its deadline; #179 should name it.
+- Between this change's archive and #179's, the in-force `role-config` still says every
+  interval is configurable, contradicting this change's fixed timings. #179's copy of that
+  requirement already names them and replaces it whole when #179 archives; the contradiction
+  between the two archives is accepted, since nothing is built from the specs in between.

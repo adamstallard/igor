@@ -25,10 +25,10 @@
       again, and goes on only where the row holding the scope is its own. An item that would probe
       several keys bids for them one at a time, in key order, appending the next key's row only
       once the previous one decides, and is taken only where its row decides for every key; change
-      `probe` in `src/wiring.ts`, which appends every key's row at once (proposal, decision 5)
+      `probe` in `src/wiring.ts`, which appends every key's row at once (`design.md`, decision 5)
 - [ ] 2.2 Give a probe row's append, and no other append, a deadline that bounds the whole
       append, retries included where #179's retry has landed, and set the probe settle interval
-      to the longer of twice that deadline and the deadline plus 5 minutes (proposal, decision 9).
+      to the longer of twice that deadline and the deadline plus 5 minutes (`design.md`, decision 9).
       Do task 4.1, the measurement of an append to the state branch (the git branch the log is
       written to), before this one, since the deadline is set from it
 - [ ] 2.3 The read in 2.1 reads every partition from yesterday on fresh, by the reader's clock and

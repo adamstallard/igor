@@ -13,15 +13,15 @@ deadline or landing ahead at midnight, and reads stop being served stale.
 
 The terms, as this requirement uses them:
 
+- An **Igor** here is one running process: two processes of one role are two Igors, though
+  `role-config` counts them as one.
 - A **probe row** is the row an Igor appends to the log to bid for a probe. It names the condition's
   key, the item, and an identifier unique to the row.
 - A **void row** names a probe row's identifier, and says that the probe row will produce no run.
 - A probe row **ends** with a run row for its item written after it, with a void row naming it, or
   when it **lapses**: when the log shows its Igor can no longer be working it. Whatever rule decides
   a lapse SHALL be one every Igor in the scope judges from the log, such as a row's age against a
-  bound every Igor shares. Igors whose clocks differ may disagree on a row near its bound; that
-  delays a probe but takes no item twice, since an Igor that still counts the row as holding
-  takes no item. Where the rule compares a timestamp in the log with a
+  bound every Igor shares. Where the rule compares a timestamp in the log with a
   reader's own clock, its bound SHALL exceed the longest a live Igor's row can go without
   whatever keeps it from lapsing, such as a run that has not ended, by at least an assumed
   maximum clock skew between the Igors' hosts of 5 minutes, so that no Igor reads a live
@@ -40,15 +40,14 @@ The terms, as this requirement uses them:
 - **The store** is the host that holds the state branch; it accepts or refuses each append to the
   log. A row has **landed** once the store has accepted it.
 - The **append deadline** is how long an Igor waits for a probe row's append, including any
-  retries of it, before it treats the append as failed. No other append to the log has one.
+  retries of it, before it treats the append as failed. This requirement gives no other append
+  one.
 - The **probe settle interval** is the longer of twice the append deadline and the append
-  deadline plus 5 minutes, the clock skew between hosts this requirement assumes, since at midnight
-  a slow host's clock can file a row begun after an Igor's own row landed in the earlier day's
-  partition, ahead of it. It is not the settle interval of `role-config`.
+  deadline plus 5 minutes, the clock skew between hosts this requirement assumes. It is not the claim
+  settle interval that `role-config` configures for `work-claiming`.
 
 The append deadline and the probe settle interval SHALL be fixed in Igor's code, not configured.
-This is an exception to `role-config`'s *Timing values are configurable with stated defaults*,
-which #179's copy of that requirement names among its exceptions.
+This is an exception to `role-config`'s *Timing values are configurable with stated defaults*.
 
 The rules:
 
@@ -57,7 +56,8 @@ The rules:
 - **That read SHALL be made once the probe settle interval has passed since its row landed**, and
   SHALL show every row the store had accepted by then. Every partition from yesterday on, by the
   reader's clock, SHALL be read fresh, a later day's included where another host has written one;
-  an earlier day's, which no row can still reach, may come from a cache.
+  an earlier day's, which no row can still reach, may come from a cache. Where any partition
+  that SHALL be read fresh cannot be read, the read SHALL fail as a whole.
 - **The probe row that decides is the oldest that has not ended**, among the probe rows for the key
   that are newer than the condition's last occurrence, in storage order. The Igor whose row that
   is SHALL take the item, unless one of the rules below stops it.
@@ -70,15 +70,6 @@ The rules:
 - **An Igor whose probe-row append failed, or whose outcome it cannot tell, SHALL take no item**, and
   SHALL append a void row naming the row it tried to write, since that row may have landed.
 - **A void row SHALL end no probe row but the one it names.**
-
-Two Igors in one scope can each read the log as due before either one's probe row lands. Once the
-settle interval has passed, every row that can land ahead of an Igor's own in storage order has
-landed, with one exception: at midnight, a write the store accepts after its Igor gave up on it,
-past the append deadline, can still land ahead, and then two Igors can each read their own row
-as deciding. Outside that exception, the oldest unended row is the same for every Igor that
-reads the log after its own settle interval. The wait is needed because two appends in flight together can land in either order, and
-a read made before both have landed may not show the older one. A void names a row and not an item
-because two processes of one role can pick the same item.
 
 #### Scenario: Two Igors find the probe due together
 
@@ -106,6 +97,18 @@ because two processes of one role can pick the same item.
 - **THEN** the first Igor's read that decides reads that partition again rather than reuse its
   earlier read, and shows the late row
 
+#### Scenario: A later day's partition from a host whose clock is ahead is read
+
+- **WHEN** another Igor's host, whose clock is ahead of the reader's, has filed a probe row in a
+  partition dated after the reader's today
+- **THEN** the reader's read that decides reads that partition fresh, and shows the row
+
+#### Scenario: A partition that cannot be read fails the read
+
+- **WHEN** one of the partitions from yesterday on cannot be read during the read that decides
+- **THEN** the read fails as a whole, and the Igor takes no item and appends a void row naming
+  its row
+
 #### Scenario: A row that lands later does not change who decides
 
 - **WHEN** an Igor's probe row is the oldest that has not ended, and another Igor's row lands after
@@ -125,7 +128,7 @@ because two processes of one role can pick the same item.
 
 #### Scenario: A failed read or a lost claim voids the row
 
-- **WHEN** an Igor's read after the settle interval fails, or its row decides and its claim on the
+- **WHEN** an Igor's read after the probe settle interval fails, or its row decides and its claim on the
   item is lost to somebody else
 - **THEN** it takes no item, and appends a void row naming its row
 
@@ -139,8 +142,9 @@ because two processes of one role can pick the same item.
 
 #### Scenario: A probe row nobody is taking does not hold the scope
 
-- **WHEN** the probe that decided ends with a run that observed nothing, or with its void row, and
-  other Igors' probe rows are still in the log
+- **WHEN** the probe that decided ends with a run that neither meets the condition again nor
+  clears it, or with its void row, and other Igors' probe rows are still in the log, each with
+  its void row landed
 - **THEN** none of those rows holds the scope, because each was voided by the Igor that wrote it,
   and the next item may probe
 
