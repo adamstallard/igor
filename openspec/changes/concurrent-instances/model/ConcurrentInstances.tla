@@ -1321,22 +1321,23 @@ TypeOK ==
     /\ behind \in [Procs -> BOOLEAN]
     /\ fails \in 0..MaxFails
 
-\* Requirements: "A claim names the process that took it", "Assignment
-\* expresses a claim; ordering resolves it", "A hand-over among one role's
-\* ranks is contested like found work", "A claim left on the Igor's open
-\* pull request is caught up" and "A run by hand runs as rank 0"
-\* (work-claiming).
+\* Requirements: "A claim names the process that took it", "One role's
+\* earliest claim message since the item's release holds it", "A hand-over
+\* among one role's ranks is contested like found work", "A claim left on
+\* the Igor's open pull request is caught up", "A run by hand runs as rank
+\* 0" and "A run by hand takes over no claim" (work-claiming).
 \* Never two live workers on one item, a catch-up's and an `igor run`'s
 \* included.
 NoTwoWorkers ==
     \A i \in Items :
         Cardinality({r \in Procs : up[r] /\ pc[r] = "work" /\ cur[r] = i}) <= 1
 
-\* Requirement: "A retired rank does not hold its items forever"
-\* (work-claiming), with its scenarios "The bound does not shorten a run",
-\* "A lost state branch takes no live rank's claim", "A rolled-back state
-\* branch takes no live rank's claim" and "A rank whose clock goes back is
-\* still counted".
+\* Requirements: "A retired rank does not hold its items forever", with its
+\* scenario "The bound does not shorten a run", and "A rank is gone only
+\* once its heartbeat has not changed for three poll intervals", with its
+\* scenarios "A lost state branch takes no live rank's claim", "A
+\* rolled-back state branch takes no live rank's claim" and "A rank whose
+\* clock goes back is still counted" (work-claiming).
 \* A live process's claim is never taken. Take a running process p that
 \* has written its heartbeat since it started and has not stood down: no
 \* other running process counts gone what p's claim messages name. A process still at "read" has not yet read the heartbeat files
@@ -1370,16 +1371,21 @@ MarkNeverPassesUntaken ==
 HandOverStands ==
     \A i \in Items : (asked[i] /\ label[i]) => handed[i]
 
-\* Requirement: "Only the rank holding a claim gives it back" (work-claiming).
+\* Requirements: "Only the rank holding a claim gives it back" and "A stop on
+\* a handed-over item is answered by the rank holding it" (work-claiming).
 \* A stop is answered, its claim released, only once no worker runs on the
 \* item: the receipt never says an item stopped while a sibling's run on it
 \* carries on.
 NoReceiptWhileWorked ==
     \A i \in Items : (stop[i] /\ ~label[i]) => ~Worked(i)
 
-\* Requirement: "Only the rank holding a claim gives it back" (work-claiming),
-\* its scenarios "A withdrawal takes no claim that came after its test" and
-\* "A claim message that failed to post leaves no label behind".
+\* Requirements: "Only the rank holding a claim gives it back"; "A failed
+\* post or verification is tested before the claim is given back", its
+\* scenario "A withdrawal takes no claim that came after its test"; "A failed
+\* post's label and refusal are sent only within half a settle interval",
+\* its scenario "A claim message that failed to post leaves no label
+\* behind"; and "A claim whose test read fails is read again before the next
+\* choice" (work-claiming).
 \* No give-back removes the label from an item a worker runs on.
 LabelWhileWorked ==
     \A i \in Items : Worked(i) => label[i]
@@ -1390,8 +1396,9 @@ LabelWhileWorked ==
 SomeUpForever == <>[](\E r \in Procs : up[r])
 
 \* Requirements: "A process recovers the claims of its own predecessor", "A
-\* retired rank does not hold its items forever" and "A claim left on the
-\* Igor's open pull request is caught up" (work-claiming), and
+\* retired rank does not hold its items forever", "Taking over a gone rank's
+\* claim releases the item first" and "A claim left on the Igor's open pull
+\* request is caught up" (work-claiming), and
 \* "Every cycle considers the items its role's label holds" (work-discovery).
 \* A crashed or retired rank's claims are eventually recovered: a labelled
 \* item no running process holds, and no run has finished, is eventually

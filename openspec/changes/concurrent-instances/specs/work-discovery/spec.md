@@ -3,21 +3,10 @@
 ### Requirement: A first run does not face the whole backlog
 
 A source with no watermark SHALL consider only items updated within a bounded look-back window,
-and SHALL set its watermark from that run. It MUST NOT triage a repository's entire open
-history because it has not run before. Items carrying the role's label are the one exception: a first run
-considers them whatever their update time, as *Every cycle considers the items its role's label
-holds* says.
-
-Without the bound, an Igor pointed at an established repository wakes up facing every open
-item at once — a cost spike, and an Igor appearing to lay claim to years of open work in its
-first minute. Handing it the backlog stays something a person does deliberately.
-
-A run that decided nothing, such as a preview, does not count as that first run and sets no
-watermark. What stops the
-next run re-facing the backlog is the bound, which applies to every run with no watermark however
-many previews preceded it; setting the mark only determines where a run that *acted* continues
-from. So a preview of a first run leaves the next run still a first run, still bounded, and this
-requirement's purpose is untouched.
+and SHALL set its watermark from that run; it MUST NOT triage a repository's entire open history
+because it has not run before. Items carrying the role's label are the exception, as *Every cycle
+considers the items its role's label holds* says. A run that decided nothing, such as a preview,
+SHALL NOT count as that first run and SHALL set no watermark.
 
 #### Scenario: Established repository does not flood the first cycle
 
@@ -46,34 +35,12 @@ requirement's purpose is untouched.
 
 ### Requirement: Watermarks reduce reconsideration without governing it
 
-Discovery SHALL record a per-source watermark so previously seen items are not reconsidered
-indefinitely. A watermark is an efficiency measure only.
-
-A cycle that decided nothing SHALL NOT advance the watermark. Where discovery ran to show
-somebody what a cycle would decide, nothing was decided and nothing is settled, so the items it
-examined remain exactly as unexamined as before it ran.
-
-The watermark advances on a cycle that acted, even past the items triage decided to skip,
-because deciding not to act on an item is still having considered it, and reconsidering it every
-cycle would cost the model call again for the same answer. A preview decided nothing, so it has no
-such reason. What it costs to hold the mark back is a later cycle paying for the same triage call,
-which is the efficiency this requirement already declines to treat as governing. What advancing
-costs is the items themselves: marked seen, never rediscovered, never worked.
-
-A cycle has not acted on an item triage chose to work until it takes that item. Where a cycle does
-not take one, because its budget ran out, a condition (a fault in the Igor's own configuration that
-recurs on every item) stopped it part-way through, the tracker gave no answer to its claim, or its
-process stood down for missed heartbeats (`work-claiming`'s *A retired rank does not hold its
-items forever*, `concurrent-instances`, #179), the watermark SHALL NOT advance past that item. Passed by the mark, the item would be marked seen and 
-never worked, with no decision against it to justify the loss.
-
-Where the tracker answered the claim and refused it, the watermark SHALL advance past the item as
-past one taken. Such a refusal is about the item or about what the Igor may do, such as a GitHub
-App without permission to add the claim label, and a retry would be refused the same way until the
-item or that permission changed. The watermark a cycle uses is one timestamp per source, so holding it below
-the item would also triage every item updated after it again, each cycle, while the refusal
-lasted. This accepts that the item, once passed, is reconsidered only after somebody edits or
-comments on it.
+Discovery SHALL keep a per-source watermark, an efficiency measure only, so seen items are not
+reconsidered forever. A cycle that decided nothing SHALL NOT advance it; one that acted SHALL, even
+past items triage decided to skip, but not past one triage chose to work and the cycle did not take
+because its budget ran out, a condition stopped it, its claim got no answer, or its process stood
+down for missed heartbeats. Where the tracker refused the claim, the watermark SHALL pass it as one
+taken.
 
 #### Scenario: Seen items not re-triaged
 
@@ -153,26 +120,11 @@ one of them, and that SHALL NOT be prevented by coordination.
 
 ### Requirement: Processes saving one source keep the lower watermark
 
-Where several processes save the watermark of one source, each rank's latest mark for that
-source SHALL count, for each rank of the saving process's role, and the mark discovery uses
-SHALL be the lowest of them. A mark belongs to a role and a rank, never to one run or one
-process start: a restarted rank's later marks replace its predecessor's. A sibling's mark
-SHALL count only while the deciding process counts that rank as not gone, under the abandonment
-bound that `work-claiming` defines, and only once the deciding process has seen that rank's
-heartbeat change since it started. A process's own rank's mark always counts.
-
-When no rank counts, discovery SHALL use the lowest of every rank's latest mark, but no earlier
-than the look-back a source with no watermark gets.
-
-A cycle SHALL append its mark only after it has attempted every candidate it will attempt, and a
-cycle whose process crashes first appends none. A cycle that stops early, a cycle whose process stood down
-included, holds its mark back as *Watermarks reduce reconsideration without governing it*
-(`condition-backoff`, #101) says, a stand-down among the reasons this change's `MODIFIED` block of that requirement adds. A request here is a mention of the Igor; chat messages have their own rule, the Discord read marker's. The order of ranks the mark depends on starts from the rank the mention's comment id hashes to, as *Contention is resolved before a claim, not after it* computes an item's. A rank that passes over a request, a mention of the Igor, because another available rank is first in its order SHALL keep its mark, the update time its next search starts from, from passing that request, so the request and every item updated after it are read again at the next cycle, until the request has an answer: a reply to it from the role's bot
-account, or, for a request whose answer acts, the claim that answer takes, which counts as the
-answer once it is made, before the action is done. If the rank first in the request's order is
-counted gone or unavailable before it answers, the next rank in that order finds itself first at
-a later cycle and answers it. A rank
-SHALL NOT answer a request that already has an answer.
+Where several processes save one source's watermark, discovery SHALL use the lowest latest mark of
+its role's counting ranks: its own once saved, and a sibling only while the deciding process counts
+it not gone, under `work-claiming`'s abandonment bound, and has seen its heartbeat change since it
+started; where none counts, the lowest of every rank's latest mark, no earlier than a cold start's
+look-back. A cycle SHALL append its mark only after attempting every candidate it will attempt.
 
 #### Scenario: A lagging rank holds the mark down
 
@@ -215,12 +167,62 @@ SHALL NOT answer a request that already has an answer.
 - **WHEN** one rank saves a mark for a source and later saves a later one
 - **THEN** only the later one counts for that rank
 
+#### Scenario: A restarted rank's marks replace its predecessor's
+
+- **WHEN** rank 2 saves a mark for a source, crashes and restarts, and the new rank 2 saves a later
+  mark
+- **THEN** only the later mark counts for rank 2, since a mark belongs to a role and a rank, never
+  to one run or one process start
+
+#### Scenario: A cycle that stops early holds its mark back
+
+- **WHEN** a cycle stops before taking an item triage chose to work, because its process stood down
+  for missed heartbeats
+- **THEN** the mark it appends holds back as *Watermarks reduce reconsideration without governing
+  it* says
+
+### Requirement: A passed-over rank keeps its mark before an unanswered request
+
+A rank that passes over a request, a mention of the Igor, because another available rank is first
+in the request's order, as *Every item has an owner and an order of ranks* computes from the
+mention's comment id, SHALL keep its mark before that request until it has an answer: a reply from
+the role's bot account or, where the answer acts, the claim that answer takes, once made. A rank
+SHALL NOT answer a request that already has an answer.
+
 #### Scenario: A mention another rank owns holds the mark back
 
 - **WHEN** rank 1 passes over a mention because rank 2 is first in its order, and rank 2 has not
   answered it by the end of rank 1's cycle
 - **THEN** rank 1's mark stays before the mention, and if rank 2 is counted gone before it answers, rank 1
   answers the mention at a later cycle
+
+#### Scenario: The claim an acting answer takes answers the request
+
+- **WHEN** rank 2, first in a mention's order, answers it by taking a claim, and has not yet done
+  the action
+- **THEN** the mention has an answer, and rank 1's mark may pass it
+
+#### Scenario: An answered request is not answered again
+
+- **WHEN** a rank finds a mention of the Igor that the role's bot account has already replied to
+- **THEN** it does not answer it
+
+#### Scenario: A chat message holds the read marker, not the mark
+
+- **WHEN** a rank passes over a chat message because another available rank is first in its order
+- **THEN** this requirement does not hold its mark, and `work-claiming`'s *A passed-over rank keeps
+  the read marker before an unanswered chat message* applies instead
+
+### Requirement: The next rank in a request's order answers what the first could not
+
+If the rank first in a request's order is counted gone or unavailable before it answers, the next
+rank in that order SHALL find itself first at a later cycle and answer the request.
+
+#### Scenario: The next rank answers a mention its first rank cannot
+
+- **WHEN** rank 1 passes over a mention because rank 2 is first in its order, and rank 2 becomes
+  unavailable before answering it
+- **THEN** rank 1 finds itself first at a later cycle and answers the mention
 
 ### Requirement: Every cycle considers the items its role's label holds
 

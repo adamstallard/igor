@@ -3,15 +3,13 @@
 ### Requirement: An Igor holds exactly one role
 
 An Igor SHALL hold exactly one role, and its identity on every surface SHALL be that role: a
-GitHub App on GitHub, and an app user on Linear. A person reading a
-claim sees which role took the item, and hands work to a role by naming it. Igors of different
-roles MAY draw on the same seat, since a seat is capacity and not an identity.
+GitHub App on GitHub, and an app user on Linear. Igors of different roles MAY draw on the same
+seat.
 
 Processes running the same role under the same identity are one Igor. They SHALL share the
 role's identity and differ only by rank: a whole number from 1 given to each serving process
-when it is started, or 0 for `igor run`. How a rank's claims pass to another process is
-`work-claiming`'s, in *A process recovers the claims of its own predecessor*, *A retired rank
-does not hold its items forever* and *A run by hand runs as rank 0*.
+when it is started, or 0 for `igor run`. `work-claiming` says how a rank's claims pass to another
+process.
 
 #### Scenario: Two roles are two Igors
 
@@ -38,30 +36,11 @@ does not hold its items forever* and *A run by hand runs as rank 0*.
 
 ### Requirement: An Igor's GitHub App identity is its role's name
 
-An Igor running a role SHALL act on GitHub as the github-app identity of the same name: the Igor
-for `roles/reviewer.yaml` acts as the identity `reviewer`. No role file, base or configuration
-key SHALL name an App identity, an App ID, a private key or a key path.
-
-The identity's credentials SHALL be read only from the Igor's environment, and only when
-`GITHUB_APP_IDENTITY` names this identity: `GITHUB_APP_ID`, with exactly one of
-`GITHUB_APP_PRIVATE_KEY_FILE` or `GITHUB_APP_PRIVATE_KEY`. An environment that sets both key
-variables SHALL be refused, naming both. On a server these variables come from the role's
-environment file, `/etc/igor/<role>.env`, which `igor serve` reads into its own environment as
-*The role's environment file holds single-quoted or plain values* says; when a person runs an
-Igor themselves, from their shell. The Igor SHALL have no other source: it SHALL NOT read the files the `github-app` skill
-stores under its configuration directory, even when the environment is incomplete.
-
-These names are the `github-app` skill's environment contract, so the skill's `check` works
-against the same environment file. The Igor SHALL NOT depend on the skill being installed.
-
-The Igor SHALL NOT read `GITHUB_APP_OWNER` or `GITHUB_APP_INSTALLATION_ID`: it finds its
-installation by asking GitHub which one covers its repositories. They are the skill's. The
-environment file MAY carry them only so the skill's `check` can choose an installation when the
-App is installed on more than one account, and their presence or value SHALL NOT change what the
-Igor does.
-
-`igor role explain` SHALL report the identity a role acts as and whether its environment holds
-that identity's credentials, naming any variable that is missing.
+An Igor SHALL act as the github-app identity named as its role; no role file, base or configuration
+key SHALL name an App identity, App ID, private key or key path. Its credentials SHALL come only
+from its environment, and only when `GITHUB_APP_IDENTITY` names this identity: `GITHUB_APP_ID` and
+exactly one of `GITHUB_APP_PRIVATE_KEY_FILE` or `GITHUB_APP_PRIVATE_KEY`. It SHALL NOT need the
+`github-app` skill or read its stored files, `GITHUB_APP_OWNER` or `GITHUB_APP_INSTALLATION_ID`.
 
 #### Scenario: The role's name is the identity
 
@@ -94,57 +73,32 @@ that identity's credentials, naming any variable that is missing.
 - **THEN** it reports the identity `reviewer` and whether its environment holds that identity's
   credentials, naming any missing variable
 
+#### Scenario: Both private key variables are refused
+
+- **WHEN** the Igor's environment sets both `GITHUB_APP_PRIVATE_KEY_FILE` and
+  `GITHUB_APP_PRIVATE_KEY` for its identity
+- **THEN** it is refused, naming both variables
+
+#### Scenario: A served Igor's credentials come from the role's environment file
+
+- **WHEN** `igor serve reviewer-1` starts and `/etc/igor/reviewer.env` holds `GITHUB_APP_IDENTITY`,
+  `GITHUB_APP_ID` and one private key variable for `reviewer`
+- **THEN** it reads them into its own environment, as *The role's environment file holds
+  single-quoted or plain values* says, and acts as `reviewer` with them
+
+#### Scenario: The Igor runs without the github-app skill
+
+- **WHEN** the Igor's environment holds its identity's credentials and the `github-app` skill is
+  not installed
+- **THEN** it acts as its identity
+
 ### Requirement: Timing values are configurable with stated defaults
 
-Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
-value someone guesses differently each time. The exceptions, none of which is configurable, are:
-
-- the maximum poll interval, below;
-- the four timings derived from the poll interval, below;
-- #228's (`probe-claim`) append deadline, how long an Igor waits for a probe row to land, which
-  its `stuck-conditions` requirement *Exactly one Igor takes a due probe, decided by the log
-  after it writes* fixes in code;
-- #228's probe settle interval, the wait before reading which probe row decides, fixed there
-  too;
-- the probe lapse, three of the maximum poll interval, and the keepalive append's deadline, half
-  a poll interval, which `stuck-conditions`' *A probe lapses when its Igor stops keeping it alive
-  in the log* fixes; it is a fraction of the poll interval like the four derived timings,
-  but is listed apart from them because `stuck-conditions` sets it, so a change to it is made
-  there;
-- `work-claiming`'s window of one maximum poll interval after a process starts, in which it
-  counts its role as run by several processes, and its three maximum poll intervals after which
-  the condition for a second process on a rank clears;
-- `work-claiming`'s half settle interval within which a process whose claim message failed to
-  post may remove the label and post #173's refusal, the post giving its claim back;
-- `work-claiming`'s one poll interval within which a claim is verified.
-
- The defaults are: a **settle interval** of 10 seconds before a claim
-is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
-interval** SHALL be configurable too, with a default of 10 minutes.
-
-The settle interval SHALL be shorter than the poll interval. A configuration that sets it as long
-or longer is refused, naming both values.
-
-Igor SHALL have a *maximum poll interval* of 30 minutes, three times the default, fixed in Igor
-and not configurable, so that every process of a role assumes the same maximum (Adam,
-2026-10-24). It is derived from the default rather than tuned. A configuration that sets a poll
-interval above it SHALL be refused when it loads, naming the value and the maximum, and so SHALL
-`igor serve`'s `--poll` option given a value above it; a process refusing to start for either
-exits with status 78.
-`work-claiming`'s *A heartbeat declares its process's poll interval* says how a process uses the
-maximum.
-
-These defaults, unlike the maximum, are starting points to tune against observation, not derived values, and SHALL be
-recorded as such rather than presented as considered.
-
-Four timings are the exception: each SHALL follow the role's poll interval, with no setting of
-its own: the probe keepalive, appended every interval as `stuck-conditions` says; the *abandonment bound*, three intervals, each measured as `work-claiming`'s *A
-heartbeat declares its process's poll interval* says, so up to three of the maximum after a
-restart or a lost state branch, either of which leaves a watcher with no declaration; the heartbeat period, half an interval; and
-the stand-down threshold, two intervals. `work-claiming` states the rule each belongs to.
-Changing the poll interval scales all four together. Where a process's poll interval has changed
-since it started, `work-claiming`'s *A heartbeat declares its process's poll interval* says which
-interval each counts in.
+Every interval SHALL be configurable and SHALL have a default, except the maximum poll interval, the
+four derived timings, and those the scenario *Timings fixed elsewhere have no setting* lists, none
+of which SHALL be configurable. The defaults are a **settle interval** of 10 seconds, a **cooldown**
+of 1 hour before a stopped item returns to the pool, and a **poll interval** of 10 minutes. These
+defaults SHALL be recorded as starting points to tune, not as considered values.
 
 #### Scenario: Default applied when unset
 
@@ -157,13 +111,60 @@ interval each counts in.
 - **WHEN** neither a role nor any role it extends sets the poll interval
 - **THEN** the role polls every 10 minutes
 
-#### Scenario: The derived timings follow the poll interval
+#### Scenario: Timings fixed elsewhere have no setting
 
-- **WHEN** a role sets its poll interval to 4 minutes, every process of it applies that, and a
-  watching process has seen its sibling declare it
-- **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, it
-  stands down after 8 minutes without writing one, and a process working a probe appends a
-  keepalive every 4 minutes
+- **WHEN** a role file sets any of these timings, each fixed in code by the requirement named. #228
+  (`probe-claim`) adds to `stuck-conditions` the requirement *Exactly one Igor takes a due probe,
+  decided by the log after it writes*, which fixes two: the append deadline, how long an Igor waits
+  for a probe row to land, and the probe settle interval, the wait before reading which probe row
+  decides. This change's `stuck-conditions` fixes two more: the probe lapse, three of the maximum
+  poll interval, in *A probe lapses when its Igor stops keeping it alive in the log*, and the
+  keepalive append's deadline, half a poll interval, in *A prober whose keepalives fail twice in a
+  row stops and voids its probe*. `work-claiming` fixes the other four: the window of one maximum
+  poll interval after a process starts, in which the process counts its role as run by several
+  processes; the three maximum poll intervals after which the condition for a second process on a
+  rank clears; the half settle interval within which a process whose claim message failed to post
+  may remove the label and post the refusal giving its claim back; and the one poll interval within
+  which a claim is verified
+- **THEN** the role's file under `roles/` is refused, naming the key, as for any key that file
+  does not read
+
+## ADDED Requirements
+
+### Requirement: The skill's installation variables change nothing the Igor does
+
+The environment file MAY carry `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID` only so the
+`github-app` skill's `check` can choose an installation when the App is installed on more than one
+account; their presence or value SHALL NOT change what the Igor does.
+
+#### Scenario: An installation variable that names another account changes nothing
+
+- **WHEN** a role's environment file sets `GITHUB_APP_INSTALLATION_ID` to an installation on
+  another account than the one covering the role's repositories
+- **THEN** the Igor finds and uses the installation that covers its repositories, as without it
+
+### Requirement: The settle interval is shorter than the poll interval
+
+The settle interval SHALL be shorter than the poll interval. A configuration that sets it as long
+or longer SHALL be refused, naming both values.
+
+#### Scenario: A settle interval as long as the poll interval is refused
+
+- **WHEN** a role sets its settle interval to 10 minutes and its poll interval to 10 minutes
+- **THEN** the configuration is refused, naming both values
+
+#### Scenario: A settle interval longer than the poll interval is refused
+
+- **WHEN** a role sets its settle interval to 15 minutes and its poll interval to 10 minutes
+- **THEN** the configuration is refused, naming both values
+
+### Requirement: The maximum poll interval is 30 minutes, fixed in Igor
+
+Igor SHALL have a *maximum poll interval* of 30 minutes, three times the default rather than
+tuned, and not configurable; `work-claiming`'s *A heartbeat declares its process's poll interval* says how a process uses it.
+A configuration setting a poll interval above it SHALL be refused when it loads, naming the value
+and the maximum, and so SHALL `igor serve --poll` above it; a process refusing to start for either
+exits with status 78.
 
 #### Scenario: A poll interval above the maximum is refused
 
@@ -171,10 +172,27 @@ interval each counts in.
 - **THEN** the configuration is refused, naming 45 minutes and the maximum of 30, and a process
   starting on it exits with status 78
 
-#### Scenario: A settle interval as long as the poll interval is refused
+#### Scenario: A `--poll` above the maximum is refused
 
-- **WHEN** a role sets its settle interval to 10 minutes and its poll interval to 10 minutes
-- **THEN** the configuration is refused, naming both values
+- **WHEN** `igor serve` is given `--poll 45m`
+- **THEN** it refuses to start, naming the 30-minute maximum
+- **AND** the process exits with status 78
+
+### Requirement: Four timings follow the poll interval and have no setting of their own
+
+Four timings SHALL follow the role's poll interval, with no setting of their own: the probe
+keepalive, appended every interval (`stuck-conditions`); the *abandonment bound*, three intervals;
+the heartbeat period, half an interval; and the stand-down threshold, two intervals. Changing the
+poll interval scales all four together. `work-claiming` says how each interval is measured,
+including after the poll interval changes.
+
+#### Scenario: The derived timings follow the poll interval
+
+- **WHEN** a role sets its poll interval to 4 minutes, every process of it applies that, and a
+  watching process has seen its sibling declare it
+- **THEN** the abandonment bound the watching process applies to that sibling is 12 minutes; each
+  process writes its heartbeat every 2 minutes and stands down after 8 minutes without writing one;
+  and a process working a probe appends a keepalive every 4 minutes
 
 #### Scenario: A derived timing has no setting
 
@@ -183,29 +201,21 @@ interval each counts in.
 - **THEN** the role's file under `roles/` is refused, naming the key, as for any key that file
   does not read
 
-#### Scenario: A `--poll` above the maximum is refused
+#### Scenario: A watcher with no declaration counts the abandonment bound in the maximum
 
-- **WHEN** `igor serve` is given `--poll 45m`
-- **THEN** it refuses to start, naming the 30-minute maximum
-- **AND** the process exits with status 78
-
-## ADDED Requirements
+- **WHEN** a watching process holds no poll interval its sibling declared, as after a restart or
+  a loss of the state branch
+- **THEN** the abandonment bound it applies to that sibling is three of the maximum poll
+  interval, 90 minutes
 
 ### Requirement: The roster declares the ranks each role may run
 
-`igor.config.yaml` SHALL declare the roster under the top-level key `roster`: a map from a role's
-name to the list of ranks that role may run, each a whole number from 1, such as:
-
-```yaml
-roster:
-  generalist: [1, 2, 3]
-  reviewer: [1]
-```
-
-A role the roster does not name SHALL run rank 1 only, as though the roster declared `[1]` for it. The configuration SHALL be refused, naming
-the entry, when the roster names a role with no role file, lists a rank that is not a whole
-number from 1, lists one rank twice, or lists no rank. An `igor serve` process whose rank the roster does not declare for its
-role SHALL refuse to start, naming the ranks the roster declares.
+The top-level key `roster` of `igor.config.yaml` SHALL map a role's name to the list of ranks that
+role may run, each a whole number from 1. A role the roster does not name SHALL run rank 1 only.
+The configuration SHALL be refused, naming the entry, where an entry names a role with no role
+file, or lists no rank, one rank twice, or a rank that is not a whole number from 1. `igor serve`
+SHALL refuse to start on a rank the roster does not declare for its role, naming the ranks it
+declares.
 
 #### Scenario: A declared rank starts
 
@@ -234,23 +244,21 @@ role SHALL refuse to start, naming the ranks the roster declares.
 
 ### Requirement: A process is named by its role and rank
 
-Every process `igor serve` runs SHALL be named `<role>-<rank>`, with the rank always written: the systemd
-instance is `igor@<role>-<rank>`, such as `igor@generalist-2`, and it starts
-`igor serve <role>-<rank>`. The rank SHALL be the last dash-separated part of the name, so a
-role's name may itself contain dashes. `igor serve` given a name whose last dash-separated part
-is not a whole number from 1 written in decimal with no leading zero SHALL refuse to start,
-as for `02`, saying the name must have the form `<role>-<rank>`, so each rank has one spelling. The
-role's GitHub App identity SHALL be the same for every rank: no rank has an App of its own.
-
-A role's name SHALL match `[a-z][a-z0-9-]*`: a lowercase letter, then lowercase letters, digits
-and dashes. For every rank the role may run, `igor-worker-<role>-<rank>`, the name of that rank's
-worker user under `task-execution`, SHALL be at most 32 characters, Linux's limit on a user name.
-Loading the configuration SHALL refuse any other role name, naming the role.
+Every process `igor serve` runs SHALL be named `<role>-<rank>`, the rank always written as the
+name's last dash-separated part: a whole number from 1 in decimal with no leading zero. Its systemd
+instance SHALL be `igor@<role>-<rank>`, which starts `igor serve <role>-<rank>`. `igor serve` SHALL
+refuse any other name, saying it must have the form `<role>-<rank>`. The role's GitHub App identity
+SHALL be the same for every rank: no rank has an App of its own.
 
 #### Scenario: Every rank acts as the role's App
 
 - **WHEN** `igor serve generalist-1` and `igor serve generalist-2` run
 - **THEN** both act on GitHub as the `generalist` App
+
+#### Scenario: A rank's systemd instance carries its name
+
+- **WHEN** rank 2 of the `generalist` role runs under systemd
+- **THEN** its instance is `igor@generalist-2`, and it starts `igor serve generalist-2`
 
 #### Scenario: A role whose name has a dash
 
@@ -267,6 +275,12 @@ Loading the configuration SHALL refuse any other role name, naming the role.
 - **WHEN** `igor serve generalist-02` starts
 - **THEN** it refuses to start, saying the name must have the form `<role>-<rank>`
 
+### Requirement: A role's name is lowercase and fits its worker users' names
+
+A role's name SHALL match `[a-z][a-z0-9-]*`, and `igor-worker-<role>-<rank>`, the worker user of
+each rank the role may run, SHALL fit Linux's 32-character limit on a user name. Loading the
+configuration SHALL refuse any other role name, naming the role.
+
 #### Scenario: A role name outside the allowed characters is refused
 
 - **WHEN** the role file `roles/Front.End.yaml` is loaded
@@ -280,19 +294,12 @@ Loading the configuration SHALL refuse any other role name, naming the role.
 
 ### Requirement: The role's environment file holds single-quoted or plain values
 
-Where `/etc/igor/<role>.env` exists, `igor serve` SHALL read it itself, before anything reads
-the credentials it holds; no shell reads it. Each line SHALL be blank, a comment starting with
-`#`, or `KEY=value`, where the key is made of letters, digits and `_`, and the value is
-single-quoted or plain. A value is single-quoted when it starts with `'` and ends at the next
-`'`, with nothing after that quote on its line, and stands for everything between the two as
-written; it may span lines, as a private key does, and cannot itself hold a single quote. A quote
-the file never closes is refused. A value is plain when every character in it is a
-letter, a digit, or one of `_ . / : @ -`. `igor serve` SHALL refuse to start on any other line,
-naming its line number and nothing of its content, since any line of the file may be part of a
-secret. A plain value SHALL hold at least one
-character. Before it builds the path, `igor serve` SHALL check that the role name is one
-`role-config` accepts, so that the path names a file in `/etc/igor/`. A key the file sets SHALL take the place of
-the same key in the environment `igor serve` started with.
+Where `/etc/igor/<role>.env` exists, `igor serve` SHALL read it itself, with no shell, before
+anything reads its credentials. Each line SHALL be blank, a `#` comment, or `KEY=value`, with a key
+of letters, digits and `_`. A value SHALL be single-quoted — from `'` to the next `'`, the last
+character on its line, standing for everything between as written — or plain: one or more letters,
+digits or `_ . / : @ -`. `igor serve` SHALL refuse to start on any other line, naming only its line
+number.
 
 #### Scenario: A double-quoted value is refused
 
@@ -330,23 +337,11 @@ the same key in the environment `igor serve` started with.
 - **WHEN** `/etc/igor/backend.env` holds the line `TOKEN=`
 - **THEN** `igor serve backend-1` refuses to start, naming that line's number
 
-#### Scenario: A role name that leaves `/etc/igor/` is refused before any file is read
-
-- **WHEN** `igor serve ../x-1` is started
-- **THEN** it refuses to start, saying the name must have the form `<role>-<rank>`, and reads no file outside
-  `/etc/igor/`
-
 #### Scenario: A quote that never closes is refused
 
 - **WHEN** `/etc/igor/backend.env` holds `TOKEN='abc` and no later `'`
 - **THEN** `igor serve backend-1` refuses to start, naming the number of the line with the
   opening quote and printing nothing of it
-
-#### Scenario: The file's value takes the place of the environment's
-
-- **WHEN** `igor serve backend-1` starts with `GITHUB_APP_ID=1` in its environment, and
-  `/etc/igor/backend.env` holds `GITHUB_APP_ID=2`
-- **THEN** it uses `2`
 
 #### Scenario: A single-quoted value is taken as written
 
@@ -358,3 +353,36 @@ the same key in the environment `igor serve` started with.
 - **WHEN** the environment file holds a blank line and a line starting with `#` among its values
 - **THEN** `igor serve` starts, reading only the `KEY=value` lines
 
+### Requirement: The role's environment file is looked for only in `/etc/igor/`
+
+Before it builds the path `/etc/igor/<role>.env`, `igor serve` SHALL check that the role name is
+one `role-config` accepts, so that the path names a file in `/etc/igor/`.
+
+#### Scenario: A role name that leaves `/etc/igor/` is refused before any file is read
+
+- **WHEN** `igor serve ../x-1` is started
+- **THEN** it refuses to start, saying the name must have the form `<role>-<rank>`, and reads no file outside
+  `/etc/igor/`
+
+### Requirement: The role's environment file overrides the environment `igor serve` started with
+
+A key `/etc/igor/<role>.env` sets SHALL take the place of the same key in the environment that
+`igor serve` started with.
+
+#### Scenario: The file's value takes the place of the environment's
+
+- **WHEN** `igor serve backend-1` starts with `GITHUB_APP_ID=1` in its environment, and
+  `/etc/igor/backend.env` holds `GITHUB_APP_ID=2`
+- **THEN** it uses `2`
+
+### Requirement: Explaining a role reports its identity and any missing credential
+
+`igor role explain` SHALL report which identity a role acts as and whether its environment holds
+that identity's credentials, naming each variable that is missing.
+
+#### Scenario: Explain names a missing credential variable
+
+- **WHEN** `igor role explain reviewer` runs with `GITHUB_APP_IDENTITY=reviewer` and a private key
+  variable in its environment, and no `GITHUB_APP_ID`
+- **THEN** it reports the identity `reviewer`, says its credentials are incomplete, and names
+  `GITHUB_APP_ID` as missing

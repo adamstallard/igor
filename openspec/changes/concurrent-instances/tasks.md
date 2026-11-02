@@ -79,7 +79,8 @@
       that both claim one item read different run ids, and only the earlier message's run works
       it; a crashed run's claim is taken over once its own file stops changing, while another
       run's file still changes; a run's heartbeat file is gone once it exits, and a crashed
-      run's once rank 1 counts it gone; `--plan` writes nothing and removes no tree
+      run's once rank 1 counts it gone; `--plan` writes nothing and removes no tree; a run beside
+      `igor@backend-1` spends only `IGOR_RUN_TOKEN`, never the seat file's token
 - [ ] 1.10 Refuse, when the configuration loads, a role whose name does not match
       `[a-z][a-z0-9-]*`, or for which `igor-worker-<role>-<rank>` is longer than 32 characters for
       any rank the role may run, with these messages, as written:
@@ -98,7 +99,8 @@
       Role "<role>": its settle interval (<settle>) must be shorter than its poll interval (<poll>). A claim is verified within one poll interval of its message, so with this setting the role would work nothing.
       ```
 
-      Test: equal intervals are refused, naming both values; a shorter settle interval loads
+      Test: equal intervals are refused, naming both values, and so is a longer settle interval;
+      a shorter settle interval loads
 
 ## 2. The marker
 
@@ -128,10 +130,12 @@
       Igor-Handed-Over-By: <login>
       ```
 - [ ] 2.11 Tests for 2.9, 2.10 and 2.14: a message in the release's second does not count; a
-      superseded message does not count once its rank returns; a taken-over hand-over still
-      reads as handed over, so that when the Igor later brings its own pull request for the item
-      up to date and gives the claim back, the label stays, and a stop said on the item is not
-      lifted by a later go-ahead, as for any handed-over item
+      superseded message does not count once its rank returns; a taken-over hand-over still reads as
+      handed over, so that when the Igor later brings its own pull request for the item up to date
+      and gives the claim back, the label stays, and a stop said on the item is not lifted by a
+      later go-ahead, as for any handed-over item; when a rank takes over a gone rank's hand-over,
+      its new claim message names the person that the gone rank's message recorded as handing the
+      item over
 - [x] 2.12 Measure on GitHub whether comment ids still ascend in the order of creation for claim
       comments posted on one issue within one second, by several ranks at once. Record the
       result in `design.md`, under *Ordering is the surface's sequence key, never a timestamp*.
@@ -174,7 +178,8 @@
       line of it that begins with `Igor-`, composed or interpolated, before #153 signs it
       (decisions 53 and 57). Test: a mention reply whose model text ends in
       `Igor-Rank: 1` and `Igor-Supersedes: 2` is posted with both lines indented, and no process
-      reads it as a claim message
+      reads it as a claim message; a bot comment's line `igor-rank: 2`, or ` Igor-Rank: 2`, is not
+      read as a trailer
 - [ ] 2.21 A process counts its role as run by several processes while its roster declares
       several ranks, or while it knows of a sibling it does not count gone: any process, a
       serving rank or a run, whose heartbeat file it has read since it started, kept in its own
@@ -212,7 +217,7 @@
       before that mention, until it has an answer, which is one of: a reply from the role's bot
       account; for a chat message, an issue linking it; or, for a mention whose answer acts, the
       claim it takes. No rank answers a message that already has one (decision 70). Tests: with the first
-      rank gone before answering, the next rank answers at a later cycle; with it answering, the marker and the mark then pass the message
+      rank gone before answering, the next rank answers at a later cycle; with it answering, the marker and the mark then pass the message, also where the answer is a claim not yet acted on; a mention the bot has already replied to is not answered again
 - [ ] 3.8 On an item a person handed over that waits, for work in flight or another Igor's label,
       only the first available rank in its order posts the one comment (decision 71). Test: two
       ranks find such an item, and one comment is posted
@@ -256,7 +261,9 @@
       For each such run it removes the run's trees, with their outboxes, `<tree>-git` and
       `<tree>-prompt`, and #174's home and plugin directory of that run, and then that run's lock file. `igor run --plan`
       removes nothing. Tests: two runs at once each keep and remove only their own trees; a run
-      removes what a crashed run left and leaves what a live run holds; `--plan` removes no tree
+      removes what a crashed run left and leaves what a live run holds; a crashed run that left
+      no tree is found by its lock; `--plan` removes no tree; a gone rank's tree and outbox are
+      removed as its worker user and its `<tree>-git` and `<tree>-prompt` as the service user
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
 - [ ] 4.7 `docs/architecture.md` §6.7.2 pins the sweep threshold to that ceiling; restate it to
       describe the sweep by rank
@@ -275,7 +282,9 @@
       `SWEEP_AFTER_MS` lapse with the keepalive lapse. Tests: a
       probe worked for three hours with keepalives does not lapse; a prober whose keepalive
       appends fail twice in a row stops its worker; a probe whose rank crashed
-      lapses after 90 minutes for a process of another role
+      lapses after 90 minutes for a process of another role; a probe with no keepalive for 90
+      minutes lapses though its rank's heartbeat still changes; a worker past a run time limit
+      whose keepalives land does not lapse
 - [ ] 4.10 A process's first heartbeat lands before its first cycle
 - [ ] 4.11 A process reads its role's heartbeat files before choosing each candidate and again
       before verifying a claim, all of them with their contents in one request, such as one
@@ -294,8 +303,9 @@
 - [ ] 4.14 Tests for 4.10 to 4.13: a rolled-back heartbeat file only postpones a gone verdict; a
       rank whose clock stepped back is still counted; a restart starts every sibling's count
       afresh; a returning rank leaves an item adopted from it; a process that cannot write its
-      heartbeat stands down before a sibling counts it gone, and posts nothing on the item; a
-      taker posts at once after its release
+      heartbeat stands down before a sibling counts it gone, and posts nothing on the item, nor
+      tests, rereads or refuses where its verification read then fails; a taker posts at once
+      after its release
 - [ ] 4.15 Igor's own loop runs a timer, apart from the cycle and the worker, that fires every
       half poll interval. Each firing writes the heartbeat (4.4) and checks whether the process
       has stood down (4.13); where it has, the timer stops the running worker itself, without
@@ -321,7 +331,8 @@
       Whichever of #171, #208 and this build lands last wires the condition to those rules. Each
       process applies the newest lore commit it has fetched, with no coordination between ranks.
       Test: a malformed roster at a cycle keeps the last roster and raises the condition, and a
-      fixed commit descending from it clears it; a roster that drops the rank retires it
+      fixed commit descending from it clears it; a roster that drops the rank retires it; a
+      check that fails because GitHub did not answer refuses nothing
 - [ ] 4.18 Tests for 4.16 and 4.17: a recovered claim with the Igor's pull request open is caught
       up, whether its own predecessor's or a gone sibling's, and a person's label stays; a
       returning rank does not count its superseded message; a rank removed from the roster is
@@ -366,7 +377,8 @@
       is read again at the next cycle; a failed post sends the removal of the label it set
       while under half a settle interval has passed since it started setting it, and later
       sends no removal and leaves the label; the refusal after that failed post is posted under
-      the same half settle interval and not after it (decision 65); the holder sets an item down; a stop on a handed-over item a sibling
+      the same half settle interval and not after it (decision 65), while a refusal after a
+      reread is posted however late; the holder sets an item down; a stop on a handed-over item a sibling
       works is ignored by the other rank; a stop on a hand-over nobody has claimed is answered
 - [ ] 4.24 Each heartbeat also carries its writer's host name and process id. A process that
       reads, in its own rank's file, a start id other than its own whose counter advanced between two
@@ -380,7 +392,8 @@
       size decision 72's known gap, a rollback followed by a restore, which design.md's *Open Questions* names. Tests:
       two processes serving one rank both stop, and the condition names both; a rolled-back
       branch restoring an older copy, under the process's own id or its predecessor's, raises
-      no condition and is read as a loss; the condition clears after the foreign writer stops
+      no condition and is read as a loss; the condition clears after the foreign writer stops;
+      opening and clearing it each append a condition row to the execution log
 - [ ] 4.25 A process exiting because the roster no longer declares its rank logs the line below,
       as written, and exits with status 0. Test: the status and the line
 
@@ -425,7 +438,8 @@
 - [ ] 5.4 A conflict is not reported as a failed cycle
 - [ ] 5.5 Tests: concurrent writers both survive; a retry preserves the winner's record; a
       lagging rank holds the mark down until it stops counting; with every rank gone, the lowest
-      latest mark still applies, and never reaches earlier than the cold start's look-back
+      latest mark still applies, and never reaches earlier than the cold start's look-back; a
+      restarted rank's later mark replaces its predecessor's
 - [ ] 5.6 A cycle appends its mark only after it has attempted every candidate it will attempt.
       A cycle whose process crashes first appends none. A cycle cut short, by a stand-down
       among other reasons, holds its mark back by #101's rule in `work-discovery`, *Watermarks
@@ -439,7 +453,8 @@
       64)
 - [ ] 5.8 Tests: a crash between triage and the claims leaves the items above the mark; a crashed
       rank's claim below every mark is taken over; a set-down item still labelled is not claimed
-      until its deferral ends
+      until its deferral ends; a cycle that stands down before taking an item triage chose holds
+      its mark back
 - [ ] 5.9 A sibling rank's mark counts only once this process has seen that rank's heartbeat change
       since it started; its own rank's mark always counts. Test: after a restart, a
       dead rank's old mark does not hold the mark down
@@ -466,7 +481,8 @@
       merges, or it carries a review to act on, #150's actionable review (`work-triage`), over
       which the holder resumes the item with a worker as #150 builds. Keep each item's last
       triage time in memory. Test: no triage call for an unchanged item; a new comment, or a pull
-      request that stops merging, brings one; a change request brings a worker
+      request that stops merging, brings one; a change request brings a worker, and a pull
+      request with no review to act on gets none
 
 ## 6. Documentation
 

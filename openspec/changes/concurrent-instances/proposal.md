@@ -75,8 +75,9 @@ applied. No time in the file is compared, so neither a clock stepped
 back nor a lost, reset or rolled-back state branch makes a live rank look gone. A process that
 cannot write its heartbeat for two intervals stands down: it starts no claim, and the heartbeat
 timer stops its worker. A process taking over an item from a gone rank first removes the
-label and adds it again. Without that, the gone rank's old claim message would count again when
-the rank returned, and both would work the item. The bound governs how long an unattended claim
+label and adds it again, except on an item with the Igor's open pull request, which it catches up
+under a claim message that supersedes the gone rank's. Without one or the other, the gone rank's
+old claim message would count again when the rank returned, and both would work the item. The bound governs how long an unattended claim
 may sit, never how long work may run: a working process keeps writing heartbeats.
 
 **Discovery may hand the same candidate to several processes**, and that is allowed to happen.

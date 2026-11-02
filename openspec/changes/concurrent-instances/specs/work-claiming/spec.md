@@ -2,33 +2,12 @@
 
 ### Requirement: Assignment expresses a claim; ordering resolves it
 
-Every claiming tracker offers a native holder field, such as GitHub's `igor:<role>` label and
-Linear's delegate. A claim SHALL set the holder field, because that is the signal humans
-read, and SHALL post the claim message. Resolution SHALL rely on the storage order of writes,
-not on any conditional-write primitive.
-
-The holder field SHALL be written before the claim message. The field is what resolution reads
-and what people see; the message names the Igor and carries the stop instruction. Written in
-the other order, an Igor that fails between the two writes leaves a message claiming an item
-whose field shows nobody, which is a claim people miss. Written field first, a failure leaves
-the visible claim, and the message follows on the next cycle.
-
-Where the holder field holds a single value, the later of two writes holds the item: each Igor
-re-reads the field, and the one it no longer names has lost. Where the field holds a list, such
-as GitHub's `igor:` labels, any other holder present after the settle interval
-means the claim is lost, because a list keeps every write rather than replacing one.
-
-Processes of one role write the same value to the holder field, so the field cannot tell them
-apart. Among them, the claim message earliest in storage order holds the item, counting only
-messages posted since the item's latest release and leaving out those of ranks that are gone
-(see *A retired rank does not hold its items forever*). The item's latest release is the latest
-removal of the role's label from it, as the item's label events record. Storage order among
-claim messages SHALL be the surface's own sequence key, never a timestamp.
-
-A claim message SHALL be ordered against the item's latest release by its timestamp. A message
-SHALL count only when its timestamp is later than the release's; a message in the same second as
-the release does not count. No process SHALL wait for the release's second to pass before
-posting: a claim whose message does not count is lost, and the item is claimed at a later cycle.
+A claim SHALL set the tracker's native holder field, such as GitHub's `igor:<role>` label (a
+list) or Linear's delegate, and then SHALL post the claim message. Resolution SHALL rely on the
+storage order of writes, not on a conditional write: on a single-valued field the later write
+holds the item, and on a list-valued one any other holder after the settle interval means the
+claim is lost. Among one role's processes, *One role's earliest claim message since the item's
+release holds it* decides.
 
 #### Scenario: Claim visible in the native field
 
@@ -57,56 +36,14 @@ posting: a claim whose message does not count is lost, and the item is claimed a
 - **WHEN** a claim is taken on any tracker
 - **THEN** correctness does not depend on a compare-and-set guarantee from that surface's API
 
-#### Scenario: A claim message from before a release does not count
-
-- **WHEN** an item was released and then claimed again by processes of one role
-- **THEN** only claim messages posted since the release are compared
-
-#### Scenario: A claim message in the release's second does not count
-
-- **WHEN** an item's latest release and a claim message on it carry the same second
-- **THEN** that claim message does not count
-- **AND** the process that posted it works nothing, and the item is claimed at a later cycle
-
-#### Scenario: Claims written in the same second still order
-
-- **WHEN** two processes of one role claim one item and the surface reports both claim messages
-  at the same timestamp
-- **THEN** the surface's sequence key decides, and exactly one claim stands
-
 ### Requirement: A claim is verified after a settle interval
 
 After claiming, an Igor SHALL wait a configurable settle interval, re-read the item, and stand
-down if another party holds it. Standing down MUST remove whatever still names the Igor as
-holder, and MUST NOT remove anything naming another party. On a single-valued holder field the
-losing Igor's write has already been replaced by the winner's, so clearing the field would
-remove the winner's claim; the losing Igor posts a short reply saying it is handing the item
-back, and changes nothing else.
-
-Where the other holder is a process of the Igor's own role, standing down SHALL leave the holder
-field as it is, such as the role's label on GitHub, and SHALL post nothing, since the field is the
-winner's too, as *Only the rank holding a claim gives it back* says. Where several processes run
-the role and no claim message counts, the label SHALL likewise stay, except as that requirement's
-first listed exception allows, since the process cannot tell that no rank holds the item.
-
-The re-read SHALL come within one poll interval of the claim message. A process that reaches it
-later SHALL NOT work the item, even where it reads its own message as holding it. It gives the
-claim back as *Only the rank holding a claim gives it back* says of a process whose
-verification fails. Where another process's claim message counts, it is silent. Otherwise it
-gives the claim back out loud, and removes the label only where its own message holds the
-item.
-
-The settle interval does not apply where a person handed the item to the Igor; see *A person
-can direct an Igor through the holder field*. Among one role's ranks it does apply, as *A
-hand-over among one role's ranks is contested like found work* says.
-
-The re-read SHALL look for a stop said since the cycle that chose the item read it, or, for an
-item a person handed over, since the hand-over. A cycle works its items one after another, so a
-stop said on one while it works another comes after the cycle read it and before the claim;
-looking only back to the claim would miss it.
-For an item the Igor's own search found, a go-ahead later in the comments than the latest stop
-lifts it, as it would at the next cycle, and the run that follows SHALL NOT be stopped by the stop
-the claim saw lifted. For a handed-over item the stop stands.
+down if another party holds it, removing whatever still names it as holder and nothing naming
+another party; on a single-valued field it SHALL only post a short reply handing the item back.
+Standing down to its own role's process SHALL leave the holder field and post nothing (*Only the
+rank holding a claim gives it back*). A person's hand-over skips the interval, except among one
+role's ranks.
 
 #### Scenario: Claim confirmed
 
@@ -136,12 +73,12 @@ the claim saw lifted. For a handed-over item the stop stands.
 - **WHEN** a process loses a claim to another process of its own role
 - **THEN** it leaves the role's label in place and performs no work
 
-#### Scenario: A late verification works nothing
+#### Scenario: A re-read with no counting claim message keeps the label
 
-- **WHEN** a process reaches the re-read more than one poll interval after posting its claim
-  message, and its own message holds the item with no other process's message counting
-- **THEN** it performs no work, gives the claim back out loud, and, where a fresh read just
-  before the removal still shows its own message holding the item, removes the label
+- **WHEN** several processes run a role, and a process's re-read finds no claim message on the
+  item that counts
+- **THEN** it leaves the role's label in place, except as *A failed post's label and refusal are sent
+  only within half a settle interval* allows, since it cannot tell that no rank holds the item
 
 #### Scenario: Settle interval configurable
 
@@ -163,19 +100,11 @@ the claim saw lifted. For a handed-over item the stop stands.
 
 ### Requirement: A person can direct an Igor through the holder field
 
-Where a person sets the holder field to name an Igor, the Igor SHALL treat the item as directed
-to it. On the next cycle that finds the item, it SHALL post the claim message, naming itself and
-carrying the stop instruction, and SHALL begin work without waiting the settle interval, except
-where several processes run its role, as the next paragraph says. No
-other Igor competes for an item that names a holder, and the person has already chosen. A stop,
-or a person removing the Igor from the holder field, SHALL halt it at any time, as for any claim.
-
-Where several processes run the Igor's role, they SHALL decide which of them works the item as
-*A hand-over among one role's ranks is contested like found work* says. Between different Igors,
-the item still needs no settle interval.
-
-On Linear a person directs an Igor by delegating to it. On GitHub a person directs an App Igor
-by adding its `igor:<role>` label.
+Where a person sets the holder field to name an Igor, the Igor SHALL treat the item as directed to
+it: on the next cycle that finds it, it SHALL post the claim message, naming itself and carrying the
+stop instruction, and SHALL begin work with no settle interval against other Igors. Among its ranks,
+*A hand-over among one role's ranks is contested like found work* decides which works it. A stop, or
+anyone removing the Igor from the holder field, SHALL halt it at any time, as for any claim.
 
 #### Scenario: Delegated by a person
 
@@ -203,63 +132,11 @@ by adding its `igor:<role>` label.
 
 ### Requirement: A claim that cannot be kept is given back, out loud
 
-`work-claiming` says how a claim is taken, verified, stood down from and stopped. It says nothing
-about the run that takes one and then cannot continue, and that silence is the gap: an Igor that
-throws while holding a claim leaves the item held, other people told to stand off, and no
-explanation.
-
-Where a run holds a claim and cannot go on — the claim could not be finished, or anything after it
-failed — the Igor SHALL release the claim and say so on the item. It SHALL NOT end such a run
-holding the claim in silence.
-
-Where several processes run one role, two cases end in silence instead. A process that has
-stood down for missed heartbeats says nothing: its claim stays in place until a sibling counts it gone, and that sibling takes the item over and says so (*A retired rank does not hold its items forever*). A process that finds another process's claim message holding the
-item says nothing, since the claim is that rank's (*Only the rank holding a claim gives it
-back*); one that finds no claim message holding the item gives it back out loud, as that
-requirement says. The scenarios
-below that give a claim back describe the holder; a process whose claim message failed to post
-removes the label only as *Only the rank holding a claim gives it back* allows in its first
-exception.
-
-A run that finishes SHALL release its claim too, leaving its artifact in place and the item open,
-so the item is rediscovered and the work in flight keeps it from being claimed again. No role
-setting changes this.
-
-**Giving the claim back never takes back a person's hand-over.** Where a person put the Igor in
-the holder field, as by adding its `igor:<role>` label, and the run is the Igor bringing its own
-artifact up to date rather than answering that hand-over, releasing the claim SHALL leave that
-holder entry in place, except where a person stops the Igor: a stop removes the Igor from the
-holder field, as every stop does, and the person hands the item over again by adding it anew. Bringing its own work up to date is not a claim of the hand-over (*An item
-handed to an Igor waits for work already in flight*), and removing the person's entry would spend
-a hand-over the Igor has not answered.
-
-**Where the release does not succeed either**, the Igor SHALL say that instead of saying it
-released. The item still carries the Igor's name, so a message asserting release would be false
-where somebody is looking; what is said SHALL name the item as still held and SHALL name the one
-action that frees it. This paragraph and the scenarios *A claim that could not be announced is given back* and *A
-claim that could not be verified is given back and withdrawn*, below, are about the holder. A
-process whose claim message failed to post is the holder only where its test, #173's read of
-the item's claim messages, finds the message landed after all; otherwise it holds nothing, and
-it gives the claim back as *Only the rank holding a claim gives it back* says.
-
-**A failure of the surface is not a failure of the item.** Where a run ends this way because a
-tracker or host did not answer, that SHALL be distinguishable from a refusal about the item
-itself, and a cycle meeting **two in a row** SHALL stop rather than attempting the remaining
-items. Nothing about the item produced the outcome, so every remaining item would reach the same
-one — and doing so speaks on each of them, at a volume that is itself a cause of the failure.
-
-Two, not one, because the run cannot tell the two causes apart: `produce`, the step that publishes
-the worker's branch, fails inside the worker
-call for a branch the item already owns, while a tracker that does not answer the release that
-ends a finished run fails outside it, so neither the error nor how far the run got separates them. How many items they
-affect does — an outage fails every item and a bad item fails one — so the count is the
-distinction. A cycle that met one and then ran an item cleanly did not fail, and SHALL NOT be
-recorded as failed.
-
-**A write says what the surface recorded.** Where the Igor asks a surface to say or to release
-something, the answer SHALL carry what was recorded, not merely that no error was raised. A raised
-error cannot separate *this did not happen* from *this happened and the answer was lost*, and a
-caller that must tell them apart cannot do it from a thrown error alone.
+Where a run holding a claim cannot go on, because its claim or a later step failed, the Igor SHALL
+release the claim and say so on the item; where the release fails too, it SHALL say instead that
+the item is still held, naming the one action that frees it. Among a role's ranks, which rank
+gives a claim back, and when in silence, *Only the rank holding a claim gives it back* and *A
+stood-down process tests and rereads no claim* decide.
 
 #### Scenario: A finished run releases its claim
 
@@ -324,28 +201,30 @@ caller that must tell them apart cannot do it from a thrown error alone.
   message holding the item cannot go on with its claim
 - **THEN** it removes nothing and posts nothing on the item
 
+#### Scenario: A rank that finds no claim message holding the item gives it back out loud
+
+- **WHEN** several processes run one role, and a process that finds no claim message holding the
+  item cannot go on with its claim
+- **THEN** it gives the claim back out loud, as *A failed post or verification is tested before the
+  claim is given back* and *A refusal after a failed verification or a reread is posted whenever it
+  comes* say, within the bound *A failed post's label and refusal are sent only within half a settle
+  interval* sets where its own claim message failed to post
+
+#### Scenario: A rank stood down for missed heartbeats keeps its claim in silence
+
+- **WHEN** several processes run one role, and a process holding a claim has stood down for
+  missed heartbeats
+- **THEN** it says nothing on the item, and its claim stays in place
+- **AND** a sibling that counts it gone takes the item over and says so, as *A retired rank does
+  not hold its items forever* and *Taking over a gone rank's claim releases the item first* say
+
 ### Requirement: An item handed to an Igor waits for work already in flight
 
-Where a person hands an item to an Igor through its holder field, and the item already has work
-in flight, such as an open pull request, the Igor SHALL NOT claim it. On the next cycle that
-finds the item, it SHALL post one comment naming the work in flight and saying it takes the item
-up once that work closes, and SHALL NOT post it again while that work is open. Where several
-processes run the role, only the first available rank in the item's order, as *Contention is
-resolved before a claim, not after it* computes it, posts the comment; every other rank passes
-the item over. Once the work
-closes, the hand-over directs the Igor as in *A person can direct an Igor through the holder
-field*. Claiming would duplicate work already in review, which no hand-over overrides, and
-saying nothing would leave the person who asked with no sign the Igor saw the request.
-
-Where the work in flight is the Igor's own pull request and it no longer merges, bringing it up
-to date is the Igor's own work on its own artifact, not a claim of the hand-over, and the item
-gets no such comment while that runs.
-
-Where a handed-over item's run published work and then could not finish, its handoff post, the
-comment it leaves as it stops (`graceful-handoff`), SHALL say
-that what it published stands and that, once that work closes, handing the item over again has
-the Igor try again. Handing it over while the work is still open changes nothing, so the
-handoff SHALL NOT suggest it.
+Where a person hands an item to an Igor through its holder field while the item has work in
+flight, such as an open pull request, the Igor SHALL NOT claim it, but SHALL post, at the next
+cycle that finds it and once while the work is open, a comment naming that work and saying it
+takes the item up once the work closes. Once the work closes, the hand-over directs the Igor, as
+*A person can direct an Igor through the holder field* says.
 
 #### Scenario: Handed over while a pull request is open
 
@@ -374,22 +253,22 @@ handoff SHALL NOT suggest it.
 - **THEN** its handoff says what it published stands, and that handing the item over again once
   that pull request closes has it try again
 
+#### Scenario: The Igor's own pull request that no longer merges gets no waiting comment
+
+- **WHEN** a person hands an issue to an Igor while the Igor's own open pull request on it no
+  longer merges
+- **THEN** the Igor brings that pull request up to date as its own work on its own artifact, not
+  as a claim of the hand-over
+- **AND** it posts no comment saying it waits while that runs
+
 ### Requirement: A person reassigns an issue by removing the holding Igor's label first
 
-Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that carries another
-Igor's `igor:` label, the newly labelled Igor SHALL NOT claim it. On the next cycle that finds
-the issue, it SHALL post one comment saying which Igor holds the issue and that removing that
-Igor's label hands the issue over. Where several processes run the role, only the first available
-rank in the item's order posts it, and every other rank passes the item over. It SHALL NOT post the comment again while the issue's labels
-are unchanged. Once the other Igor's label is gone, the person's label directs this Igor, by *A
-person can direct an Igor through the holder field*. This matches Linear, where a person
-replaces a delegate rather than adding a second. Work that needs two roles is split into two
-issues, one per role.
-
-A label a person added SHALL NOT make the Igor holding the issue lose its claim, even during
-its settle interval. A label another Igor added while claiming is resolved by the settle
-interval, as in *A claim is verified after a settle interval*. The adapter SHALL tell the two
-apart by who added the label, read from the issue's events.
+Where a person adds an App Igor's `igor:<role>` label to a GitHub issue carrying another Igor's
+`igor:` label, the labelled Igor SHALL NOT claim it, but SHALL post, at the next cycle that finds it
+and once while the labels are unchanged, a comment naming the holder and saying removing its label
+hands the issue over. The adapter SHALL tell a person's label by who added it, in the issue's
+events. A label a person added SHALL NOT cost the holder its claim, even in the holder's settle
+interval.
 
 #### Scenario: Person labels a second Igor
 
@@ -398,12 +277,6 @@ apart by who added the label, read from the issue's events.
 - **THEN** the `frontend` Igor does not claim it, and posts one comment saying the `backend`
   Igor holds the issue and that removing `igor:backend` hands it over
 - **AND** the `backend` Igor keeps the issue
-
-#### Scenario: Only one rank says another Igor holds the issue
-
-- **WHEN** ranks 1 and 2 of `frontend` both find an issue a person labelled `igor:frontend` while
-  `igor:backend` holds it, and rank 1 is first in the issue's order
-- **THEN** rank 1 posts the one comment, and rank 2 posts nothing
 
 #### Scenario: Person removes the holding Igor's label
 
@@ -414,6 +287,12 @@ apart by who added the label, read from the issue's events.
   do, they decide which works the issue as *A hand-over among one role's ranks is contested like
   found work* says
 
+#### Scenario: A person's label during the holder's settle interval costs no claim
+
+- **WHEN** the `backend` Igor has claimed a GitHub issue and is within its settle interval, and a
+  person adds `igor:frontend`, as the issue's events show
+- **THEN** the `backend` Igor keeps its claim, and the `frontend` Igor does not claim the issue
+
 #### Scenario: Another Igor's own label is still a race
 
 - **WHEN** an Igor finds another Igor's `igor:` label on an issue it is claiming, and the
@@ -422,51 +301,12 @@ apart by who added the label, read from the issue's events.
 
 ### Requirement: What follows a stop is read from the tracker, not from a second command
 
-After a stop, eligibility SHALL be determined by the tracker's state rather than by any
-distinct pause or resume verb. A stop releases the claim by removing this Igor from the holder
-field: its `igor:<role>` label on GitHub, or itself as delegate on Linear. What the item then
-shows decides what happens next, by the rules for items someone else holds and for a person
-directing an Igor.
-
-A stop cancels a hand-over. Only a new hand-over restores it: on GitHub, the label removed and
-added again. A go-ahead, or the cooldown running out, lifts the stop for work found by the
-Igor's own search, and never restores a hand-over the stop cancelled.
-
-A go-ahead is read for whom it is meant as a stop is. A bare go-ahead lifts the stop for every
-Igor on the item. A go-ahead that names Igors, as "go ahead @igor-backend", SHALL lift it only for
-the Igors it names, and SHALL NOT lift it for an Igor it does not name. A name that is no Igor's
-counts as no name, as in a stop, so "carry on, @alice approved it" lifts the stop for every Igor.
-
-Where the names are unclear, a go-ahead errs the other way from a stop, because lifting a stop by
-mistake costs more than leaving one in place. A go-ahead with no Igor's name straight after the
-phrase SHALL count the mentions later on its opening line, and a list of names that runs straight
-on into a word SHALL lose its last name, whichever of the two the go-ahead reads. Whether a
-go-ahead names an Igor is read before that loss, so one whose only Igor is the name it loses lifts
-the stop for no Igor. A name the tracker cannot resolve counts as an Igor's.
-
-The later mentions SHALL NOT be read past a line break that the opening punctuation or the list's
-last separator crossed, so "go ahead:" followed by "thanks @igor-backend" on the next line is a
-bare go-ahead and lifts the stop for every Igor (decided by Adam, 2026-10-13). This is the one
-place a go-ahead does not err toward lifting fewer stops: "go ahead:" on its own line is usually
-meant for everyone, and a mention on the next line belongs to another sentence.
-
-Where a stop is said on an item a person handed to the Igor while no run of the Igor is active
-on it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field
-and post a stop receipt, so that an item showing the Igor in its holder field is always one
-handed to it. Where several processes run the Igor's role, only the rank whose claim message
-holds the item answers the stop, or, where no claim message counts, the process that reaches the
-item, as *Only the rank holding a claim gives it back* says; every other
-rank ignores it.
-
-On GitHub, when an Igor finds its `igor:<role>` label gone, it SHALL read the latest
-`unlabeled` event for that label from the issue's events. If that event's actor is the Igor's
-own bot account, the removal was the Igor's own release. If the actor is anyone else, the
-removal is a stop by that person: the Igor SHALL halt, and its stop receipt SHALL name them.
-These two cases are exhaustive, because an Igor that loses a race removes only its own label,
-never another Igor's. Where several processes run one role, they share one label, and a rank
-removes it only as *Only the rank holding a claim gives it back* allows; a removal by the role's
-own bot account is then a release by one of its ranks, and SHALL NOT halt a worker another rank
-is running.
+After a stop, eligibility SHALL be read from the tracker's state. A stop releases the claim by
+removing the Igor from the holder field, and what the item then shows decides what follows. A
+stop cancels a hand-over, which only a new hand-over restores; a go-ahead or the cooldown lifts a
+stop for work the Igor's own search found. A stop on a handed-over item SHALL be answered at the
+next cycle even with no run active, as *A stop on a handed-over item is answered by the rank
+holding it* says.
 
 #### Scenario: A human takes the item
 
@@ -567,6 +407,12 @@ is running.
   label was made by the Igor's own bot account
 - **THEN** the removal is the Igor's own release, and it posts no stop receipt
 
+#### Scenario: A stop on a Linear issue handed over while nothing runs
+
+- **WHEN** somebody stops an Igor on a Linear issue a person delegated to it, while no run of
+  that Igor is active on it
+- **THEN** on its next cycle the Igor removes itself as delegate and posts a stop receipt
+
 #### Scenario: No second verb exists
 
 - **WHEN** a party wishes to pause rather than stop
@@ -575,30 +421,12 @@ is running.
 
 ### Requirement: An issue created from chat points back to the chat
 
-Where an Igor creates an issue because a person instructed it in chat, the issue's description
-SHALL link the chat message that asked for the work, and MAY also quote it, so that whoever
-reads the issue sees where the request came from. After creating the issue, the Igor SHALL post
-a message in that chat with a link to the issue. The issue is created on the claiming tracker,
-and any claim on it is taken there.
-
-Before creating an issue from a chat message, the Igor SHALL look on the claiming tracker for
-an issue that already links that message, and SHALL create none if one exists. This check, not
-any record of which messages were handled, is what prevents a duplicate issue: such a record
-only saves work, and losing it costs API calls, never a second issue. Where several processes run
-the role, only the rank *A chat message becomes an issue at the first available rank in its
-order* names makes the check, creates the issue and posts its link, and a
-stale heartbeat can let two ranks each do so, a rare second issue that requirement accepts. A rank that passes over a chat message because another rank is first in its order SHALL NOT
-move the channel's read marker past that message until the message has an answer: an issue
-linking it, or a reply to it in the chat from the role's bot account. If the rank first in its
-order is counted gone or unavailable before it answers, the next rank in its order finds itself
-first at a later cycle, reads the message again and answers it. A rank SHALL NOT
-answer a message that already has an answer. How the tracker is
-searched for the link belongs to the adapter.
-
-When the check finds such an issue, the Igor SHALL post that issue's link in the chat if the
-chat has no reply with that link yet, and SHALL otherwise do nothing. So an Igor that stopped
-between creating the issue and posting its link posts the link on its next read of the
-message, and reading the message again never posts the link twice.
+An issue an Igor creates because a person instructed it in chat SHALL be on the claiming tracker,
+where any claim on it is taken, with a description that links the chat message and MAY quote it,
+and the Igor SHALL then post its link in the chat. It SHALL first search that tracker via the
+adapter for an issue already linking the message; that search, not a record of handled
+messages, SHALL prevent duplicates. Finding one, it SHALL post that issue's link only where
+no reply in the chat has it.
 
 #### Scenario: Instructed in chat
 
@@ -630,12 +458,12 @@ message, and reading the message again never posts the link twice.
 
 ### Requirement: A chat message becomes an issue at the first available rank in its order
 
-Where several processes run a role, only the first available rank in a chat message's order of
-ranks, which *Contention is resolved before a claim, not after it* computes from the message's
-id, SHALL create an issue from the message, each rank judging availability by its own heartbeat
-read. With no rank available, the rank first in the message's order SHALL answer it in the chat with the time the role's seats next reset, as a mention with no rank available is answered, and the message SHALL wait for a later cycle. The reply needs no seat, so that rank sends it though it is not available; where it is gone, the next rank in the order that is not gone sends it. Every rank still reads
-the channel. A heartbeat read that is stale can let two ranks each judge themselves first and
-open two issues; that rare duplicate is accepted.
+Where several processes run a role, every rank SHALL read the channel, but only the first
+available rank, by its own heartbeat read, in a chat message's order (*Every item has an owner and
+an order of ranks*, from the message's id) SHALL create an issue from it. With none available, the
+message SHALL wait for a later cycle, and its first rank that is not gone SHALL answer it in the
+chat with the time the role's seats next reset, as a mention with no rank available is
+answered.
 
 #### Scenario: One rank creates the issue
 
@@ -664,55 +492,26 @@ open two issues; that rare duplicate is accepted.
   seats next reset
 - **AND** the message becomes an issue at a later cycle, once a rank is available
 
+#### Scenario: A gone first rank's reset-time reply is sent by the next rank
+
+- **WHEN** a chat message asks for work, no rank of the role is available, and rank 2, first in
+  the message's order, is gone while rank 1, next in it, is not
+- **THEN** rank 1 answers in the chat with the time the role's seats next reset, though it is not
+  available
+
+#### Scenario: A stale heartbeat read can open two issues
+
+- **WHEN** a heartbeat read that is stale leads ranks 1 and 2 each to judge itself first for one
+  chat message
+- **THEN** each may create an issue from it, a rare duplicate that is accepted
+
 ### Requirement: A claim names the process that took it
 
-A claim message SHALL carry the rank of the process that posted it, whether or not the role runs
-several processes, and verification SHALL treat a claim carrying another rank as belonging to
-another process. A claim message `igor run` posts SHALL also carry its run id, as `Igor-Run:
-<id>`, and where the rank is 0, verification SHALL compare the run id too: a rank-0 claim
-message carrying another run's id belongs to another process (Adam, 2026-10-21). Claim messages, and the trailers in them, SHALL be read only from comments the
-role's own bot account wrote. A comment the surface reports as edited, on GitHub one whose
-GraphQL `lastEditedAt` is set, SHALL count for nothing: it is no claim message, and its `Igor-Rank:`,
-`Igor-Run:`, `Igor-Supersedes:` and `Igor-Handed-Over-By:` trailers are not read, so an edit can neither fake
-nor erase one. Hiding or unhiding a comment, or reacting to it, is not an edit, and the comment
-still counts.
-
-A claim message's trailers SHALL be read only from lines that begin with `Igor-`, in exactly that
-letter case, at the line's first character. Before the role's bot account posts any comment
-other than a claim message, the Igor SHALL indent by one space each line of it that begins with
-`Igor-` in any letter case, whether a worker or
-a model composed the line or the Igor interpolated it from a path, a login or a title, so that
-no comment but a claim message carries a line read as a trailer. It SHALL do so on the final text, after every step that may change it, and before `signed-publishing` (#153) signs it.
-
-An edit or a deletion of the holder's claim message while it works the item makes the item read
-as unclaimed, and a sibling may then claim and work it too. That risk is accepted. It is unmeasured
-who can edit or delete the bot's comment, which is taken to be only a person with maintain or
-admin access to the repository; task 2.19 measures it, and the risk stays accepted whatever it
-shows (Adam, 2026-10-21).
-
-A role runs several processes when the roster, which `role-config` specifies, declares more
-than one rank for it. It also runs several processes, as the process deciding sees it, while that
-process knows of a sibling, another process of the role, a serving rank or an `igor run`, that it does
-not count gone, so a rank that has not yet applied a roster that grew still contests a
-hand-over. A process knows of a sibling from that sibling's heartbeat file, and SHALL keep in its
-own memory every sibling whose file it has read since it started, so that a lost or rolled-back
-state branch, which can remove the file, does not end that knowledge; such a sibling counts
-until the process counts it gone, which after a detected loss takes three of the maximum poll
-interval, since the process then holds no interval the sibling declared. For one maximum poll interval after its own start, before it can have read a write
-from every sibling, a process SHALL count the role as run by several processes whatever the
-files show. `igor run` always
-counts its role as run by several processes. Whether several processes run a role decides
-whether a hand-over is contested (*A person can direct an Igor through the holder field*) and
-which give-backs end in silence (*A claim that cannot be kept is given back, out loud*). The rank SHALL be given to the process when it is started, never
-discovered or counted, as the last part of its name, `<role>-<rank>`, which `role-config`
-specifies.
-
-#### Scenario: A rank on the old roster still contests a hand-over
-
-- **WHEN** the roster grows from `[1]` to `[1, 2]`, rank 2 starts on the new roster and writes its
-  heartbeat, and rank 1 has not yet applied the new roster when a person adds the label
-- **THEN** rank 1 counts the role as run by several processes, from rank 2's heartbeat file, and
-  contests the hand-over rather than start work without the settle interval
+A claim message SHALL carry the rank of the process that posted it, as `Igor-Rank: <rank>`, whether
+or not the role runs several processes, and, where an `igor run` posted it, that run's id, as
+`Igor-Run: <id>`. Verification SHALL treat a claim carrying another rank, or at rank 0 another run's
+id, as another process's. A process's rank SHALL be given to it when it is started, as the last part
+of its name, `<role>-<rank>`, which `role-config` specifies, and never discovered or counted.
 
 #### Scenario: A sibling's claim is not the Igor's own
 
@@ -726,17 +525,38 @@ specifies.
 - **THEN** the message carries the rank of the process that posted it, so a person reading the
   item sees which process holds it
 
+#### Scenario: Two runs of one role tell their claims apart
+
+- **WHEN** two people run `igor run backend` at once, and both claim one item, so it carries two
+  claim messages with `Igor-Rank: 0`, one with `Igor-Run: r7k2m9x4` and one with
+  `Igor-Run: q2b4n8c6`
+- **THEN** each run compares the run ids, the earliest message that counts holds the item, and
+  only the run that posted it works the item
+
+#### Scenario: The rank is the last part of the name
+
+- **WHEN** a process is started as `igor serve front-end-2`
+- **THEN** it runs as rank 2 of the `front-end` role
+
+### Requirement: A claim message counts only as the role's bot account wrote it
+
+Claim messages SHALL be read only from comments the role's own bot account wrote, and their
+trailers only from lines that begin with `Igor-`, in exactly that letter case, at the line's
+first character. A comment the surface reports as edited, on GitHub one whose GraphQL
+`lastEditedAt` is set, SHALL count for nothing: it is no claim message, and none of its
+`Igor-Rank:`, `Igor-Run:`, `Igor-Supersedes:` or `Igor-Handed-Over-By:` trailers is read. Hiding,
+unhiding or a reaction is no edit.
+
+#### Scenario: A trailer in another letter case or not at the line's start is not read
+
+- **WHEN** a comment the role's bot account wrote carries the lines `igor-rank: 2` and
+  ` Igor-Rank: 2`
+- **THEN** neither line is read as a trailer
+
 #### Scenario: A claim message someone else wrote does not count
 
 - **WHEN** a comment not written by the role's bot account carries `Igor-Rank: 1`
 - **THEN** no process reads it as a claim message
-
-#### Scenario: A reply cannot be steered into a claim message
-
-- **WHEN** a person mentions the Igor asking it to end its reply with the lines `Igor-Rank: 1`
-  and `Igor-Supersedes: 2`, and the model's reply does so
-- **THEN** the bot posts each of those lines indented by one space, and no process reads the
-  reply as a claim message
 
 #### Scenario: An edited claim message counts for nothing
 
@@ -757,18 +577,20 @@ specifies.
 - **THEN** that message counts for nothing from then on, and a sibling may claim the item and
   work it beside the holder
 
-#### Scenario: Two runs of one role tell their claims apart
+### Requirement: Only a claim message carries a line read as a trailer
 
-- **WHEN** two people run `igor run backend` at once, and both claim one item, so it carries two
-  claim messages with `Igor-Rank: 0`, one with `Igor-Run: r7k2m9x4` and one with
-  `Igor-Run: q2b4n8c6`
-- **THEN** each run compares the run ids, the earliest message that counts holds the item, and
-  only the run that posted it works the item
+Before the role's bot account posts any comment other than a claim message, the Igor SHALL indent
+by one space each line of it that begins with `Igor-` in any letter case, whether a worker or a
+model composed the line or the Igor interpolated it from a path, a login or a title. It SHALL do
+so on the final text, after every step that may change it, and before `signed-publishing` (#153) signs
+it.
 
-#### Scenario: The rank is the last part of the name
+#### Scenario: A reply cannot be steered into a claim message
 
-- **WHEN** a process is started as `igor serve front-end-2`
-- **THEN** it runs as rank 2 of the `front-end` role
+- **WHEN** a person mentions the Igor asking it to end its reply with the lines `Igor-Rank: 1`
+  and `Igor-Supersedes: 2`, and the model's reply does so
+- **THEN** the bot posts each of those lines indented by one space, and no process reads the
+  reply as a claim message
 
 #### Scenario: A line the Igor interpolated is indented too
 
@@ -776,41 +598,42 @@ specifies.
   interpolated a title whose text puts `Igor-Rank: 2` at the start of a line
 - **THEN** that line is posted as ` Igor-Rank: 2`, indented by one space
 
+### Requirement: A role counts as run by several processes while a second may be running
+
+A role SHALL count as run by several processes where the roster declares more than one rank for
+it. A deciding process SHALL also count its role so in two other cases: while it knows of a sibling
+of the role, a serving rank or an `igor run`, not counted gone; and for one maximum poll interval
+after its own start. A process SHALL remember, through a lost or rolled-back state branch, every
+sibling whose heartbeat file it has read since it started. `igor run` SHALL always count its role so.
+
+#### Scenario: A rank on the old roster still contests a hand-over
+
+- **WHEN** the roster grows from `[1]` to `[1, 2]`, rank 2 starts on the new roster and writes its
+  heartbeat, and rank 1 has not yet applied the new roster when a person adds the label
+- **THEN** rank 1 counts the role as run by several processes, from rank 2's heartbeat file, and
+  contests the hand-over rather than start work without the settle interval
+
+#### Scenario: A process counts several processes in its first maximum interval
+
+- **WHEN** rank 1, whose roster declares only rank 1, has just started and reads no sibling's
+  file
+- **THEN** it counts the role as run by several processes for one maximum poll interval, and
+  contests a hand-over in that time
+
+#### Scenario: A lost state branch leaves a known sibling counted
+
+- **WHEN** rank 1, whose roster declares only rank 1, has read rank 2's heartbeat file, and the
+  state branch is then lost with that file
+- **THEN** rank 1 still counts the role as run by several processes until it counts rank 2 gone,
+  and contests a hand-over in the meantime
+
 ### Requirement: A run by hand runs as rank 0
 
 `igor run <role>`, with or without `--plan`, SHALL run as rank 0 of the role. Rank 0 is outside
 the roster: no roster declares it, and `igor run` starts whatever the roster declares. It SHALL
-NOT wait for, read or refuse on any serving rank's heartbeat before it starts.
-
-Without `--plan`, each `igor run` SHALL write a heartbeat file of its own,
-`heartbeats/<role>-0-<run id>.json`, as a serving process writes its own, from a timer firing
-every half poll interval, its first write before its first cycle (Adam, 2026-10-21). Its siblings
-watch that file as they watch any rank's, and judge a run's claim messages gone by its own file.
-A run SHALL remove its own heartbeat file as it exits, and a serving process SHALL remove a run's
-file once it counts that run gone, so the file of a crashed run does not stay.
-It SHALL contend for items as any rank does, by the claim and its verification, and its claim
-messages carry `Igor-Rank: 0` and `Igor-Run: <run id>`.
-
-`igor run` SHALL take over no claim message, its own rank's included: it passes over every item
-whose role label is on and that carries any claim message posted since its latest release,
-whatever rank posted it and whether or not that rank is gone, except that it answers a stop said
-on such an item once none of its claim messages counts any longer, as any process that reaches it does (*Only the
-rank holding a claim gives it back*). On an item with no label that
-carries a gone process's claim message, it releases the item before claiming, as any process
-does (*A retired rank does not hold its items forever*). *A process recovers the claims of
-its own predecessor* does not apply to rank 0. A claim an `igor run` leaves, as when it crashes, is taken over
-by a serving rank once that run is gone, as for any gone rank's claim.
-
-`igor run` spends only the token in its environment's `IGOR_RUN_TOKEN`, as #171's (`seat-files`)
-*`igor run` spends its own token as an implicit local seat* says. Each `igor run` keeps trees of
-its own, as `task-execution`'s *The sweep removes trees by rank, never by age* says, and at its
-start removes those an earlier run of its role left whose process is gone. Each also
-gets a home of its own, the `HOME` its worker runs in, which #174 (`pinned-skills`) specifies
-(Adam, 2026-10-19). A run removes the home and plugin directory
-a gone run left at its own start, with its trees, as `task-execution` says.
-
-`igor run --plan` SHALL change nothing: it claims nothing, posts nothing, writes no heartbeat and
-removes no tree.
+start without waiting for, reading or refusing on any serving rank's heartbeat, and SHALL contend
+for items as any rank does, by the claim and its verification. `igor run --plan` SHALL change
+nothing: it claims nothing, posts nothing, writes no heartbeat and removes no tree.
 
 #### Scenario: A run beside a serving rank goes ahead
 
@@ -825,6 +648,59 @@ removes no tree.
 - **THEN** each verifies its claim, the earliest claim message that counts holds the item, and only
   its process works it
 
+#### Scenario: A run for a role whose roster declares no rank 1
+
+- **WHEN** the roster lists `backend: [2, 3]` and a person runs `igor run backend`
+- **THEN** the run starts as rank 0
+
+#### Scenario: A plan changes nothing
+
+- **WHEN** a person runs `igor run backend --plan` while `igor@backend-1` is running
+- **THEN** the plan runs at once, writes no heartbeat, removes no tree and changes nothing
+
+### Requirement: A run by hand spends only the token it was started with
+
+`igor run` SHALL spend only the token in its environment's `IGOR_RUN_TOKEN`, as #171's
+(`seat-files`) *`igor run` spends its own token as an implicit local seat* says. Its trees, home and
+plugin directory are its own, as `task-execution` and #174 (`pinned-skills`) say, and at its start
+it SHALL remove those of earlier runs of its role whose process is gone, as `task-execution`'s *A
+run removes what a run whose process is gone left* says.
+
+#### Scenario: A run by hand draws on no seat a serving rank uses
+
+- **WHEN** `igor@backend-1` is running on a seat file's seat, and a person runs `igor run backend`
+  with `IGOR_RUN_TOKEN` set
+- **THEN** every model call the run makes spends the token in `IGOR_RUN_TOKEN`, and none spends
+  the seat file's token
+
+### Requirement: A run by hand keeps a heartbeat file of its own
+
+Without `--plan`, each `igor run` SHALL write a heartbeat file of its own,
+`heartbeats/<role>-0-<run id>.json`, as a serving process writes its own, from a timer firing
+every half poll interval, its first write before its first cycle. Its siblings SHALL watch that
+file as any rank's, and judge the run's claim messages gone by that file alone. A run SHALL remove
+the file as it exits, and a serving process SHALL remove it once it counts that run gone.
+
+#### Scenario: A crashed run's claim is recovered while another run goes on
+
+- **WHEN** one of two `igor run backend`s crashes holding a claim, and the other keeps running
+- **THEN** rank 1 takes the claim over once the crashed run's own heartbeat file has failed to
+  change for three poll intervals, whatever the other run's file does
+
+#### Scenario: A run's heartbeat file goes with it
+
+- **WHEN** an `igor run backend` with the run id `r7k2m9x4` exits
+- **THEN** it removes `heartbeats/backend-0-r7k2m9x4.json`; had it crashed instead, rank 1 would
+  remove the file once it counted the run gone
+
+### Requirement: A run by hand takes over no claim
+
+`igor run` SHALL take over no claim, its own rank's included: it SHALL pass over every item its
+role's label is on that carries a claim message posted since its latest release, whatever rank
+posted it, gone or not, though it SHALL answer a stop said on such an item once none of the item's
+claim messages counts (*A stop on a handed-over item is answered by the rank holding it*). *A
+process recovers the claims of its own predecessor* SHALL NOT apply to rank 0.
+
 #### Scenario: A run does not take over a claim
 
 - **WHEN** `igor run backend` finds a labelled item, with no stop said on it, whose earliest claim
@@ -837,60 +713,26 @@ removes no tree.
   has watched `heartbeats/backend-0-r7k2m9x4.json` fail to change for three poll intervals
 - **THEN** rank 1 may take the item over, as for any gone rank's claim
 
-#### Scenario: A crashed run's claim is recovered while another run goes on
+#### Scenario: A run releases a gone process's claim on an unlabelled item first
 
-- **WHEN** one of two `igor run backend`s crashes holding a claim, and the other keeps running
-- **THEN** rank 1 takes the claim over once the crashed run's own heartbeat file has failed to
-  change for three poll intervals, whatever the other run's file does
-
-#### Scenario: A run for a role whose roster declares no rank 1
-
-- **WHEN** the roster lists `backend: [2, 3]` and a person runs `igor run backend`
-- **THEN** the run starts as rank 0
-
-#### Scenario: A run's heartbeat file goes with it
-
-- **WHEN** an `igor run backend` with the run id `r7k2m9x4` exits
-- **THEN** it removes `heartbeats/backend-0-r7k2m9x4.json`; had it crashed instead, rank 1 would
-  remove the file once it counted the run gone
-
-#### Scenario: A plan changes nothing
-
-- **WHEN** a person runs `igor run backend --plan` while `igor@backend-1` is running
-- **THEN** the plan runs at once, writes no heartbeat, removes no tree and changes nothing
+- **WHEN** `igor run backend` claims an item with no label that carries the claim message of a
+  process that is gone
+- **THEN** it releases the item before posting its claim message, as *Taking over a gone rank's
+  claim releases the item first* says for any process
 
 ### Requirement: Contention is resolved before a claim, not after it
 
-Every item SHALL have an owner among the ranks the roster declares for its role: the rank at
-place `h mod n` in the roster's ranks in ascending order, where `n` is how many ranks the roster
-declares, one for a role it does not name, and `h` is a hash of the item's id that every process computes alike. The item's order
-of ranks SHALL be its owner, then each declared rank after it in ascending order, wrapping round
-to the lowest, and then rank 0, which owns no item. The first rank in that order that is
-available, as its heartbeat says (*A retired rank does not hold its items forever*), goes first
-for the item. A process judges this from its own read of the heartbeat files, and judges its own
-availability by the same rule.
+A process SHALL attempt first the items it goes first for, as the first available rank, by its
+own heartbeat read, in the item's order of ranks (*Every item has an owner and an order of
+ranks*), then the rest, each group in the order discovery gave. Before claiming one of the rest,
+it SHALL wait one settle interval for each available rank ahead of it in that order, re-read the
+item, and claim it only where no claim that counts is on it, moving on otherwise without posting
+anything.
 
-A process SHALL attempt first the candidates it goes first for, then the others, each group in
-the order discovery gave. Before claiming a candidate another rank goes first for, it SHALL wait
-one settle interval for each available rank ahead of it in the item's order, re-read the item,
-and claim it only if no claim that counts is on it; seeing the item held, it SHALL move on
-without posting anything. A process that goes first for a candidate never waits.
+#### Scenario: A rank that goes first does not wait
 
-Which rank goes first only orders the attempts. Two processes reading heartbeats of different
-ages can each judge itself first for one item, and the claim and its verification then decide
-which works it.
-
-#### Scenario: An item's owner takes it
-
-- **WHEN** the roster declares ranks 1 to 4 for `backend`, an item's hash puts its owner at rank
-  3, and rank 3 is available
-- **THEN** rank 3 attempts the item first, and ranks 4, 1 and 2 wait behind it
-
-#### Scenario: An owner that is busy is passed to the next available rank
-
-- **WHEN** an item's owner is rank 3 of ranks 1 to 4, rank 3's heartbeat says it is not
-  available, and rank 4's says it is
-- **THEN** rank 4 goes first for the item
+- **WHEN** rank 3 is the first available rank in an item's order
+- **THEN** it claims the item without waiting a settle interval
 
 #### Scenario: A rank waits behind the ranks ahead of it
 
@@ -909,20 +751,37 @@ which works it.
   first for one item, and both post a claim message
 - **THEN** each verifies its claim, and only the rank whose message is earliest works the item
 
+### Requirement: Every item has an owner and an order of ranks
+
+Each item SHALL have an owner, the rank at place `h mod n` among its role's `n` declared ranks in
+ascending order, where `h` is a hash of the item's id that every process computes alike, and an
+order of ranks: the owner, each declared rank after it in ascending order, wrapping round to the
+lowest, then rank 0, which owns no item. The first rank in that order that is available, as *A
+rank is available only when it could take an item now* defines, goes first for the item.
+
+#### Scenario: An item's owner takes it
+
+- **WHEN** the roster declares ranks 1 to 4 for `backend`, an item's hash puts its owner at rank
+  3, and rank 3 is available
+- **THEN** rank 3 attempts the item first, and ranks 4, 1 and 2 wait behind it
+
+#### Scenario: An owner that is busy is passed to the next available rank
+
+- **WHEN** an item's owner is rank 3 of ranks 1 to 4, rank 3's heartbeat says it is not
+  available, and rank 4's says it is
+- **THEN** rank 4 goes first for the item
+
+#### Scenario: A role the roster does not name has one owner
+
+- **WHEN** the roster does not name the `reviewer` role
+- **THEN** `n` is one for its items, and rank 1 owns every one of them
+
 ### Requirement: A hand-over among one role's ranks is contested like found work
 
-Where several processes run one role and a person hands an item to the role, its ranks SHALL
-decide which works it by the contest of *Contention is resolved before a claim, not after it*, as
-for an item their search found: the item's owner, or the next available rank after it, goes
-first. Only an available rank SHALL contend, available as *A retired rank does not hold its items forever* defines it; with no rank available, the handed-over item waits for a later cycle. A rank whose worker is running is not available. A rank that posts SHALL verify its claim
-after the settle interval, as for an item its search found, and the earliest claim message that
-counts holds the item.
-
-A rank that takes over a handed-over item, removing the role's label and adding it again under
-*A retired rank does not hold its items forever*, SHALL record in its claim message that the
-item was handed over, naming the person recorded as having handed the item over in the holding message it took over,
-or, where that message records no hand-over, the person who added the label. The adapter SHALL read an item whose holding claim message records a
-hand-over as handed over by a person, as it would read the person's label.
+Where several processes run a role, only its available ranks SHALL contend for an item a person
+hands it, by the contest of *Contention is resolved before a claim, not after it*, each verifying
+its claim after the settle interval. A takeover of a handed-over item keeps it handed over, as *A
+claim message taking over a hand-over records who made it* says.
 
 #### Scenario: The owner takes a hand-over
 
@@ -953,11 +812,32 @@ hand-over as handed over by a person, as it would read the person's label.
 - **THEN** its claim message records the hand-over, and the item is still read as handed over
   by a person
 
+#### Scenario: A hand-over with no rank available waits
+
+- **WHEN** a person hands an item to `backend` while no rank of `backend` is available
+- **THEN** no rank contends for it, and the item waits for a later cycle
+
+### Requirement: A claim message taking over a hand-over records who made it
+
+A rank that takes over a handed-over item, removing the role's label and adding it again under
+*Taking over a gone rank's claim releases the item first*, SHALL record in its claim message that
+the item was handed over, naming whoever the message it took over records as handing it over,
+else whoever added the label. The adapter SHALL read an item whose holding claim message records a
+hand-over as handed over by a person, as it reads the person's label.
+
+#### Scenario: A takeover names the person who handed the item over
+
+- **WHEN** a person hands an issue to `backend`, rank 2 claims it and becomes gone, and rank 1
+  takes the item over, removing the label and adding it again
+- **THEN** rank 1's claim message records that the person handed the item over, naming them
+- **AND** the adapter reads the item as handed over by that person, though the bot account added
+  the label last
+
 ### Requirement: A process recovers the claims of its own predecessor
 
 A claim whose holding message, the earliest claim message that counts, carries a serving
 process's own rank SHALL be treated by that process as abandoned by its predecessor, and the item
-re-worked from the beginning. Rank 0 recovers nothing (*A run by hand runs as rank 0*).
+re-worked from the beginning. Rank 0 recovers nothing (*A run by hand takes over no claim*).
 
 Where the item has an open pull request the Igor opened, the process SHALL NOT re-work it, and
 SHALL catch it up instead, as *A claim left on the Igor's open pull request is caught up* says.
@@ -980,22 +860,12 @@ SHALL catch it up instead, as *A claim left on the Igor's open pull request is c
 
 ### Requirement: A claim left on the Igor's open pull request is caught up
 
-Where a process takes a claim left by its own predecessor or by a gone rank, and the item has an
-open pull request the Igor opened, the process SHALL NOT re-work the item. It SHALL carry on
-with the claim as a catch-up: it brings the pull request up to date where the pull request no
-longer merges, as `task-execution`'s *A published artifact is kept mergeable* says, and then
-gives the claim back as a catch-up does, leaving the pull request open and a person's label on
-the item.
-
-Where the pull request still merges and carries no review to act on, carrying on changes nothing
-on the item: the process runs no worker, and the item waits as any item with the Igor's pull
-request open does. Where it carries one, the holder resumes the item with a worker, as
-`work-triage`'s *Items with work already in flight are skipped* says.
-
-Taking over a gone rank's claim this way SHALL NOT release the item, so a person's label stays.
-The process SHALL post its own claim message, recording in it the gone rank whose message it
-supersedes, and SHALL verify it as for any claim. From then on the gone rank's message SHALL NOT
-count, for any process, even once that rank returns.
+A process that takes a claim left by its predecessor or a gone rank on an item with the Igor's
+open pull request SHALL catch the item up, not re-work it: it updates the pull request where it
+no longer merges (`task-execution`'s *A published artifact is kept mergeable*) and gives the
+claim back, leaving the pull request open and a person's label on. Over a gone rank's claim it
+SHALL, without a release, post and verify a claim message naming that rank, whose message then
+counts for no process.
 
 #### Scenario: A gone sibling's claim on an open pull request is caught up
 
@@ -1018,6 +888,19 @@ count, for any process, even once that rank returns.
   claim
 - **THEN** the label is still on the item after the catch-up gives the claim back
 
+#### Scenario: A caught-up pull request that still merges runs no worker
+
+- **WHEN** a process takes such a claim, and the Igor's pull request still merges and carries no
+  review to act on
+- **THEN** it runs no worker and changes nothing on the item, which waits as any item with the
+  Igor's pull request open does
+
+#### Scenario: A caught-up pull request with a review to act on is resumed
+
+- **WHEN** a process takes such a claim, and the Igor's pull request carries a review to act on
+- **THEN** the holder resumes the item with a worker, as `work-triage`'s *A held pull request runs
+  a worker only for a review to act on* says
+
 ### Requirement: A retired rank does not hold its items forever
 
 A claim held by a rank past the abandonment bound SHALL be adoptable by any process of the role.
@@ -1026,91 +909,6 @@ to change for three poll intervals, each as long as *A heartbeat declares its pr
 interval* says. Removing a rank from the roster SHALL NOT by
 itself make the rank's claims adoptable: a rank missing from the roster is adoptable only once
 it is past the bound.
-
-Every process SHALL run a timer of its own, apart from its cycle and from any worker, that fires
-every half poll interval. At each firing it SHALL write a heartbeat: it overwrites a file of its
-own on the state branch, named by its role and rank, and for `igor run` its run id, holding an id the process chose when it
-started, its *start id*, a counter it increments on each write, the name of its host and its
-operating-system process number, whether the process is available, the poll interval the process applies, and the *state-directory id* of the state directory the process
-uses, as `graceful-handoff`'s *A handoff states what was done, what remains, and who could
-continue* (#216, `lore-search`) defines it, or no id where the process reads none in its state directory (Adam,
-2026-10-24). No claim rule reads the state-directory id. The host name and process number SHALL be written even where the state branch is public: they are not secrets, and the operator needs them to find a second writer on a rank. Its first heartbeat SHALL land before its first cycle. A heartbeat file SHALL hold no time that any process
-compares.
-
-At each firing, before it writes, a process SHALL read its own rank's file, and SHALL treat the
-file as written by a second process serving the same rank where, between two of those reads
-after the process's own first write, the counter written under a start id other than its own
-has gone up; reads before that write would see only the last writes of the process it replaced.
-The process SHALL then, until the condition below clears, stop taking new items, stop its worker
-and keep its claim in silence as a stand-down does, and write itself as not available; and it
-SHALL open a condition with the cure key
-`instance:<role>-<rank>:duplicate`, on the instance scope `worker-user` (#175) adds to
-`stuck-conditions`, naming each writer's host and operating-system process number, the host once
-where both run on one host. The condition SHALL clear, with no probe item, at the first firing after three of the maximum poll interval in which no other start
-id has advanced in the file, which in practice needs a person to stop one writer; the process
-SHALL then take items again. The process SHALL append a condition row to the execution log where it opens and where it clears the condition. The stop is this requirement's rule, not the condition's: the condition only records it. Because it opens at its first observation and clears after a span of time without a probe item, it is a kind of its own, beside the read-cleared and refused-credential conditions.
-
-A process is available when it is free, holding no claim, not stood down, not stopped by the
-condition for a second process on its rank, its heartbeat
-file is present, it is not gone, and it has a seat it can spend, as `seat-budget`'s *A role has a seat it can spend when the gate would choose one
-now* (#143, `read-seat-windows-from-the-stream`) defines.
-Availability only decides which rank goes first for an item (*Contention is resolved before a
-claim, not after it*).
-
-A heartbeat SHALL count only when it changes: when the file holds an id and counter other than
-the ones the reading process last read from it. A process SHALL keep in its own memory, for each
-sibling, the id and counter it last read from the sibling's file and the moment, by its own
-clock, at which it last saw them change, and SHALL count the sibling gone only once three poll
-intervals have passed since that moment, or since the process itself started if it is later. A
-missing file does not change. Neither the sibling's clock nor any time in the file decides
-whether it changed.
-
-A process SHALL read its role's heartbeat files before it chooses a candidate, and again before
-it verifies a claim. It SHALL read all of them, with their contents, in as few requests as the
-API allows, and SHALL judge each sibling's file changed by its blob id. Whether one request can
-return them all is unmeasured; task 4.11 measures it.
-
-A process taking over an item whose earlier claim message no longer counts, because that
-message's rank is gone, SHALL first release the item by removing the role's label and adding it
-again, and SHALL then post its own claim message at once. That holds for an item with no label
-too, which can still carry the claim message of a rank that posted it after a sibling gave the
-claim back: the process adds the label, removes it and adds it again. An item whose open pull
-request the Igor opened is the exception, taken over without a release, as *A claim left on the
-Igor's open pull request is caught up* says.
-
-A process SHALL stand down once it has failed to write its heartbeat for two poll intervals, each
-as long as *A heartbeat declares its process's poll interval* says. Standing down, it starts no claim, and leaves its claims in place. The same timer SHALL check, at
-each firing, whether the process has stood down, and where it has, SHALL stop the running worker
-itself, without waiting for an event from the worker. The process resumes once a heartbeat lands.
-
-A run stopped by standing down ends holding its claim, and says nothing on the item. That is an
-exception to *A claim that cannot be kept is given back, out loud*, and to `graceful-handoff`'s
-rule that silence after a claim is not permitted. A sibling takes the claim over once the rank
-is gone.
-
-A process SHALL read the roster at the start of each cycle, from the lore commit it applies then,
-as `lore-pull`'s *Processes apply new commits independently* (#208) says: the ranks do not
-coordinate on which commit they read (Adam, 2026-10-21), so they can run on different rosters and
-poll intervals at once. No rule here depends on their agreeing on the roster. A process whose rank the roster no
-longer declares SHALL start no claim, and SHALL shut down as when it is asked to stop: it finishes the
-item in hand, or hands it off out loud, as `work-discovery`'s scenario *Shutdown finishes the
-item in hand* says, and then exits as *A rank removed from the roster exits cleanly* says. It keeps writing heartbeats until it exits, so no sibling takes its claims unless it dies
-first.
-
-Where the configuration a process reads at the start of a cycle fails any check a starting
-process makes on it, the process SHALL refuse it: it SHALL go on under the last configuration
-that passed, roster included, and SHALL raise a condition naming the failing file and the check.
-A check that fails because GitHub did not answer, or refused the App's credential, refuses
-nothing, as `lore-pull`'s *`igor serve` starts on the newest commit that passes* (#208) says. Whether the roster declares the process's own rank is not one of those checks: a read whose
-roster drops the rank passes, and the rank retires as above (#208, `lore-pull`, decision 30).
-Where that configuration includes seat files, as under #171, a seat file the read finds removed
-is the one exception, and takes effect all the same, as `seat-budget`'s *A removed seat file
-always takes effect* (#171) says.
-That condition is #208's `lore:config:<role>`, shared by the role, which opens and clears as
-`lore-pull`'s *A lore read at each cycle start applies what passes and refuses what fails* (#208)
-says. A later read that passes SHALL
-take effect. A failing check SHALL NOT
-make the process exit.
 
 #### Scenario: Scaling down releases the orphan
 
@@ -1123,45 +921,122 @@ make the process exit.
 - **WHEN** a rank is removed from the roster while its worker is running
 - **THEN** no other process takes its claims while its heartbeat still changes
 
-#### Scenario: A process whose rank leaves the roster shuts down
-
-- **WHEN** the roster no longer declares a running process's rank while its worker runs
-- **THEN** it starts no claim, finishes the item or hands it off out loud, and then exits with
-  status 0
-
 #### Scenario: A declared rank that stopped running
 
 - **WHEN** a claim's rank is still declared, and a process has watched its heartbeat fail to
   change for three poll intervals
 - **THEN** that process may take the item
 
-#### Scenario: An adopted claim holds the item
-
-- **WHEN** a process claims an item whose earlier claim message carries a rank that is gone
-- **THEN** it removes the role's label and adds it again, and posts its own claim message at
-  once
-- **AND** the earlier message falls before the latest release, and the new claim holds the item
-  unless its message landed in the release's second, when the item is claimed at a later cycle
-
-#### Scenario: A gone rank's message on an unlabelled item is released first
-
-- **WHEN** rank 2, partway through claiming an item, posted its claim message just after rank 1,
-  the holder, set the item down and removed the label; rank 2 then stood down and is now gone;
-  and at a later cycle rank 1 claims the item again
-- **THEN** rank 1 adds the label, removes it and adds it again before posting
-- **AND** rank 2's message does not count when rank 2 returns
-
-#### Scenario: A returning rank does not take back an adopted item
-
-- **WHEN** a rank whose claim another process adopted restarts
-- **THEN** its earlier claim message does not count, and it leaves the item to the process that
-  holds it
-
 #### Scenario: The bound does not shorten a run
 
 - **WHEN** a process is working an item it holds for longer than three poll intervals
 - **THEN** it keeps writing heartbeats, its rank is not gone, and no other process may take the
   item
+
+### Requirement: Every process writes its heartbeat from a timer of its own
+
+Every process SHALL run a timer of its own, apart from its cycle and any worker, that fires every
+half poll interval and overwrites the process's own heartbeat file on the state branch, named by
+its role and rank, and for `igor run` its run id. Its first heartbeat SHALL land before its first
+cycle.
+
+#### Scenario: The first heartbeat comes before the first claim
+
+- **WHEN** a process starts
+- **THEN** its heartbeat lands before its first cycle chooses a candidate
+
+#### Scenario: A heartbeat replaces only its own rank's
+
+- **WHEN** two ranks of one role write heartbeats at the same time, and the state branch rejects
+  one because the other moved the branch first
+- **THEN** the rejected one is retried, it overwrites only its own file, and both heartbeats are
+  present afterwards
+
+### Requirement: A heartbeat says who wrote it and holds no time any process compares
+
+A heartbeat SHALL hold a *start id* the process chose at its start, a counter it raises at each
+write, its host name and operating-system process number, even where the state branch is public,
+whether it is available, the poll interval it applies, and the *state-directory id* of its state
+directory, as `graceful-handoff` (#216, `lore-search`) defines it, or none where it reads none. It SHALL hold no time
+that any process compares, and no claim rule SHALL read the state-directory id.
+
+#### Scenario: A heartbeat names its state directory
+
+- **WHEN** rank 2 of `backend` writes its heartbeat, and its state directory holds the
+  state-directory id `k3m9q2x7`
+- **THEN** `heartbeats/backend-2.json` records `k3m9q2x7` beside its id, counter, availability and
+  poll interval
+
+### Requirement: A rank written by two processes stops taking work
+
+At each heartbeat firing, before it writes, a process SHALL read its own rank's file. Where,
+between two such reads after its own first write, the counter under another start id has gone
+up, it SHALL count a second process serving its rank, and SHALL stop taking new items, stop its
+worker, keep its claim in silence as a stand-down does, and write itself as not available, until
+the condition of *A second process on a rank raises a condition* clears, and then take items
+again.
+
+#### Scenario: A second process on one rank stops both
+
+- **WHEN** two processes on hosts `a` and `b` both serve `backend-2`, and each reads the other's
+  id in the rank's file advance between two of its reads
+- **THEN** each stops taking new items and stops its worker, with a condition naming host `a`
+  and host `b` and both process numbers
+
+#### Scenario: A rolled-back branch is not a second process
+
+- **WHEN** a rollback of the state branch restores an older copy of `backend-2`'s file, with the
+  process's own id and a lower counter, or with its predecessor's id
+- **THEN** the process reads a loss or rollback, as *A process detects a lost or rolled-back state
+  branch from the heartbeat files* says, and raises no condition
+
+### Requirement: A second process on a rank raises a condition
+
+A process that finds a second process on its rank SHALL open a condition, of a kind of its own,
+with the cure key `instance:<role>-<rank>:duplicate` on `worker-user`'s (#175) instance scope, naming each
+writer's host and process number, and SHALL append a condition row to the execution log as it
+opens and as it clears. The condition only records the stop and SHALL clear with no probe item at
+the first firing after three maximum poll intervals in which no other start id advanced in the
+file.
+
+#### Scenario: The duplicate condition's opening and clearing are logged
+
+- **WHEN** a process opens the condition for a second process on `backend-2`, and later clears it
+- **THEN** the execution log holds a condition row appended as it opened and another appended as
+  it cleared
+
+#### Scenario: The duplicate condition clears once the other writer stops
+
+- **WHEN** a person stops one of the two processes serving `backend-2`, and three of the maximum
+  poll interval pass with no other start id advancing in the rank's file
+- **THEN** the remaining process clears the condition and takes items again
+
+#### Scenario: Two writers on one host name it once
+
+- **WHEN** two processes on host `a` both serve `backend-2`
+- **THEN** the condition names host `a` once, with both process numbers
+
+### Requirement: A rank is available only when it could take an item now
+
+A process SHALL count as available while, and only while, it is free, holding no claim, not stood
+down, not stopped as a second process on its rank, not gone, its heartbeat file present, and with
+a seat it can spend, as `seat-budget`'s *A role has a seat it can spend when the gate would choose
+one now* (#143, `read-seat-windows-from-the-stream`) defines. Availability only decides which rank
+goes first for an item.
+
+#### Scenario: A rank with no seat to spend is not available
+
+- **WHEN** every seat that serves rank 2's role is past its reserve line
+- **THEN** rank 2's heartbeat says it is not available, and an item rank 2 owns goes first to the
+  next available rank
+
+### Requirement: A rank is gone only once its heartbeat has not changed for three poll intervals
+
+A heartbeat SHALL count only when its file holds an id and counter other than those the reading
+process last read from it, never by the sibling's clock or a time in the file; a missing file does
+not change. A process SHALL keep in its own memory, for each sibling, the id and counter it last
+read and the moment, by its own clock, it last saw them change, and SHALL count the sibling gone
+only once three poll intervals have passed since then, or since its own start if that is later.
 
 #### Scenario: A lost state branch takes no live rank's claim
 
@@ -1198,10 +1073,11 @@ make the process exit.
 - **AND** the id it writes in its own file is new, so its first heartbeat changes the file
   whatever the file held before
 
-#### Scenario: The first heartbeat comes before the first claim
+### Requirement: Heartbeats are read before each claim decision
 
-- **WHEN** a process starts
-- **THEN** its heartbeat lands before its first cycle chooses a candidate
+A process SHALL read its role's heartbeat files before it chooses a candidate, and again before it
+verifies a claim, reading all of them, with their contents, in as few requests as the API allows,
+and SHALL judge each sibling's file changed by its blob id.
 
 #### Scenario: A read from before a long run is not used after it
 
@@ -1222,11 +1098,45 @@ make the process exit.
 - **THEN** it reads all of them, with their contents, in as few requests as the API allows, and
   judges each sibling's file changed by its blob id
 
-#### Scenario: A rank with no seat to spend is not available
+### Requirement: Taking over a gone rank's claim releases the item first
 
-- **WHEN** every seat that serves rank 2's role is past its reserve line
-- **THEN** rank 2's heartbeat says it is not available, and an item rank 2 owns goes first to the
-  next available rank
+A process taking over an item whose earlier claim message no longer counts, because that message's
+rank is gone, SHALL first release the item: on an item without the role's label it adds the label;
+it then removes the label and adds it again. It SHALL then post its own claim message at once. An
+item with the Igor's open pull request is taken over without a release, as *A claim left on the
+Igor's open pull request is caught up* says.
+
+#### Scenario: An adopted claim holds the item
+
+- **WHEN** a process claims an item whose earlier claim message carries a rank that is gone
+- **THEN** it removes the role's label and adds it again, and posts its own claim message at
+  once
+- **AND** the earlier message falls before the latest release, and the new claim holds the item
+  unless its message landed in the release's second, when the item is claimed at a later cycle
+
+#### Scenario: A gone rank's message on an unlabelled item is released first
+
+- **WHEN** rank 1 held an item, set it down and removed the role's label; rank 2, partway through
+  claiming the item, posted its claim message just after that removal, so the message falls after
+  the item's latest release; rank 2 then stood down and is now gone; and at a later cycle rank 1
+  claims the item again
+- **THEN** rank 1 adds the label, removes it and adds it again before posting
+- **AND** rank 2's message, now before the item's latest release, does not count when rank 2 returns
+
+#### Scenario: A returning rank does not take back an adopted item
+
+- **WHEN** a rank whose claim another process adopted restarts
+- **THEN** its earlier claim message does not count, and it leaves the item to the process that
+  holds it
+
+### Requirement: A process whose heartbeats fail stands down in silence
+
+A process SHALL stand down once it has failed to write its heartbeat for two poll intervals,
+measured as *A process stands down before any sibling counts it gone* says, until one lands.
+Standing down, it SHALL start no claim, and its heartbeat timer SHALL stop its worker at the next
+firing, without waiting for an event. It SHALL keep its claims in silence, an exception to *A
+claim that cannot be kept is given back, out loud* and to `graceful-handoff`'s rule against
+silence after a claim.
 
 #### Scenario: A process that cannot write its heartbeat stands down
 
@@ -1242,19 +1152,20 @@ make the process exit.
 - **THEN** the timer stops the worker within half a poll interval of the stand-down, without
   waiting for an event
 
-#### Scenario: A roster that fails a check at a cycle is refused
+### Requirement: A process reads the roster each cycle and retires when it leaves it
 
-- **WHEN** a process reads `igor.config.yaml` at the start of a cycle, and its roster lists one
-  rank twice
-- **THEN** the process goes on under the last configuration that passed, and does not exit
-- **AND** `lore:config:<role>` names `igor.config.yaml` and the failing check, until a read
-  clears it as #208 says, such as a passing read of a commit descending from the refused one
+A process SHALL read the roster at each cycle's start from the lore commit it applies then
+(`lore-pull`'s *Processes apply new commits independently*, #208), no rule depending on ranks
+agreeing on it. A process whose rank the roster no longer declares SHALL start no claim, finish
+the item in hand or hand it off out loud as on a stop request (`work-discovery`'s *Shutdown
+finishes the item in hand*), and exit under *A rank removed from the roster exits cleanly*,
+writing heartbeats until then.
 
-#### Scenario: A roster that drops the rank is not refused
+#### Scenario: A process whose rank leaves the roster shuts down
 
-- **WHEN** a process of rank 2 reads, at the start of a cycle, a roster that no longer declares
-  rank 2 and passes every other check
-- **THEN** the read passes, and the process shuts down as a retired rank does
+- **WHEN** the roster no longer declares a running process's rank while its worker runs
+- **THEN** it starts no claim, finishes the item or hands it off out loud, and then exits with
+  status 0
 
 #### Scenario: Ranks on different rosters keep one worker per item
 
@@ -1263,6 +1174,42 @@ make the process exit.
 - **THEN** each decides by the commit it applied, and the claim and its verification still let
   only one process work each item
 
+### Requirement: A configuration that fails a check at a cycle is refused without exiting
+
+Where the configuration a process reads at a cycle's start fails a check a starting process makes
+on it, the process SHALL go on, without exiting, under the last configuration that passed, roster
+included, and SHALL raise `lore-pull`'s (#208) `lore:config:<role>` condition, shared by the role, naming
+the failing file and check; a later read that passes SHALL take effect. A check that fails because
+GitHub did not answer, or refused the App's credential, refuses nothing, as `lore-pull` says.
+
+#### Scenario: A roster that fails a check at a cycle is refused
+
+- **WHEN** a process reads `igor.config.yaml` at the start of a cycle, and its roster lists one
+  rank twice
+- **THEN** the process goes on under the last configuration that passed, and does not exit
+- **AND** `lore:config:<role>` names `igor.config.yaml` and the failing check, until a read
+  clears it as #208 says, such as a passing read of a commit descending from the refused one
+
+#### Scenario: A check GitHub did not answer refuses nothing
+
+- **WHEN** a check a process makes on its configuration at a cycle's start fails because GitHub
+  did not answer, or refused the App's credential
+- **THEN** the process does not refuse the configuration for that check
+
+### Requirement: A dropped rank or a removed seat file is not a failed check at a cycle
+
+Whether the roster declares the process's own rank SHALL NOT be one of the checks a cycle's read
+of the configuration makes: a read whose roster drops the rank passes, and the rank retires (#208,
+`lore-pull`). Where the configuration includes seat files, as under #171, a seat file the read
+finds removed SHALL take effect even where the read is refused, as `seat-budget`'s *A removed seat
+file always takes effect* (#171) says.
+
+#### Scenario: A roster that drops the rank is not refused
+
+- **WHEN** a process of rank 2 reads, at the start of a cycle, a roster that no longer declares
+  rank 2 and passes every other check
+- **THEN** the read passes, and the process shuts down as a retired rank does
+
 #### Scenario: A removed seat file takes effect even in a refused read
 
 - **WHEN** a process reads its configuration at the start of a cycle, the read fails a check, and
@@ -1270,87 +1217,14 @@ make the process exit.
 - **THEN** it goes on under the last configuration that passed, except that the removed seat is
   gone from it, and the condition names the failing file and check
 
-#### Scenario: A heartbeat names its state directory
-
-- **WHEN** rank 2 of `backend` writes its heartbeat, and its state directory holds the
-  state-directory id `k3m9q2x7`
-- **THEN** `heartbeats/backend-2.json` records `k3m9q2x7` beside its id, counter, availability and
-  poll interval
-
-#### Scenario: A heartbeat replaces only its own rank's
-
-- **WHEN** two ranks of one role write heartbeats at the same time, and the state branch rejects
-  one because the other moved the branch first
-- **THEN** the rejected one is retried, it overwrites only its own file, and both heartbeats are
-  present afterwards
-
-#### Scenario: A second process on one rank stops both
-
-- **WHEN** two processes on hosts `a` and `b` both serve `backend-2`, and each reads the other's
-  id in the rank's file advance between two of its reads
-- **THEN** each stops taking new items and stops its worker, with a condition naming host `a`
-  and host `b` and both process numbers
-
-#### Scenario: The duplicate condition clears once the other writer stops
-
-- **WHEN** a person stops one of the two processes serving `backend-2`, and three of the maximum
-  poll interval pass with no other start id advancing in the rank's file
-- **THEN** the remaining process clears the condition and takes items again
-
-#### Scenario: A rolled-back branch is not a second process
-
-- **WHEN** a rollback of the state branch restores an older copy of `backend-2`'s file, with the
-  process's own id and a lower counter, or with its predecessor's id
-- **THEN** the process reads a loss or rollback, as *A heartbeat declares its process's poll
-  interval* says, and raises no condition
-
-#### Scenario: A process counts several processes in its first maximum interval
-
-- **WHEN** rank 1, whose roster declares only rank 1, has just started and reads no sibling's
-  file
-- **THEN** it counts the role as run by several processes for one maximum poll interval, and
-  contests a hand-over in that time
-
-#### Scenario: A lost state branch leaves a known sibling counted
-
-- **WHEN** rank 1, whose roster declares only rank 1, has read rank 2's heartbeat file, and the
-  state branch is then lost with that file
-- **THEN** rank 1 still counts the role as run by several processes until it counts rank 2 gone,
-  and contests a hand-over in the meantime
-
 ### Requirement: A heartbeat declares its process's poll interval
 
-Ranks apply lore commits independently, so two ranks of one role can run on different poll
-intervals at once. The gone verdict and the stand-down are counted by two different processes,
-and must agree whatever interval each applies: a process SHALL have stood down and stopped its
-worker before any sibling counts it gone. So each heartbeat SHALL declare the poll interval its
-process applies when it writes it, and each process SHALL count as follows, by what it has
-itself read and applied:
-
-- **Gone:** a process SHALL measure each of the three poll intervals after which it counts a
-  sibling gone as the longest of its own current poll interval and every interval that sibling
-  declared in a heartbeat this process saw written since the later of its own start and the last
-  loss or rollback of the state branch it detected.
-  A heartbeat is *seen written* when its counter changes between two reads. A process detects a
-  loss or rollback when a serving rank's file it had read is missing, or when a counter, in a
-  sibling's file or its own, is lower than the one last read under the same start id, the id the
-  writer chose at its start; in its own file, an older copy under its predecessor's start id, the
-  id it found in that file at its start, is a rollback too, since only a restored commit can bring
-  that id back; in a sibling's file a new start id is a restart and not a loss, and so is a
-  sibling's earlier id brought back by a rollback, which costs only forgetting what the process
-  knew of that sibling; a run's file that goes missing is a run that exited or was
-  counted gone, not a loss. Where the process has seen no such declaration from the sibling, it SHALL measure
-  those three intervals as `role-config`'s maximum poll interval (Adam, 2026-10-24).
-- **Stand-down:** a process SHALL measure each of the two poll intervals after which it stands
-  down as the shortest poll interval it has applied since it started.
-
-A process SHALL write its heartbeat every half of its own current poll interval. No process
-SHALL wait on, ask or signal another to settle which interval applies.
-
-Declarations keep recovery fast while the state branch holds; the maximum keeps a loss, a
-rollback or a process's own restart from taking a live rank's claim. After any of those, until a
-sibling's next heartbeat lands, the process counts that sibling in the maximum, so it adopts the sibling's claims only
-after 90 minutes.
+Each heartbeat SHALL declare the poll interval its process applies. A process SHALL measure each of
+the three poll intervals after which it counts a sibling gone as the longest of its own current poll
+interval and every interval that sibling declared in a heartbeat this process saw written, its
+counter changing between two reads, since the later of its own start and the last loss or rollback
+of the state branch it detected. With none seen, each SHALL be `role-config`'s maximum poll
+interval.
 
 #### Scenario: A sibling that declared a longer interval is waited for
 
@@ -1372,6 +1246,38 @@ after 90 minutes.
   branch was lost, and has not yet seen rank 2's heartbeat written
 - **THEN** rank 1 counts rank 2 gone only once 90 minutes, three of the 30-minute maximum, have
   passed without rank 2's heartbeat changing
+
+### Requirement: A process detects a lost or rolled-back state branch from the heartbeat files
+
+A process SHALL detect a loss or rollback of the state branch where a serving rank's heartbeat file
+it had read is missing, where a counter in a sibling's file or its own is lower than the one it last
+read under the same start id, or where its own file holds an older copy under its predecessor's
+start id, found there at its start. A sibling's new start id, or an earlier one brought back, SHALL
+count as a restart, and a run's missing file as its exit or its being counted gone, not as a loss.
+
+#### Scenario: A counter that goes back is read as a loss or rollback
+
+- **WHEN** rank 1 reads rank 2's file under the start id it last read there, with a counter lower
+  than the one it last read
+- **THEN** rank 1 detects a loss or rollback, and counts rank 2 in the maximum poll interval until
+  it sees a heartbeat of rank 2's written
+
+#### Scenario: A sibling's new start id is a restart, not a loss
+
+- **WHEN** rank 1 reads rank 2's file holding a start id other than the one it last read there
+- **THEN** rank 1 reads a restart of rank 2 and detects no loss or rollback
+
+#### Scenario: A run's missing heartbeat file is not a loss
+
+- **WHEN** the heartbeat file of an `igor run` that rank 1 had read goes missing
+- **THEN** rank 1 reads the run as exited or counted gone, and detects no loss or rollback
+
+### Requirement: A process stands down before any sibling counts it gone
+
+A process SHALL have stood down and stopped its worker before any sibling counts it gone. It SHALL
+measure each of the two poll intervals after which it stands down as the shortest poll interval it
+has applied since it started, and SHALL write its heartbeat every half of its own current poll
+interval. No process SHALL wait on, ask or signal another to settle which interval applies.
 
 #### Scenario: A process that moved to a longer interval stands down by the shorter
 
@@ -1397,62 +1303,12 @@ after 90 minutes.
 
 ### Requirement: Only the rank holding a claim gives it back
 
-Where several processes run one role, a process SHALL remove the role's label from an item only
-where its own claim message holds the item: the earliest claim message that counts carries its
-rank. That covers every way a claim is given back: setting an item down after a failure before
-the worker that repeats (#173, `pre-worker-breaker`), answering a stop, and the end of a run
-whose claim another rank's message now holds, where the process removes nothing, since the label
-stays with that rank. A process
-that finds another process's message holding the item SHALL drop out silently: it removes nothing, posts nothing, and leaves the label to the
-rank that holds the item. Which failures before the worker count toward setting an item down,
-and who posts the set-down, are `pre-worker-breaker`'s (#173) rules. Dropping out silently is an
-exception to *A claim that cannot be kept is given back, out loud*, since the claim is not this
-process's to give back.
-
-A process whose claim message fails to post, or whose verification read fails, SHALL then read
-the item's claim messages, which #173 calls the rank's test. Where another process's claim
-message counts, it drops out silently. Where its own message holds the item, it holds the item,
-and gives the claim back out loud as #173 says, which removes the label: a *withdrawal*.
-Immediately before removing the label, and before posting the give-back, it SHALL read the
-heartbeat files and the item's claim messages again, and SHALL remove the label and post the
-give-back only where its own message still holds the item and no other process's message
-counts; where that read finds another process's message counting, it drops out silently. Where no claim message counts, it gives the claim back out
-loud too, with #173's refusal, the post a refused run makes when it gives the claim back to be
-tried again next cycle. Where its own claim message failed to post, it SHALL post that refusal only while less than half
-a settle interval has passed since it started to set the label, the same bound the label's
-removal takes in the exception for a claim message that failed to post, and past that it posts nothing, so that no refusal lands after a sibling's claim, where it would read as giving that claim back. That late case ends in silence, as a stand-down does: the item keeps the label with no claim message counting, any rank may claim it at a later cycle, and that claim speaks (decision 65). A refusal after a failed verification, or after a reread, posts out loud
-whenever it comes. Where no claim message counts, the process also removes the label under the exception for a claim message that failed to post, below, and otherwise leaves it. Adam decided this posting and leaving of the label on 2026-10-24. Where that read of the claim messages fails too, it removes
-nothing and posts nothing, and SHALL read them again at its next cycle's start, or before it exits
-for `igor run`, as #173 has it. A process with a reread pending makes it before its cycle
-chooses any candidate. Otherwise, finding its own rank's message holding the item, it would
-take the claim for its predecessor's and re-work the item (*A process recovers the claims of
-its own predecessor*). That reread
-decides as the test does. Where it fails again, the claim is what `pre-worker-breaker` (#173)
-calls an *unreadable claim*, and the process SHALL follow #173's rule for one: it gives the claim
-back with the post a refused run makes, or, where that is the item's third unreadable claim in a
-row, sets the item down with the set-down post, so the claim never ends in silence. Either way it
-SHALL leave the role's label on the item, since it cannot tell whether a sibling holds the item
-and works it. A process that has stood down for missed heartbeats does none of
-this, and keeps its claim in silence.
-
-Because only a process whose own message holds the item withdraws, and its fresh read keeps
-the label on where a later message counts, a withdrawal releases no claim whose message was posted and verified after
-its test, as #173's decision 29 requires.
-
-**Two exceptions to the holder rule are listed.** The second, below, is a stop on an item no
-claim message holds, answered by the process that reaches it. **The first** (Adam, 2026-10-21):
-a process that set the role's label in this claim, whose claim message failed to post, SHALL remove that label where its
-test finds no claim message on the item that counts, since no holder exists and the label is its
-own. It SHALL send the removal only while less than half a settle interval has passed since it
-started to set the label, by its own monotonic clock, and SHALL NOT send it later. Later than
-that, and wherever no message counts and the process did not just set the label, it leaves the
-label, and any process claims the item at a later cycle as a labelled item with no claim message
-that counts.
-
-A stop said on an item a person handed over SHALL be answered only by the rank whose claim
-message holds the item, which halts its run and gives the claim back as any stop does. Every
-other rank SHALL ignore the stop. Where no claim message on the item counts, because no rank has
-claimed it yet or its holder is gone, the process that reaches the item answers the stop.
+Where several processes run a role, a process SHALL remove the role's label from an item only
+where its own claim message holds it, the earliest counting claim message carrying its rank,
+whether it sets the item down as #173's `pre-worker-breaker` says, answers a stop or ends a run. A
+process finding another process's message holding the item SHALL drop out silently, removing nothing,
+posting nothing and leaving the label, an exception to *A claim that cannot be kept is given back,
+out loud*.
 
 #### Scenario: A failed verification by a rank that does not hold the item removes nothing
 
@@ -1460,6 +1316,20 @@ claimed it yet or its holder is gone, the process that reaches the item answers 
   verification fails
 - **THEN** rank 2's test finds rank 1's message, so rank 2 leaves the label in place and posts
   nothing, and rank 1 works the item
+
+#### Scenario: The holder sets an item down
+
+- **WHEN** a failure before the worker repeats for the rank whose claim message holds the item
+- **THEN** that rank removes the label and says so on the item, as `pre-worker-breaker` (#173)
+  says
+
+### Requirement: A failed post or verification is tested before the claim is given back
+
+A process whose claim message fails to post, or whose verification read fails, SHALL read the item's
+claim messages (#173's *test*) and drop out silently where another process's message counts. Where
+only its own counts, it SHALL withdraw, giving the claim back out loud and removing the label.
+Immediately before both, it SHALL read heartbeats and claim messages again, and withdraw only where
+its own still holds and no other counts, dropping out silently where another's counts.
 
 #### Scenario: A failed verification by the holder is given back out loud
 
@@ -1473,6 +1343,21 @@ claimed it yet or its holder is gone, the process that reaches the item answers 
   claim message before rank 2 removes the label
 - **THEN** rank 1 loses at its verification, since rank 2's message is earlier and counts
 - **AND** rank 2's read before the removal sees rank 1's message, and rank 2 leaves the label
+
+#### Scenario: A failed verification with no claim counting is refused out loud
+
+- **WHEN** a process's verification read fails, and its test finds no claim message on the item
+  that counts
+- **THEN** it posts `pre-worker-breaker`'s refusal, however long after the label that comes, and
+  leaves the label
+
+### Requirement: A claim whose test read fails is read again before the next choice
+
+Where a process's test read fails too, it SHALL remove nothing and post nothing, and SHALL read the
+claim messages again at its next cycle's start, before choosing any candidate, or before it exits
+for `igor run`, deciding as the test does. Where that reread fails again, the claim is
+`pre-worker-breaker`'s (#173) *unreadable claim*: the process SHALL post the refusal, or the set-down at
+the item's third unreadable claim in a row, and SHALL leave the role's label on the item.
 
 #### Scenario: A failed test is read again at the next cycle
 
@@ -1499,6 +1384,19 @@ claimed it yet or its holder is gone, the process that reaches the item answers 
 - **THEN** it reads the claim messages again before it exits, and gives the claim back as the
   reread decides
 
+#### Scenario: A pending reread comes before the next choice
+
+- **WHEN** a process has a reread of an item's claim messages pending from the last cycle
+- **THEN** it makes that reread at the start of its next cycle, before it chooses any candidate
+
+### Requirement: A failed post's label and refusal are sent only within half a settle interval
+
+A process whose claim message failed to post, and whose test finds no claim message that counts,
+SHALL post its refusal, and remove the role's label where it set it in this claim, only while less
+than half a settle interval has passed, by its own monotonic clock, since it started to set the
+label, an exception to *Only the rank holding a claim gives it back*. In every other case, as after
+a failed verification or reread, a process whose test finds none counting SHALL leave the label.
+
 #### Scenario: A claim message that failed to post leaves no label behind
 
 - **WHEN** a process sets the role's label on an unclaimed item, its claim message fails to post,
@@ -1512,11 +1410,48 @@ claimed it yet or its holder is gone, the process that reaches the item answers 
   and half a settle interval has passed since it started to set the label
 - **THEN** it leaves the label, and the item is claimed at a later cycle
 
-#### Scenario: The holder sets an item down
+#### Scenario: A failed post that is slow posts nothing
 
-- **WHEN** a failure before the worker repeats for the rank whose claim message holds the item
-- **THEN** that rank removes the label and says so on the item, as `pre-worker-breaker` (#173)
-  says
+- **WHEN** a process's claim message fails to post, its test finds no claim message that counts,
+  and half a settle interval has passed since it started to set the label
+- **THEN** it posts no refusal, and the rank that claims the item at a later cycle speaks for it
+
+### Requirement: A refusal after a failed verification or a reread is posted whenever it comes
+
+Where the *test* finds no claim message counting, the process SHALL post the *refusal*. A refusal
+that follows a failed verification read, or a reread under *A claim whose test read fails is read
+again before the next choice*, SHALL be posted out loud however long after the label it comes. Only
+the refusal after a claim message that failed to post, from its test, takes the bound of *A failed
+post's label and refusal are sent only within half a settle interval*.
+
+#### Scenario: A reread's refusal is posted however late
+
+- **WHEN** a process's claim message failed to post and its test read failed, and at its next
+  cycle's start its reread finds no claim message on the item that counts
+- **THEN** it posts the refusal, though more than half a settle interval has passed since it
+  started to set the label, and leaves the label
+
+### Requirement: A stood-down process tests and rereads no claim
+
+A process that has stood down for missed heartbeats, under *A process whose heartbeats fail stands
+down in silence*, SHALL make none of the test, withdrawal, refusal or reread that *A failed post or
+verification is tested before the claim is given back*, *A refusal after a failed verification or a
+reread is posted whenever it comes* and *A claim whose test read fails is read again before the next
+choice* require, and SHALL keep its claim in silence.
+
+#### Scenario: A stood-down process leaves a failed verification unanswered
+
+- **WHEN** a process's verification read fails while it has stood down for missed heartbeats
+- **THEN** it reads no claim messages for its test, removes nothing and posts nothing, and keeps
+  its claim in silence
+
+### Requirement: A stop on a handed-over item is answered by the rank holding it
+
+A stop said on an item a person handed over SHALL be answered only by the rank whose claim message
+holds the item, which halts its run and gives the claim back as any stop does; every other rank
+SHALL ignore it. Where no claim message on the item counts, because no rank has claimed it or its
+holder is gone, the process that reaches the item SHALL answer the stop, an exception to *Only the
+rank holding a claim gives it back*.
 
 #### Scenario: Only the holder answers a stop on a handed-over item
 
@@ -1530,20 +1465,13 @@ claimed it yet or its holder is gone, the process that reaches the item answers 
 - **WHEN** a person hands an issue over and says stop before any rank's claim message is on it
 - **THEN** the first rank to reach the item removes the label and posts the stop receipt
 
-#### Scenario: A pending reread comes before the next choice
-
-- **WHEN** a process has a reread of an item's claim messages pending from the last cycle
-- **THEN** it makes that reread at the start of its next cycle, before it chooses any candidate
-
 ### Requirement: A rank removed from the roster exits cleanly
 
 A process that exits because the roster no longer declares its rank SHALL log that the roster no
-longer declares rank `<rank>` of `<role>`, and SHALL then exit with status 0. The systemd unit
-that `stuck-conditions`' *A process that refuses to start exits with status 78* (#82,
-`stopped-scope-visible`) has this repository ship restarts a process only on a failure, so it
-does not restart a retired rank, and the unit shows inactive with Igor's line in its journal.
-Under compose, which #82 has restart every exit, a rank is retired by removing its service, as
-#82 says (`docker compose up -d --remove-orphans`).
+longer declares rank `<rank>` of `<role>`, and SHALL then exit with status 0, which the systemd
+unit of `stuck-conditions`' *A process that refuses to start exits with status 78* (#82,
+`stopped-scope-visible`) does not restart. Under compose, which restarts every exit, a rank is retired by removing its service
+(`docker compose up -d --remove-orphans`), as that requirement says.
 
 #### Scenario: A retired rank's unit is inactive and is not restarted
 
@@ -1558,3 +1486,213 @@ Under compose, which #82 has restart every exit, a rank is retired by removing i
 - **WHEN** a person starts `igor@backend-2` again while the roster still does not declare rank 2
 - **THEN** it refuses to start, naming the ranks the roster declares, and exits with status 78
 - **AND** systemd shows the unit as failed and does not restart it
+
+### Requirement: One role's earliest claim message since the item's release holds it
+
+Among one role's processes the earliest claim message SHALL hold the item, ordered by the
+surface's own sequence key, never by timestamp. Only messages later than the item's latest
+release, the latest removal of the role's label in its label events, SHALL count, judged
+by timestamp, so one in the release's second does not, though no process SHALL wait that second
+out to post. Messages of gone ranks never count (*A rank is gone only once its heartbeat has not changed for
+three poll intervals*).
+
+#### Scenario: A claim message from before a release does not count
+
+- **WHEN** an item was released and then claimed again by processes of one role
+- **THEN** only claim messages posted since the release are compared
+
+#### Scenario: A claim message in the release's second does not count
+
+- **WHEN** an item's latest release and a claim message on it carry the same second
+- **THEN** that claim message does not count
+- **AND** the process that posted it works nothing, and the item is claimed at a later cycle
+
+#### Scenario: Claims written in the same second still order
+
+- **WHEN** two processes of one role claim one item and the surface reports both claim messages
+  at the same timestamp
+- **THEN** the surface's sequence key decides, and exactly one claim stands
+
+#### Scenario: A claim in the release's second is posted without waiting
+
+- **WHEN** a process of a role claims an item in the same second as the role's label was last
+  removed from it, the item's latest release
+- **THEN** it posts its claim message without waiting for that second to pass
+- **AND** the message, posted in the release's second, does not count, and the item is claimed at a
+  later cycle
+
+### Requirement: A claim re-read more than one poll interval after its message works nothing
+
+The re-read after the settle interval SHALL come within one poll interval of the claim message. A
+process that reaches it later SHALL NOT work the item, even where its own message holds it, and
+gives the claim back as *A failed post or verification is tested before the claim is given back* and
+*A refusal after a failed verification or a reread is posted whenever it comes* say of a failed
+verification, removing the label only where its own message holds the item.
+
+#### Scenario: A late verification works nothing
+
+- **WHEN** a process reaches the re-read more than one poll interval after posting its claim
+  message, and its own message holds the item with no other process's message counting
+- **THEN** it performs no work, gives the claim back out loud, and, where a fresh read just
+  before the removal still shows its own message holding the item, removes the label
+
+### Requirement: A claim's re-read sees a stop said since the item was read
+
+The re-read after the settle interval SHALL look for a stop said since the cycle that chose the
+item read it, or, for an item a person handed over, since the hand-over. For an item the Igor's
+own search found, a go-ahead later in the comments than the latest stop lifts it, and the run
+that follows SHALL NOT be stopped by the stop the claim saw lifted. For a handed-over item the
+stop stands.
+
+#### Scenario: A go-ahead does not lift a stop on a handed-over item at the claim
+
+- **WHEN** a person hands an item to an Igor, and somebody says stop on it and then go ahead,
+  both before the Igor's re-read
+- **THEN** the stop stands, and the Igor does not work the item
+
+### Requirement: Giving a claim back never takes back a person's hand-over
+
+Where a person put the Igor in the holder field, as by adding its `igor:<role>` label, and the
+run is the Igor bringing its own artifact up to date rather than answering that hand-over,
+releasing the claim SHALL leave that holder entry in place: the catch-up is not a claim of the
+hand-over (*An item handed to an Igor waits for work already in flight*). A stop is the
+exception, removing the Igor from the holder field as every stop does.
+
+#### Scenario: A catch-up on a delegated Linear issue keeps the delegation
+
+- **WHEN** an Igor brings its own pull request up to date on a Linear issue a person delegated to
+  it, and the run ends other than by a stop
+- **THEN** the Igor is still the issue's delegate afterwards
+
+### Requirement: Two runs in a row that a surface did not answer stop the cycle
+
+A run holding a claim that cannot go on because a tracker or host did not answer SHALL be told
+apart from a refusal about the item itself. After two such runs in a row, the cycle SHALL stop and
+attempt none of its remaining items; a cycle that met one and then ran an item cleanly did not
+fail, and SHALL NOT be recorded as failed.
+
+#### Scenario: A tracker and then a host not answering stop the cycle
+
+- **WHEN** one item's run ends because the tracker did not answer, and the next item's run ends
+  because the host did not answer
+- **THEN** the cycle stops, and its remaining items are not attempted
+
+### Requirement: A write to a surface answers with what the surface recorded
+
+Where the Igor asks a surface to say or to release something, the answer SHALL carry what was
+recorded, not merely that no error was raised.
+
+#### Scenario: A release answers with what the tracker recorded
+
+- **WHEN** the Igor asks a tracker to release a claim
+- **THEN** the answer carries what the tracker recorded for the holder field, not only that no
+  error was raised
+
+### Requirement: A handed-over run that published and then failed says how to have it try again
+
+Where a handed-over item's run published work and then could not finish, its handoff post, the
+comment it leaves as it stops (`graceful-handoff`), SHALL say that what it published stands and
+that, once that work closes, handing the item over again has the Igor try again. The handoff
+SHALL NOT suggest handing the item over again while that work is still open.
+
+#### Scenario: The handoff after a published run does not suggest handing over while it is open
+
+- **WHEN** an Igor working a handed-over item opens a pull request and then cannot finish
+- **THEN** its handoff does not suggest handing the item over again while that pull request is
+  open
+
+### Requirement: A go-ahead lifts a stop only for the Igors it names
+
+A go-ahead SHALL be read for whom it is meant as a stop is. One that names no Igor lifts the stop
+for every Igor on the item; one that names Igors, as "go ahead @igor-backend", SHALL lift it only
+for those, and SHALL NOT lift it for an Igor it does not name. A name that is no Igor's counts as
+no name, as in a stop, and a name the tracker cannot resolve counts as an Igor's.
+
+#### Scenario: A go-ahead naming a name the tracker cannot resolve lifts no other Igor's stop
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @igor-old", a name the tracker cannot resolve
+- **THEN** the stop is lifted for neither Igor
+
+### Requirement: A go-ahead's names are read from its opening line
+
+A go-ahead with no Igor's name straight after the phrase SHALL count the mentions later on its
+opening line, but SHALL NOT read them past a line break straight after the phrase's punctuation or
+the list's last separator. A list of names that runs straight on into a word SHALL lose its last
+name, whether the go-ahead reads the names after its phrase or later on its line. Whether it names
+an Igor is read before that loss, so one whose only Igor is the name it loses lifts the stop for no
+Igor.
+
+#### Scenario: A run-on list later on the line loses its last name
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead and pick it up, @igor-backend, @igor-frontend keep waiting"
+- **THEN** the stop is lifted for the backend Igor only
+
+### Requirement: On GitHub, a label removed by anyone but the Igor's own bot account is a stop
+
+On GitHub, an Igor that finds its `igor:<role>` label gone SHALL read the latest `unlabeled`
+event for that label in the issue's events. Made by the Igor's own bot account, the removal was
+its own release; made by anyone else, it is a stop by that person, and the Igor SHALL halt with a
+stop receipt that names them. Among several processes of one role, a removal by the role's bot
+account is a release by one of its ranks, and SHALL NOT halt a worker another rank is running.
+
+#### Scenario: A sibling rank's release halts no running worker
+
+- **WHEN** several processes run `backend`, and rank 2, whose worker runs on an issue, finds
+  `igor:backend` gone with the latest `unlabeled` event made by the role's own bot account
+- **THEN** rank 2 does not halt its worker
+
+### Requirement: A passed-over rank keeps the read marker before an unanswered chat message
+
+Among one role's processes, only the rank *A chat message becomes an issue at the first
+available rank in its order* names SHALL search for an issue linking a chat message, create the
+issue and post its link. A rank passing over the message because another is first in its order
+SHALL NOT move the channel's read marker past it until it has an answer: an issue linking it, or
+a reply to it in the chat from the role's bot account. No rank SHALL answer a message that
+already has one.
+
+#### Scenario: A passed-over rank holds the read marker until the message is answered
+
+- **WHEN** rank 1 reads a chat message asking for work, rank 2 is first in its order and rank 1
+  next, and the
+  message has neither an issue linking it nor a reply from the role's bot account
+- **THEN** rank 1 does not move the channel's read marker past the message
+- **AND** if rank 2 is counted gone or unavailable before answering, rank 1 finds itself first at
+  a later cycle, reads the message again and answers it
+
+#### Scenario: A chat message the role's bot account has answered is not answered again
+
+- **WHEN** a rank reads a chat message to which the role's bot account has already replied in
+  the chat
+- **THEN** the rank does not answer it again
+
+#### Scenario: Only the first rank posts the link of an existing issue
+
+- **WHEN** ranks 1 and 2 read a chat message whose order puts rank 2 first, an issue already
+  links the message, and the chat has no reply with that issue's link
+- **THEN** only rank 2 posts the link, and rank 1 posts nothing
+
+### Requirement: Only the first available rank says another Igor holds the issue
+
+Where several processes run the role, only the first available rank in the item's order (*Every
+item has an owner and an order of ranks*) SHALL post the comment *A person reassigns an issue by
+removing the holding Igor's label first* or *An item handed to an Igor waits for work already in
+flight* requires, and every other rank SHALL pass the item over.
+
+#### Scenario: Only one rank says another Igor holds the issue
+
+- **WHEN** ranks 1 and 2 of `frontend` both find an issue a person labelled `igor:frontend` while
+  `igor:backend` holds it, and rank 1 is first in the issue's order
+- **THEN** rank 1 posts the one comment, and rank 2 posts nothing
+
+### Requirement: A finished run releases its claim and leaves its work in place
+
+A run that finishes SHALL release its claim, leaving its artifact in place and the item open. No
+setting of the role SHALL change this.
+
+#### Scenario: A finished run's pull request stays open after its release
+
+- **WHEN** a run publishes a pull request and finishes
+- **THEN** the Igor releases its claim on the item
+- **AND** the pull request and the item both stay open
