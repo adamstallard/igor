@@ -1,0 +1,459 @@
+# Scenarios in openspec/specs that no test tagged when spec-trace was adopted.
+# spec-trace check fails on a line whose scenario a test now tags, or that names no
+# scenario: delete such a line. Never add one; a new scenario gets a tagged test instead.
+graceful-handoff: A directed stop names partial work
+graceful-handoff: A directed stop posts no handoff
+graceful-handoff: Busy is not a reason
+graceful-handoff: Handoff posted after an unrecoverable failure
+graceful-handoff: Handoff posted after the budget is exhausted
+lore-firing: An item cannot introduce lore
+lore-firing: Entries present without being requested
+lore-firing: Fire counts derivable from the record
+lore-firing: Firing recorded off the curated branch
+lore-firing: Lore and item are distinguishable
+lore-firing: Out-of-scope entries do not fire
+lore-firing: Overage reported with its numbers
+lore-firing: Two contradictory entries both reach the worker
+lore-review: A candidate whose id is already an entry on the default branch
+lore-review: A candidate whose id the default branch records as rejected
+lore-review: A merge is an invocation
+lore-review: A merge that lands no entry file
+lore-review: A minted id whose name the default branch records as rejected
+lore-review: A name the checkout already holds in the same kind
+lore-review: A name the checkout holds as an entry and the default branch as a rejection
+lore-review: A proposal nothing of ours opened
+lore-review: A pull request that only edits entry files
+lore-review: Already promoted by repository automation
+lore-review: An entry that replaces a retired one
+lore-review: An id minted on a behind checkout
+lore-review: Assignment is never silently lost
+lore-review: Author merges their own proposal
+lore-review: Batch split by dominant author
+lore-review: Branch protection is recommended to a single writer
+lore-review: Closed without merging defers
+lore-review: Contract is present
+lore-review: Contributing author credited without notification
+lore-review: Deleted file is rejected
+lore-review: Derivation is checkable in place
+lore-review: Dominant author is not a collaborator
+lore-review: Entry committed straight to the default branch
+lore-review: Equal contribution
+lore-review: Hand-authored candidates take the same path
+lore-review: Manual promotion is attributable
+lore-review: Merge promotes to active
+lore-review: Merged by someone else
+lore-review: Merged proposal promoted on the next run
+lore-review: Mixed-authorship candidate
+lore-review: Private destination is unrestricted
+lore-review: Private provenance into a public store
+lore-review: Quiet pull request reported
+lore-review: Setup documentation states the consequence
+lore-review: The branch cannot be read while minting
+lore-review: The store is too large to read in one request
+lore-store: A misspelt required key reads as a typo, not an absence
+lore-store: A repository is initialized in one command
+lore-store: A second run adds only what is missing
+lore-store: Active entry requires a review block
+lore-store: Age does not diminish an entry
+lore-store: An unreadable key is named
+lore-store: Claim reworded later
+lore-store: Config found by searching upward
+lore-store: Config inside the installation refused
+lore-store: Destination below the repository root refused
+lore-store: Destination independent of other configuration
+lore-store: Destination inside the Igor installation refused
+lore-store: Destination not configured
+lore-store: Empty provenance rejected
+lore-store: Entry created from the CLI
+lore-store: Entry located by id
+lore-store: Entry written to disk
+lore-store: Hand-written entry accepted
+lore-store: Listing shows derived scores
+lore-store: Missing required field rejected
+lore-store: Newest evidence reported as a date
+lore-store: No config anywhere above
+lore-store: One target replaced, the rest untouched
+lore-store: Overwriting is explicit
+lore-store: Overwriting without naming a target
+lore-store: Placeholders are blank rather than plausible
+lore-store: Provisional entry needs no review block
+lore-store: Repository settings are left alone
+lore-store: Role-scoped entry with no roles defined
+lore-store: Run inside a clone of Igor
+lore-store: Run where there is no repository
+lore-store: Slug collision
+lore-store: Slug generated from claim
+lore-store: Stored score rejected
+lore-store: Support derived from provenance
+lore-store: The configuration lands at the repository root
+lore-store: The worker can remove, rename and read history
+lore-store: The worker cannot publish for itself
+lore-store: Unquoted date accepted
+lore-store: Unrecognized scope rejected
+lore-store: Valid entry accepted
+lore-store: Validation reports every failure
+lore-store: What one command cannot finish is said out loud
+role-config: A claim names the role
+role-config: A lane constraint nobody reads is refused
+role-config: A role spanning two areas through one base
+role-config: An action outside the vocabulary is refused
+role-config: An unreadable key on a role is named
+role-config: Credentials come only from the environment
+role-config: Declarative constraints evaluated
+role-config: Declared commands bound what the worker may run
+role-config: Default applied when unset
+role-config: Dry run reports decisions without acting
+role-config: Dry run surfaces a mis-scoped lane
+role-config: Effective config reported with provenance
+role-config: Environment credentials for another identity are not used
+role-config: Explain says who the role acts as
+role-config: Expression syntax rejected
+role-config: Instructions accumulate
+role-config: Intermediate base composed
+role-config: More processes of one role are one Igor
+role-config: Native syntax preserved
+role-config: No canonical label imposed
+role-config: Org base inherited
+role-config: Org lane exclusion is inescapable
+role-config: Redundant name field rejected
+role-config: Role attempting to widen a permission is rejected
+role-config: Role attempting to widen its commands is rejected
+role-config: Role located by filename
+role-config: Role narrows a permission
+role-config: Setting overridden
+role-config: Source without a tracker rejected
+role-config: The org base is held to the same rule
+role-config: The role's name is the identity
+role-config: The skill's installation variables are ignored
+role-config: Two bases refused
+role-config: Two roles are two Igors
+role-config: Well-formed role accepted
+seat-budget: A busy role cannot starve the seat's owner
+seat-budget: A cadence ceiling is still approximate
+seat-budget: A call that runs names the seat that paid
+seat-budget: A co-consumer makes the estimate low, not high
+seat-budget: A command that never answers does not hang the reading
+seat-budget: A compared pair of stated hours is exact
+seat-budget: A declared capacity gets a reserved seat started
+seat-budget: A dedicated seat runs uncalibrated
+seat-budget: A file or command that cannot produce a token is refused, not substituted
+seat-budget: A limit error becomes an observation at 100%
+seat-budget: A missing token is refused, not substituted
+seat-budget: A misspelt id reads as the typo, not as an absence
+seat-budget: A misspelt seats key is not an empty budget
+seat-budget: A per-model window is recorded as one
+seat-budget: A pool key nobody reads is refused
+seat-budget: A reading becomes an observation
+seat-budget: A reserved seat is not spent from on a guess
+seat-budget: A reset that cannot be resolved is not invented
+seat-budget: A return that cannot be placed is not ordered against
+seat-budget: A role's share derived from its spend
+seat-budget: A seat is read through its own credential
+seat-budget: A seat naming no token is still a seat
+seat-budget: A seat reads its token from a command
+seat-budget: A seat reads its token from a file
+seat-budget: A seat recovers without intervention
+seat-budget: A seat without headroom is passed over, not waited on
+seat-budget: A seats list that is not a list is refused
+seat-budget: A spend nothing can attribute is refused rather than recorded as ambient
+seat-budget: A spent seat is passed over
+seat-budget: A tiled boundary is still exact
+seat-budget: An observation is never overwritten
+seat-budget: An observation supersedes what was declared
+seat-budget: An uncalibrated reserved seat is not the pool's fallback
+seat-budget: An unenforced budget is untouched
+seat-budget: An unmeasured seat reads as unmeasured
+seat-budget: An unreadable seat is not treated as free
+seat-budget: An unstated return still hedges the hour
+seat-budget: Attribution recoverable after the fact
+seat-budget: Both paths answer alike
+seat-budget: Capacity derived from one observation
+seat-budget: Capacity established without a person
+seat-budget: Ceilings need not sum to one
+seat-budget: Correction requires no operator
+seat-budget: Dedicated capacity is consumed before a person's
+seat-budget: Exhausting every seat in a pool is a handoff
+seat-budget: Expiry is not deletion
+seat-budget: Headroom legible per window
+seat-budget: Human capacity preserved
+seat-budget: Igor stops at the reserve
+seat-budget: Naming more than one mechanism is rejected
+seat-budget: No budget declared still means unenforced
+seat-budget: No recorded spend attributes nothing
+seat-budget: No seat, no spend
+seat-budget: No spend in the instance derives nothing
+seat-budget: Observations are not mixed into the execution log
+seat-budget: One unreadable seat does not blind the rest
+seat-budget: One wording for every level
+seat-budget: Only the instance the observation belongs to counts
+seat-budget: Per-model limit surfaced
+seat-budget: Pool referencing an undeclared seat rejected
+seat-budget: Role referencing an undeclared seat rejected
+seat-budget: Seat declared and referenced
+seat-budget: Several Igors share one bound
+seat-budget: Sharing made legible
+seat-budget: The estimate falls after a refusal
+seat-budget: The first refusal calibrates it
+seat-budget: The floor holds without observing the owner
+seat-budget: The later hour is stated for a seat that could be read
+seat-budget: The later hour is stated for a seat that could not be read
+seat-budget: The record decides exhaustion where no reading can
+seat-budget: The reset time reaches the handoff
+seat-budget: The role is still back on its earliest seat
+seat-budget: Unused capacity is available to another role
+surface-adapter: A clone acts as the App and keeps nothing
+surface-adapter: A credential refused mid-run stops new work and recovers
+surface-adapter: A gh call acts as the App
+surface-adapter: A holder field distinct from the assignee
+surface-adapter: A long-running Igor never uses an expired token
+surface-adapter: A missing permission refuses the start
+surface-adapter: A person's command is unchanged
+surface-adapter: A read that spells the login differently still matches
+surface-adapter: An App not installed on a repository refuses the start
+surface-adapter: An App's collaborator record is not read as its access
+surface-adapter: An ambient token is not used
+surface-adapter: Calls reuse a fresh token
+surface-adapter: Claim is a label
+surface-adapter: Detection differs while the answer does not
+surface-adapter: GitHub adapter satisfies the interface
+surface-adapter: In-flight work detected
+surface-adapter: Its own label removal is recognised by id
+surface-adapter: Linkage convention differs by tracker
+surface-adapter: Missing credentials refuse the start
+surface-adapter: Native holder field declared
+surface-adapter: Normalized candidate returned
+surface-adapter: One surface implementing both roles
+surface-adapter: Predicates portable across adapters
+surface-adapter: Roles played by different surfaces
+surface-adapter: Single-valued and list holder fields resolve differently
+surface-adapter: Stop is detected during long execution
+surface-adapter: The identity is the App's bot
+surface-adapter: The loop does not name the field
+surface-adapter: Two key variables refuse the start
+surface-adapter: Verification reports a held claim
+surface-adapter: Verification reports a stop
+task-execution: A blanket declaration is not a declaration
+task-execution: A change is not published under a name that is not text / An ordinary run is unaffected
+task-execution: A change that is only removals
+task-execution: A conflict is resolved, not regenerated
+task-execution: A conflict that has cleared costs no model
+task-execution: A declaration covers the path it names and nothing else
+task-execution: A declaration that does not match what the base holds authorizes nothing
+task-execution: A declaration the repository commits is not this run's word
+task-execution: A declared revert is published and said out loud
+task-execution: A deletion of such a name is not published either
+task-execution: A deletion the base made is undone without a declaration
+task-execution: A file the repository keeps is content, not a channel
+task-execution: A file whose name is not text is not published under another one
+task-execution: A finished run survives a kill
+task-execution: A first artifact is unaffected
+task-execution: A hung model is reported as silence
+task-execution: A killed worker takes its subprocesses with it
+task-execution: A killed worker's changes are recorded
+task-execution: A live worker that never finishes is still killed
+task-execution: A long tool call is not a wedged worker
+task-execution: A loss publishes a draft
+task-execution: A name that really contains the replacement character is published
+task-execution: A path only the run's own index ever held is not removed
+task-execution: A publish is not lost to a removal nobody asked for
+task-execution: A removal alongside edits
+task-execution: A removal folded into a conflicted path is still read
+task-execution: A removal the worker did ask for is not published where the base lacks the path
+task-execution: A rename is carried however git reports it
+task-execution: A rename leaves no duplicate
+task-execution: A rename moved on a second time removes the original and nothing else
+task-execution: A resolution that keeps the base's work needs no declaration
+task-execution: A resumed turn clears a call whose result never came
+task-execution: A returned tool restores the shorter window
+task-execution: A rewrite the base made is restored without a declaration
+task-execution: A role that may not publish still may not
+task-execution: A seat whose file or command yields no token fails loudly
+task-execution: A seat whose token variable is unset fails loudly
+task-execution: A sibling still running holds the longer window
+task-execution: A silent worker is killed
+task-execution: A stop still publishes nothing
+task-execution: A stopped run takes its subprocesses with it
+task-execution: A subagent's own events do not clear its parent's tools
+task-execution: A tool that never returned is reported as one
+task-execution: A toolchain still runs
+task-execution: A tree in use by the longest possible worker is not swept
+task-execution: A worker producing events is left alone
+task-execution: A worker that exited on its own
+task-execution: Agreeing with the base is not a revert
+task-execution: An interrupted process takes the worker with it
+task-execution: An unresolvable conflict is handed off
+task-execution: Another Igor's approval is not enough
+task-execution: Artifact linked by adapter convention
+task-execution: Cost recorded per invocation
+task-execution: Disallowed artifact refused
+task-execution: Enforcement is at the loop, not the prompt
+task-execution: Igor does not merge its own pull request
+task-execution: Ingested content delimited as data
+task-execution: Instruction-shaped content in an item does not direct the worker
+task-execution: Losing a claim does not complete the item
+task-execution: No removal is lost to a read that reports two changed paths as one / An ordinary run is unaffected
+task-execution: No state carries between tasks
+task-execution: No worker outlives the process
+task-execution: Noise is not progress
+task-execution: Nothing else in the loop would have caught it
+task-execution: Nothing that yields an App token reaches the worker
+task-execution: Only the Igor's own artifact
+task-execution: Only the chosen seat's token is present
+task-execution: Permitted artifact produced
+task-execution: The ceiling is reported as length
+task-execution: The check runs before the commit, not after it
+task-execution: The declaration does not reach the artifact
+task-execution: The new holder is told what exists
+task-execution: The provisioning strategy is replaceable
+task-execution: The recovered removal reaches the artifact
+task-execution: The run still says what it changed
+task-execution: The surface credential is absent
+task-execution: The threshold follows the ceiling
+task-execution: The tree is released on failure as well as success
+task-execution: Transcript persisted off the main line
+task-execution: Winding down leaves the item in hand running
+task-execution: Worker invoked with role context
+task-execution: Working tree provisioned for a task that needs one
+work-claiming: A bare go-ahead lifts the stop for every Igor
+work-claiming: A bare stop stops every Igor on the item
+work-claiming: A catch-up gives its claim back and keeps a person's label
+work-claiming: A claim that could not be announced is given back
+work-claiming: A claim that could not be verified is given back and withdrawn
+work-claiming: A cycle stops when the surface stops answering
+work-claiming: A failure after the claim hands the item back
+work-claiming: A finished run releases its claim
+work-claiming: A go-ahead on its own line is bare
+work-claiming: A go-ahead that names an Igor lifts the stop only for that one
+work-claiming: A go-ahead that names only a person lifts the stop for every Igor
+work-claiming: A go-ahead whose list runs on into the next clause
+work-claiming: A go-ahead whose name comes later on its line
+work-claiming: A go-ahead whose run-on list loses its only Igor
+work-claiming: A hand-over after a stop lets the Igor's own catch-up run
+work-claiming: A handed-over run published, then failed
+work-claiming: A human takes the item
+work-claiming: A lifted stop does not restore a hand-over
+work-claiming: A person removing the label is a stop that names them
+work-claiming: A refusal about the item does not stop the cycle
+work-claiming: A release that did not take is said so
+work-claiming: A stop answered by a go-ahead before the claim
+work-claiming: A stop during a catch-up takes the label off
+work-claiming: A stop said while the cycle worked another item
+work-claiming: A stop that names an Igor stops only that one
+work-claiming: A stop that names only a person stops every Igor
+work-claiming: A stop while nothing runs takes the label off
+work-claiming: An issue links the message, and its link is already posted
+work-claiming: An issue links the message, and its link was never posted
+work-claiming: Another Igor's label after the settle interval
+work-claiming: Another Igor's own label is still a race
+work-claiming: Another holder in a list
+work-claiming: Another surface directs without claiming
+work-claiming: Anyone can stop an Igor
+work-claiming: App claims by label and comment
+work-claiming: Claim confirmed
+work-claiming: Claim lost to an earlier writer
+work-claiming: Claim precedes work
+work-claiming: Claim visible in the native field
+work-claiming: Claims on one tracker
+work-claiming: Claims on two trackers refused
+work-claiming: Delegated by a person
+work-claiming: Directed work can still be stopped
+work-claiming: Discord as the claiming tracker refused
+work-claiming: Discord directs work and never holds a claim
+work-claiming: Explicit go-ahead short-circuits the cooldown
+work-claiming: Handed over while a pull request is open
+work-claiming: Handing the item back to the Igor is a go-ahead
+work-claiming: Holder field written before the claim message
+work-claiming: Instructed in chat
+work-claiming: Item assigned to a person, on GitHub
+work-claiming: Item assigned to a person, on Linear
+work-claiming: Item delegated to another agent, on Linear
+work-claiming: Item handed to this Igor, on GitHub
+work-claiming: Item handed to this Igor, on Linear
+work-claiming: Item labelled for another Igor, on GitHub
+work-claiming: Labelled by a person
+work-claiming: Later write holds a single-valued field
+work-claiming: Losing Igor leaves a single-valued field alone
+work-claiming: Losing Igor removes itself from a list
+work-claiming: Lost record of handled messages
+work-claiming: No dependence on conditional writes
+work-claiming: No second verb exists
+work-claiming: Nobody takes the item
+work-claiming: One run ending that way does not stop the cycle
+work-claiming: Person labels a second Igor
+work-claiming: Person removes the holding Igor's label
+work-claiming: Rule not overridable
+work-claiming: Settle interval configurable
+work-claiming: Stop cannot be disabled
+work-claiming: Stop is recorded
+work-claiming: The Igor's own removal is its release
+work-claiming: The pull request closes
+work-claiming: Unassigned item, on GitHub
+work-claiming: Unassigned item, on Linear
+work-claiming: Unclaimed work refused
+work-discovery: A cold start is distinguishable in the record
+work-discovery: A failing cycle does not end the process
+work-discovery: A preview leaves the mark where it found it
+work-discovery: A preview of a first run leaves it a first run
+work-discovery: Budget is re-checked between items
+work-discovery: Correctness not delegated to the cache
+work-discovery: Cycles repeat on the interval
+work-discovery: Equivalent timestamps spelled differently
+work-discovery: Established repository does not flood the first cycle
+work-discovery: Loose query narrowed downstream
+work-discovery: New items picked up
+work-discovery: No inbound endpoint required
+work-discovery: One tracker unreachable
+work-discovery: Query sent as written
+work-discovery: Seen items not re-triaged
+work-discovery: Shutdown finishes the item in hand
+work-discovery: Sources polled on the interval
+work-discovery: State inspectable without checkout
+work-discovery: State lost entirely
+work-discovery: State survives a fresh clone
+work-discovery: State written off the main line
+work-triage: A cycle with nothing to triage reads no seat
+work-triage: A handed-back item does not return unanswered
+work-triage: A healthy artifact of one's own is still skipped
+work-triage: A held pool does not read as a login problem
+work-triage: A held pool stops the model stage
+work-triage: A pool that could not be used at all is refused on the same terms
+work-triage: A preview writes no record
+work-triage: A reply lifts the suppression
+work-triage: A second holder alongside the Igor still means someone else's
+work-triage: A tie inside one source is conceded rather than looped on
+work-triage: A verdict in another source concedes nothing
+work-triage: An Igor's own artifact that cannot merge is a candidate
+work-triage: An edit lifts the suppression
+work-triage: An item someone else holds is skipped before any claim
+work-triage: An item the Igor itself holds is still a candidate
+work-triage: An organization with no seats declared still triages
+work-triage: An untriaged item is not suppressed
+work-triage: Binary verdict returned
+work-triage: Closed item skipped whatever the query returned
+work-triage: Everything before the model call still runs
+work-triage: Item with an open linked artifact skipped
+work-triage: Model verdict reason recorded
+work-triage: No confidence-gated behaviour
+work-triage: No seat means no credential, not an ambient one
+work-triage: Nobody named means nobody holds it
+work-triage: Nothing is posted to an item nobody claimed
+work-triage: Predicate stage costs nothing
+work-triage: Predicates gate the model call
+work-triage: Rediscovery after completion does not duplicate work
+work-triage: Residue reaches the model
+work-triage: Rule not overridable by configuration
+work-triage: Running out of budget is not a decision about the item
+work-triage: Silence is explained
+work-triage: Skip ratio observable
+work-triage: Skip reason recorded
+work-triage: Somebody else's conflicting artifact is not adopted
+work-triage: Spent is told apart from unusable
+work-triage: Text cannot grant authority
+work-triage: Text-derived field routes but does not widen
+work-triage: The Igor's own handoff does not make an item fresh
+work-triage: The cap falls on the newest, so the mark still moves
+work-triage: The reason the call did not happen does not change the handling
+work-triage: The record is a cache, not a source of truth
+work-triage: The return time is stated
+work-triage: The watermark waits for them
+work-triage: Untriaged is not decided
