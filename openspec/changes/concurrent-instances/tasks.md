@@ -210,22 +210,25 @@
       item to the next available rank, which posts at once; two ranks that both post resolve by
       the earliest claim message
 - [ ] 3.6 Only the first available rank in a chat message's order, by 3.1's hash of the
-      message's id, creates an issue from it; with no rank available, the rank first in its order, or where it is gone the next rank not gone, answers in the chat with the time the role's seats next reset, and the message waits for a later cycle (design.md, decisions 58 and 73). Tests: of two available ranks reading one message, only
-      its owner creates the issue; with the owner's heartbeat showing it unavailable, the next rank creates it; with no rank available, the owner replies with the reset time and creates nothing; with the owner gone too, the next rank replies
+      message's id, creates an issue from it; with no rank available, the rank first in its order, or where it is gone the next rank not gone, replies in the chat with the time the role's seats next reset, once: no rank replies so where such a reply is already there. The message waits for a later cycle (design.md, decisions 58, 73 and 78). Tests: of two available ranks reading one message, only
+      its owner creates the issue; with the owner's heartbeat showing it unavailable, the next rank creates it; with no rank available, the owner replies with the reset time and creates nothing; with the owner gone too, the next rank replies; at a later cycle with no rank available, no second reset-time reply is posted
 - [ ] 3.7 A rank that passes over a chat message, or a mention, because another rank is first in
       its order leaves the channel's read marker before that chat message, or its discovery mark
       before that mention, until it has an answer, which is one of: a reply from the role's bot
-      account; for a chat message, an issue linking it; or, for a mention whose answer acts, the
-      claim it takes. No rank answers a message that already has one (decision 70). Tests: with the first
-      rank gone before answering, the next rank answers at a later cycle; with it answering, the marker and the mark then pass the message, also where the answer is a claim not yet acted on; a mention the bot has already replied to is not answered again
+      account, unless it gives only the time the role's seats next reset; for a chat message, an
+      issue linking it; or, for a mention whose answer acts, the claim it takes. No rank answers a
+      message that already has one (decision 70). Tests: with the first
+      rank gone before answering, the next rank answers at a later cycle; with it answering, the marker and the mark then pass the message, also where the answer is a claim not yet acted on; a mention the bot has already replied to is not answered again; where the first rank's reply to a chat message or mention gives only the reset time, a rank that passed the message over to it still holds the marker or its mark back
 - [ ] 3.8 On an item a person handed over that waits, for work in flight or another Igor's label,
       only the first available rank in its order posts the one comment (decision 71). Test: two
       ranks find such an item, and one comment is posted
 - [ ] 3.9 A mention whose answer opens an issue or acts on an option the person chose goes
       through a claim, as any item does; a plain reply stays unclaimed. Where no rank has a seat
-      to spend, the mention's owner answers with the time the role's seats next reset
-      (decisions 62 and 67; #140 builds the answering). Tests: two ranks reading one acting
-      mention act once; with no seat, the owner's reply gives the reset time
+      to spend, the mention's owner replies with the time the role's seats next reset, once:
+      no rank replies so where such a reply is already there (decisions 62, 67 and 78; #140
+      builds the answering). Tests: two ranks reading one acting mention act once; with no
+      seat, the owner's reply gives the reset time; at a later cycle with no seat, no second
+      reset-time reply is posted
 
 ## 4. Recovery
 

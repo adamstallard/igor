@@ -102,13 +102,16 @@ to reply to.
     not counted gone, and with a seat, the subscription the role spends from, it can spend.
   - Each rank works the order out for itself and answers only where it finds itself first; the
     others leave the request, and hold their discovery marks back before it until it has an
-    answer, a reply from the role's bot account or, for an answer that acts, the claim it takes,
-    so that if the first rank is counted gone or unavailable before it answers, the next one
+    answer. An answer is a reply from the role's bot account, or, for an answer that acts, the
+    claim it takes. The reply giving the seats' reset time, in the next bullet, is not an
+    answer. So if the first rank is counted gone or unavailable before it answers, the next one
     finds itself first at a later cycle and answers.
   - Where no rank is available, the owner answers with the time the role's seats next reset,
     a fixed reply that spends no seat (decided by the agents coordinating this work on
     2026-10-28, under the rule Adam set for which questions they may settle;
     `docs/architecture.md` promises this). If the owner is gone, the next rank in the order that is not gone sends that reply (decided by the agents on 2026-11-01).
+    The reply goes out once: no rank sends it where one is already there, and the request
+    waits, unanswered, until a rank is free (decided by the agents on 2026-11-02).
   - An answer that opens an issue or acts on an option the person chose goes through a claim
     first, as any item does, since two ranks acting would act twice (Adam, 2026-10-28). A plain
     reply stays unclaimed.

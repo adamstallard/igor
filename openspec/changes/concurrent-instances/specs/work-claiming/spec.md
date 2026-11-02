@@ -591,7 +591,8 @@ the message's order SHALL keep the read marker before that message until it is a
 - **AND** at a later cycle rank 2, now first in the message's order, reads the message again and
   answers it
 - **AND** a message that already has an answer, an issue linking it or a reply to it in the chat
-  from the role's bot account, is answered by no rank
+  from the role's bot account other than one giving only the seats' reset time, is answered by
+  no rank
 
 ## ADDED Requirements
 
@@ -600,9 +601,8 @@ the message's order SHALL keep the read marker before that message until it is a
 Where several processes run a role, only the first available rank in a chat message's order,
 computed from its id as *Contention is resolved before a claim, not after it* says, SHALL make it an
 issue, each rank judging availability from its own heartbeat read. With none available, the message
-SHALL wait for a later cycle, and its first rank not gone SHALL answer it in chat with the time the
-role's seats next reset, as a mention with no rank available is answered. Every rank reads the
-channel.
+SHALL wait, and its first rank not gone SHALL reply in chat with the time the role's seats next
+reset unless such a reply is there. That reply is not an answer. Every rank reads the channel.
 
 #### Scenario: One rank creates the issue
 
@@ -629,6 +629,8 @@ channel.
 - **WHEN** a chat message asks for work and no rank of the role is available
 - **THEN** the rank first in the message's order answers in the chat with the time the role's
   seats next reset, or, where that rank is gone, the next rank in the order that is not gone does
+- **AND** the message is still unanswered, since that reply is not an answer
+- **AND** at later cycles while no rank is available, no rank replies again
 - **AND** the message becomes an issue at a later cycle, once a rank is available
 
 #### Scenario: A stale heartbeat read can open two issues

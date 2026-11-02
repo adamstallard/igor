@@ -172,12 +172,12 @@ candidate it will attempt.
 
 ### Requirement: A rank holds its mark before a mention another rank answers
 
-A rank that passes over a mention of the Igor, because another available rank is first in its
-order, SHALL keep its mark, where its next search starts, before the mention until it has an
-answer: a reply from the role's bot account, or, for an answer that acts, the claim it takes, once
-made. The order starts from the rank the mention's comment id hashes to, as *Contention is
-resolved before a claim, not after it* computes an item's. A rank SHALL NOT answer an answered
-mention.
+A rank that passes over a mention, because another available rank is first in its order,
+SHALL keep its mark before the mention until it has an answer: a reply from the role's bot
+account, unless the reply gives only the seats' reset time, or, for an answer that acts, the claim
+it takes, once made. The order starts from the rank the mention's comment id hashes to, as
+*Contention is resolved before a claim, not after it* computes an item's. A rank SHALL NOT answer
+an answered mention.
 
 #### Scenario: A mention another rank owns holds the mark back
 
@@ -198,6 +198,13 @@ mention.
 - **WHEN** rank 2 answers a mention by acting on it, and has made the claim that action takes but
   not finished the action
 - **THEN** the mention counts as answered, and rank 1's mark may pass it
+
+#### Scenario: The reset time does not answer a mention
+
+- **WHEN** no rank of the role is available, and the rank first in a mention's order has replied
+  with the time the role's seats next reset
+- **THEN** no rank counts that reply as the mention's answer, so the reply lets no mark pass the
+  mention that this requirement holds before it
 
 #### Scenario: A chat message is not a mention here
 

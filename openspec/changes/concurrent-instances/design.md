@@ -8,7 +8,7 @@ identity. Everything here follows from refusing to conflate the two.
 
 Adam decided 1 to 52 on 2026-10-13, 2026-10-17, 2026-10-18, 2026-10-19 and 2026-10-21, and
 rewrote some of them on 2026-10-24, each marked with that date, such as 22 and 49. On 2026-10-24 he also made 55 and 58 himself, and approved 53, 54, 56 and 57, which this change drew up for him; those he approved count as his too. He made 62 and 63 on 2026-10-28, 74 on 2026-11-01 and 75 on 2026-11-02. The agents coordinating this work decided 59 and 61 on 2026-10-24,
-64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 and 77 on 2026-11-02, under a rule Adam set, kept outside this
+64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 to 78 on 2026-11-02, under a rule Adam set, kept outside this
 repository, on which questions they may settle without him: one with a single option that fits
 the rest of the change, an answer already given, or a proof or cheap reversal behind it. These
 stand until he says otherwise. They also made 60 and withdrew it, as *Open Questions* records.
@@ -372,7 +372,8 @@ settle**
     appends the keepalive at every other firing, which is once per shortest poll interval the
     process has applied, since the timer fires every half of that interval (decision 77); an
     append that has not landed within half of that interval counts as failed, so the failure is
-    counted before the next append is due; and two failed appends in a row stop the probe's worker, append a
+    counted before the next append is due. #228's `probe-claim` permits this deadline: it sets a
+    deadline only on a probe row's append, and does not forbid one on any other append. Two failed appends in a row stop the probe's worker, append a
     void row naming its probe row, so that the stopped probe neither clears the condition nor
     holds the scope, and give the claim back out loud. After the last keepalive that
     landed, a live probe is stopped within two and a half of those intervals, at most 75 minutes at
@@ -454,7 +455,11 @@ sign that no rollback gives.
 70. **No marker passes an unanswered request another rank owns.** The Discord read marker is
     shared by role and channel, and each rank's discovery mark passed a mention another rank was
     first for, so if that rank was gone before answering, nothing read the message again. A
-    rank now leaves the marker, and its mark, before such a message until it has an answer: a reply to it from the role's bot account; for a chat message, an issue linking it; or, for a mention whose answer acts, the claim that answer takes (62). Since
+    rank now leaves the marker, and its mark, before such a message until it has an answer: a reply to it from the role's bot account; for a chat message, an issue linking it; or, for a mention whose answer acts, the claim that answer takes (62).
+    A reply giving only the time the role's seats next reset (decisions 67 and 73) is not an
+    answer, as #140's `directed-interaction` also rules: if it counted, every rank's mark or the
+    marker would pass a message that no rank had answered, and nothing would read it again.
+    That reply goes out once per message (decision 78). Since
     the held-back marker makes every rank read the message again at later cycles, a rank
     answers no message that already has an answer; otherwise the first rank, or a later one,
     would answer it again. This mirrors how a cycle already holds its mark back
@@ -565,6 +570,16 @@ sign that no rollback gives.
     count from its last heartbeat, so a later heartbeat moves both later together and keeps
     their order. So no new TLC configuration is needed. It is cheap to reverse.
 
+**Decided on 2026-11-02 by the agents coordinating this work, under Adam's rule**
+
+78. **The reset-time reply goes out once per message** (one good option, cheap to reverse).
+    A reply giving only the time the role's seats next reset is not an answer (decision 70), so
+    a message that waits for a rank is read again at every cycle. A rank therefore sends that
+    reply, for a mention under decision 67 or a chat message under decision 73, only where no
+    reset-time reply to the message is already there, and the message keeps waiting, unanswered,
+    until a rank is free. Posting it again every poll interval would be spam, and one reply
+    already tells the person why no answer has come.
+
 ### How the decisions were made
 
 Adam decided in two rounds on 2026-10-17: first the answers to two reviews' questions, then a
@@ -575,7 +590,7 @@ what round three left open, marked *round four*. His latest answers, given after
 list numbers them 29 to 38. His answers of 2026-10-21 are dated, and the list numbers them
 39 to 52. Decisions 45 to 48 the agent writing this change drew up from what other changes reported, and
 Adam confirmed them on 2026-10-21. On 2026-10-24 he rewrote some earlier decisions in place,
-which keep their numbers and carry that date, such as 22 and 49, and the list numbers that day's new ones 53 to 58. The agents made 59 and 61 on 2026-10-24, 64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 and 77 on 2026-11-02, under his rule, as the list's opening says.
+which keep their numbers and carry that date, such as 22 and 49, and the list numbers that day's new ones 53 to 58. The agents made 59 and 61 on 2026-10-24, 64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 to 78 on 2026-11-02, under his rule, as the list's opening says.
 
 Where this file says *decision n*, it means decision n in the list above. The numbered rules 1 to 25
 under *Each decision, and what breaks without it* are a separate list, the model's rules, each
@@ -1508,8 +1523,9 @@ every hand-over whenever `HandoverContest` is TRUE, as every configuration sets 
   at least every half maximum, so by then the process has read every live sibling's file.
 - **No marker passes an unanswered request another rank owns** (decision 70): a rank does not
   move the Discord read marker past a chat message, nor its discovery mark past a mention, that
-  another rank is first for, until the message has an answer: a reply from the role's bot account, for a chat message an
-  issue linking it, or, for a mention whose answer acts, the claim it takes. A later rank in the
+  another rank is first for, until the message has an answer. An answer is one of: a reply from
+  the role's bot account, unless it gives only the seats' reset time; for a chat message, an
+  issue linking it; or, for a mention whose answer acts, the claim it takes. A later rank in the
   order then finds itself first once the first rank is counted gone or unavailable, and answers.
   A cycle already holds its mark back the same way before an untaken item.
 - **Only the first available rank posts the one comment** (decision 71): the comment saying a
@@ -1721,9 +1737,6 @@ no `design.md` held a reason, it moved here.
     and 70, and #140 edits the same paragraph; and #140's `directed-interaction` spec says
     acting on a mention claims nothing, which decision 62 changes for an answer that acts. #140
     is to bring its spec in line.
-  - *With #228:* this change gives the keepalive append a deadline of half the shortest poll interval applied,
-    where #228's spec gives a deadline only to a probe row's append; #228 is to allow a
-    deadline on the keepalive append too.
     - **From the consistency read of 2026-11-01, made when spec-check, the repository's check of
   OpenSpec changes, was reinstalled.**
   - *Reported to other changes. The changes named need to act on these findings; this change needs nothing more for them:* #150
@@ -1764,13 +1777,6 @@ no `design.md` held a reason, it moved here.
     triaged only when it changes*. #216 copies *An Igor that cannot act as its App does not
     start*, which gained no scenario.
 - **Earlier findings the compaction did not resolve, for the author:**
-  - With no rank available, the rank first in a chat message's order answers it with the seats'
-    reset time (*A chat message becomes an issue at the first available rank in its order*), but
-    a reply from the role's bot account is an answer (*An issue created from chat points back to
-    the chat*), so every rank's read marker passes the message and no rank creates the issue,
-    against the scenario in which it becomes an issue at a later cycle. A mention answered with
-    the reset time meets the same, through `work-discovery`'s *A rank holds its mark before a
-    mention another rank answers*.
   - *Only the rank holding a claim gives it back* lets a process remove the role's label only
     where its own claim message holds the item, while *A retired rank does not hold its items
     forever* has a process remove the label from an item a gone rank's message held, and the
@@ -1841,6 +1847,36 @@ no `design.md` held a reason, it moved here.
     latest release by timestamp*, do not rule it out); there is no task to measure it.
   - In a fenced code block the one-space indent of a line beginning `Igor-` changes the quoted
     content, so *In Markdown the indent is invisible* is not always true.
+- **From the consistency read of 2026-11-02 after the reset-time exception to decision 70.**
+  - *For the author:* decision 70 holds the mark, or the read marker, back only for a rank that
+    leaves a message to another available rank. With no rank available, the rank that sends the
+    reset-time reply leaves the message to no one. Where every other rank is gone, no rule then
+    keeps that rank's mark or the marker before the message, so the scenarios saying the message
+    is answered, or becomes an issue, at a later cycle rest on a rule this change does not state.
+  - *For the author:* `work-discovery`'s *A rank holds its mark before a mention another rank
+    answers* counts as an answer any reply from the role's bot account that gives more than the
+    reset time. #140 counts only a reply whose text links to the mention, since GitHub comments
+    have no reply-to; the definition is #140's, and this change should cite it. The entry above
+    *From a later read on 2026-10-24*, saying #140's spec claims nothing for a mention that acts,
+    is stale: #140 now has *An answer that acts takes a claim first*.
+  - *For the author:* `work-discovery`'s rule that a conflicted state write is retried until it
+    lands names no exception for an append with a deadline: #228's probe-row append, and this
+    change's keepalive append. #228 asks this change to name it.
+  - *For the author:* `graceful-handoff`'s exception to *silence after a claim* covers only a
+    process that keeps silent while other processes run the role, while a lone process that stands down, and a process stopped as a
+    second writer, also keep their claims in silence.
+  - *For the author:* *A stop waits for a holder that has stood down or found a second process*
+    bounds the wait at 90 minutes from the holder's file's last change, but a sibling that
+    restarted counts from its own start, so the bound runs from the later of the two.
+  - *For the author:* `docs/architecture.md` says the Discord read marker only saves work and
+    moves to the newest message handled; decision 70 makes the marker hold back before an
+    unanswered message, and this change does not update that paragraph.
+  - *For the author:* `role-config` names five timings derived from the poll interval, but the
+    keepalive deadline and the verification window also follow it.
+  - *Reported to #140:* #140's copy of `work-triage`'s scenario *A gone rank's claim on the
+    Igor's artifact is not skipped* has the taker resume the gone rank's work, where this
+    change's taker catches the item up and runs no worker. #140 belongs in *Conflicts with other open
+    changes, recorded and not resolved*, above, beside #150, #106 and #216.
 
 ## Roads not taken
 
