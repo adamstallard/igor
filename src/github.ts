@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { gh, ghPaginated, GhError } from './gh.js'
+import { redact } from './redact.js'
 
 const run = promisify(execFile)
 
@@ -94,7 +95,7 @@ export async function createBranchWithFiles(
 
   const commit = (await gh(
     ['api', `repos/${repo}/git/commits`, '--method', 'POST', '--input', '-'],
-    JSON.stringify({ message, tree: tree.sha, parents: [baseSha] }),
+    JSON.stringify({ message: redact(message), tree: tree.sha, parents: [baseSha] }),
   )) as { sha: string }
 
   await gh(
@@ -123,7 +124,7 @@ export async function mergeIntoBranch(
   try {
     const merge = (await gh(
       ['api', `repos/${repo}/merges`, '--method', 'POST', '--input', '-'],
-      JSON.stringify({ base: branch, head, commit_message: `Merge ${head} into ${branch}` }),
+      JSON.stringify({ base: branch, head, commit_message: redact(`Merge ${head} into ${branch}`) }),
     )) as { sha: string } | null
     // 204 carries no body, and `gh` hands back an empty string that `gh()` reads as null.
     return merge === null ? { outcome: 'already-current' } : { outcome: 'merged', sha: merge.sha }
@@ -179,7 +180,7 @@ export async function commitOnBranch(
 
   const commit = (await gh(
     ['api', `repos/${repo}/git/commits`, '--method', 'POST', '--input', '-'],
-    JSON.stringify({ message, tree: tree.sha, parents: [...parents] }),
+    JSON.stringify({ message: redact(message), tree: tree.sha, parents: [...parents] }),
   )) as { sha: string }
 
   await gh(
@@ -204,7 +205,7 @@ export async function openPullRequest(
 ): Promise<OpenedPr> {
   const pr = (await gh(
     ['api', `repos/${repo}/pulls`, '--method', 'POST', '--input', '-'],
-    JSON.stringify({ title, head, base, body, draft }),
+    JSON.stringify({ title: redact(title), head, base, body: redact(body), draft }),
   )) as { number: number; html_url: string }
   return { number: pr.number, url: pr.html_url }
 }
