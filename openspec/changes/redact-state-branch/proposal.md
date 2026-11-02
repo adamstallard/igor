@@ -114,12 +114,22 @@
     rejected: registering every such user name bare, which redacts the owner; and exempting
     every one, which lets a token used as the user name through.
 
+15. **Signed text is redacted like any other text, before it is signed** (2026-11-01, settled
+    by the agents coordinating this work under a rule Adam set outside this repository: agents
+    settle a question where one option is clearly right or the choice is cheap to reverse. It
+    stands until he says otherwise). `signed-publishing` (#153) has the
+    Igor publish exactly the text the `prose` skill signed: a post with its footer, a commit
+    message with its `Prose:` trailer. So #153's signing steps are to pass that text through
+    `redact` before prose signs it; the signature then covers what is posted. The posting
+    functions' own redaction then finds nothing left to replace, unless the registry gained,
+    between signing and posting, a value the text quotes. That second redaction would then
+    change the signed text, so the post would fail to verify against its signature, and leak
+    nothing. *Rejected:* exempting signed text
+    from redaction, because it would let a secret through in exactly the posts the Igor signs.
+    Reported to #153, whose spec is #153's to change.
+
 **Still open:**
 
-- `signed-publishing` (#153) requires the code to publish exactly the text that the `prose` skill
-  verified.
-  Redacting in `report` or `openPullRequest` after that check changes a signed text that holds
-  a secret, and breaks its footer. Which change gives way is for Adam.
 - What an Igor posts to a chat surface (`ChatSurface.reply`, such as Discord) is neither a
   tracker nor a code host, so it is not redacted; no chat surface is built yet. A later tracker
   adapter must also call `redact` itself, since redaction sits in the GitHub functions.
@@ -140,23 +150,31 @@
 - The state branch lives in the lore destination, which can be public while the repository
   the worker works on is private. A secret read from the private repository, such as a `.env`
   value the worker quotes in its closing summary, is in no registry and has no token's shape,
-  so it reaches the public branch. Whether to accept that, or how to close it, is for Adam.
+  so it reaches the public branch. #220 (`visibility-guard`, an open pull request) closes this
+  gap once it merges: Igor then works no private repository while its lore destination is
+  public.
 - The in-force task-execution requirement on what a worker's environment holds says the
   network settings it forwards are not credentials ("None of those is a credential"), while
   this change registers a forwarded proxy URL's credentials. `seat-files` (#171) replaces that
-  requirement, so the sentence is #171's to change; reported to #171, not modified here.
+  requirement and has dropped the sentence (its decision 79), but issue #204, which sets the
+  order in which open changes archive, archives this change before #171. Between the two
+  archives, the specs in force say both; that is accepted, since nothing is built from the
+  specs in between, as `probe-claim` (#228) accepts the same window for its fixed timings.
 - A credential-named variable can hold a value that is no secret: `GITHUB_APP_PRIVATE_KEY_FILE`
   holds a path, which is then redacted from every record and post that names it, including the
   error saying which key file failed to read. `KEY` also matches inside a word such as
-  `MONKEY`. Nobody has measured which such variables a deployed Igor has.
+  `MONKEY`. Nobody has measured which such variables a deployed Igor has. Such a value, a
+  path or a common word rather than a random token, is likelier than a token to appear in an
+  item id, which decision 2 assumes none does. An item id holding it would have its
+  `deferred.json` key redacted, so its deferral would never match and the item would be worked
+  again each poll.
 
 - **Found by the consistency read of 2026-10-21's last round, for whoever next edits this
   change.** None blocks building the rule, and none is decided:
-  - Redacting a commit message after #153's `Prose:` trailer is bound to it breaks the trailer,
-    as the first item above says redacting a signed post breaks its footer.
   - #190 (`review-evidence`) edits a pull request body through a path the posting functions
     listed in decision 8 do not cover; #190 should call `redact` for it.
-  - Nothing redacts the Igor process's own log, where #173 writes failure text.
+  - Nothing redacts the Igor process's own log, except the failure text #173 redacts before
+    writing it there.
   - `docs/deployment.md` already sets `GITHUB_APP_PRIVATE_KEY_FILE` and a seat's `token_file`
     to paths, so an error naming either path is posted as `[redacted]`.
   - The unmeasured 82-character length of a fine-grained token (issue #218) is in decision 12
@@ -164,8 +182,25 @@
   - In this change's spec, these SHALLs have no scenario: the rules for where a token's shape
     starts and ends, the registry never being written, an issue's body, the transcript, and
     files sent as written. The order of the base62 alphabet is not stated.
-  - #216 (`lore-search`) restates this rule as matching token prefixes, and cites a requirement
-    title that does not exist; it should cite this change's requirement instead.
+  - #216 (`lore-search`) restates this rule in its proposal as also matching token prefixes;
+    it should cite this change's requirement instead.
+- **Found by the consistency read of 2026-11-01**, for whoever next edits this change; none is
+  decided:
+  - Once #179 makes `deferred.json` a log replayed on read, it is appended rather than
+    rewritten, so decision 2's "redacted whole" no longer describes it.
+  - This change's requirement title *Every write to the state branch, and every text the Igor
+    posts, is redacted* promises more than its body, which covers texts sent to a tracker or a code host; chat
+    posts and branch names stay unredacted. Other changes cite the title, so renaming it needs
+    them too.
+  - #175 and #171 restate the proxy user-name registration rule rather than cite this change.
+  - The scenario for `github:acme/highs_and_lows#7`, whose `highs_` holds `ghs_`, passes even
+    without the rule on where a token starts, since `ghs_and_lows#7` lacks a token's 36-character
+    body. These SHALLs have no scenario either: a token after `\n` or `%3A`, the rule on which
+    character may follow a token, the `user:@host` form, the percent-decoded and percent-encoded user-name
+    forms, and the whole private key.
+  - *Item id* is defined in no spec.
+  - `[redacted]` is Markdown link text, so in a posted body, a secret followed by `(…)` would
+    render as a link to whatever followed it.
 
 ## Why
 
