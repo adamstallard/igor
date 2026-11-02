@@ -14,7 +14,7 @@ import { resolveRole, RoleError } from '../src/role.js'
 import { SWEEP_AFTER_MS } from '../src/sweep.js'
 import { tempDir } from './tmp.js'
 
-/** Every time here is counted from this one, which is passed to everything that reads a clock. */
+/** The `now` every test passes; `ago` dates rows back from it, so no result depends on the date. */
 const NOW = Date.UTC(2030, 0, 1, 12)
 const MINUTE = 60_000
 const ago = (minutes: number): string => new Date(NOW - minutes * MINUTE).toISOString()
@@ -23,7 +23,10 @@ const settings = CONDITION_DEFAULTS
 const A = credentialFingerprint({ CLAUDE_CODE_OAUTH_TOKEN: 'token-a' })!
 const B = credentialFingerprint({ CLAUDE_CODE_OAUTH_TOKEN: 'token-b' })!
 
-/** A run row on seat `fleet` for role `web`, carrying `cures`. `refused` below adds a credential. */
+/**
+ * A run row for role `web` on seat `fleet`, `minutes` before `NOW`, meeting the keys in `cures`.
+ * `refused` below is a run the provider refused, carrying the refused credential's hash.
+ */
 const run = (minutes: number, cures: string[] = [], over: Partial<SpendRecord> = {}): SpendRecord => ({
   at: ago(minutes),
   role: 'web',
@@ -69,7 +72,8 @@ describe('a recurring condition stops its scope', () => {
   })
 
   it('counts several Igors meeting one key as one condition, counted once', () => {
-    // Five Igors append to one log, so their rows interleave and are counted together.
+    // Each row stands for a different Igor of role `web`. They share one log, so the condition
+    // is counted across all of them, not once per Igor.
     const rows = [1, 2, 3, 4, 5].map((n) => commands(50 - n, 'web'))
     const all = conditionsFrom(rows, settings, NOW)
     expect(all).toHaveLength(1)
@@ -122,7 +126,8 @@ describe('a condition carrying a discriminator counts per occurrence', () => {
   })
 
   it('holds nothing against a refusal no credential can be named for', () => {
-    // A seat whose login lives in a `~/.claude` the environment does not carry has no hash.
+    // Refusals with no `tokenFingerprint`, as a seat records when its login lives in a `~/.claude`
+    // the environment does not carry: with no credential to hash, they neither count nor clear.
     const rows = [1, 2, 3].map((n) => run(n, ['seat:fleet:credential']))
     expect(conditionOf(rows, 'seat:fleet:credential', settings, NOW, undefined)).toBeUndefined()
   })
@@ -349,8 +354,9 @@ describe('iteration 2: probes and the report', () => {
 
   it('ends a probe whose run started no worker, so the next item may probe', () => {
     const workerless = run(5, [], { workerless: true, item: 'github:o/r#9' })
-    // A row for another item, written after the probe row (its `at` is when it was written)
-    // though its run began earlier, says nothing about the probe.
+    // #8's row lands after the probe row (`at` is when a row is written), but its run began before
+    // the probe: while a probe runs, the scope takes no other item. Only the row for the probe's
+    // own item, #9, ends the probe, so the condition is still `probing` after #8's row.
     const earlier = run(5.5, [], { workerless: true, item: 'github:o/r#8' })
     const rows = [...opened, probe(6, 'role:web:commands', { item: 'github:o/r#9' }), earlier]
     expect(conditionOf(rows, 'role:web:commands', settings, NOW)?.state).toBe('probing')

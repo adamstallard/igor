@@ -28,11 +28,13 @@ export class GhError extends Error {
 /**
  * The HTTP status `gh` reports for a failing request. It is read from stderr only: stdout carries
  * the response body, which can contain any text, including something that looks like a status.
+ * A status missed here reads as no answer at all (`unanswered` in claiming.ts), which keeps the
+ * discovery watermark below an item the tracker in fact refused.
  *
- * `gh` prints one of two forms. Where the response body was JSON carrying a message, it prints
+ * `gh` prints one of two forms. Where the response body is JSON carrying a message, it prints
  * `gh: <message> (HTTP <code>)`, and the parenthesised `(HTTP <code>)` is distinctive enough to
- * match anywhere. Otherwise, such as for a proxy's HTML page or an empty JSON object, it prints a
- * bare `gh: HTTP <code>` line, which is matched only as a whole line so that `HTTP` and three
+ * match anywhere. Otherwise, as for a proxy's HTML page or an empty JSON object, it prints a bare
+ * `gh: HTTP <code>` line. That form is matched only as a whole line, so that `HTTP` and three
  * digits inside some other message are not read as a status.
  */
 function statusFrom(stderr: string): number | undefined {

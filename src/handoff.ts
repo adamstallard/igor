@@ -195,13 +195,14 @@ export function suggest(role: Role, candidate: Candidate, identity: string): str
 /**
  * What to say where no seat could be used and none of them ran out.
  *
- * `undefined` for a pool that really is spent, so the caller says the budget is used up. Every
- * other verdict names a different thing to go and look at, such as configuration for
- * `credential`, a reading nobody has taken for `no-figure`, or a replaced credential for
- * `rejected`. Saying "the budget is used up" about any of them is false, which was #49.
+ * `undefined` for a pool that really is spent, so the caller says the budget is used up. Saying
+ * that about any other verdict is false (#49): each names a different thing to go and look at,
+ * such as the token configuration for `credential`, a capacity nobody has observed or declared
+ * for `no-figure`, or a credential to replace for `rejected`.
  *
- * No hour is offered. None of these is capacity returning, so an hour here would be read as one,
- * including for `rejected`, whose seats do get one item on a clock: a probe, not a return.
+ * No reset time is offered, because none of these verdicts is capacity returning, and a time would
+ * be read as one. That includes `rejected`: its seats do get one item after a cooldown, but that
+ * item is a probe, a test of whether the provider still refuses the credential, not capacity back.
  */
 function unspendable(
   blocked: SeatVerdict | undefined,

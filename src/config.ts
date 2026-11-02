@@ -25,9 +25,14 @@ export interface Config {
   /** Seats and pools an Igor may spend from. Absent means budget is not being enforced. */
   budget: OrgBudget
   /**
-   * When a condition stops its scope, and how long before one item may probe it. One setting for
-   * every condition and every Igor, because a condition is shared: several Igors meeting one cure
-   * key are one condition, counted once, and two thresholds would stop it twice.
+   * How many occurrences stop a condition's scope, and how long it then waits before one item may
+   * probe it, trying the work again to see whether the condition still holds. One setting covers
+   * every Igor, because a condition is shared: several Igors meeting one cure key (the config key
+   * whose change would cure it) make one condition, counted once. Two Igors with two thresholds
+   * would each stop it at a different count.
+   *
+   * A refused GitHub App credential (`app:<identity>:credential`) ignores all three: it stops on
+   * its first occurrence, and `serve`'s token check clears it without a probe.
    */
   conditions: ConditionSettings
 }
@@ -42,8 +47,10 @@ const CONFIG_KEYS = ['destination', 'reviewers', 'experts', 'publicStore', 'budg
 const CONDITION_KEYS = ['threshold', 'cooldown_minutes', 'max_cooldown_minutes']
 
 /**
- * The `conditions` mapping, over the defaults. Every key it may name is a count or a duration;
- * any other is refused with the reason, since the likeliest other key is a grade.
+ * Reads the `conditions` mapping; each key it leaves out keeps its default. The three keys it may
+ * name are each a count or a duration. Any other key is refused with `COUNTED_NOT_GRADED`, the
+ * reason, rather than as merely unknown: the likeliest other key is an attempt to grade a
+ * condition, such as declaring one fatal.
  */
 function parseConditions(raw: unknown): ConditionSettings {
   if (raw === undefined) return CONDITION_DEFAULTS

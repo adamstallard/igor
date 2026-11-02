@@ -5,7 +5,10 @@ import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
-/** The state branch, in memory, so the watermark one cycle saves is the one the next reads. */
+/**
+ * The state branch, in memory, so the discovery watermark one cycle saves is the one the next
+ * reads. Appends go nowhere and the execution log reads as empty.
+ */
 const stored = vi.hoisted(() => new Map<string, unknown>())
 vi.mock('../src/state.js', () => ({
   readState: async (_repo: string, path: string) => stored.get(path),
@@ -21,8 +24,9 @@ const { serve } = await import('../src/serve.js')
 const { planCycle } = await import('../src/loop.js')
 
 /**
- * Counted back from when the suite runs. Discovery looks back a bounded window from now on its
- * first run, so a fixed date would fall outside it and the items would never be read.
+ * Counted back from when the suite runs. With no watermark saved, discovery reads only items
+ * updated within a bounded window before the real clock, so items dated from a fixed day would
+ * fall outside it and never be read.
  */
 const STARTED = Date.now()
 const ago = (minutes: number): string => new Date(STARTED - minutes * 60_000).toISOString()
@@ -69,7 +73,8 @@ describe('an item triaged to proceed and never taken', () => {
     const found = [issue(1, 30), issue(2, 20)]
     const open: Gate = { exhausted: () => false, seat: 'igor-1', reason: 'room' }
     const spent: Gate = { exhausted: () => true, reason: 'the budget ran out mid-cycle' }
-    // Open for triage and for the first item; the budget is gone by the second.
+    // The gate passes its first two asks, for triage and the first item, and reports the budget
+    // spent from then on, so #2 is triaged to proceed and never taken.
     let asked = 0
     const asks: string[][] = []
     const triage = async (cs: readonly Candidate[]) => {
@@ -89,7 +94,8 @@ describe('an item triaged to proceed and never taken', () => {
     expect(asks).toEqual([['1', '2']])
 
     await planCycle(deps(found), role, { identity: 'igor-bot', triage, budget: open })
-    // Only the untaken item: the mark still passes the item that was worked.
+    // Only #2, chosen and not taken, is triaged again: the saved mark is held below #2 and still
+    // passes #1, which was worked.
     expect(asks).toEqual([['1', '2'], ['2']])
   })
 })
@@ -109,7 +115,8 @@ describe('the mark a long cycle settles', () => {
       maxCycles: 1, sleep: async () => {}, loreFor: () => '', triage: proceed, triageModel: 'unused',
       gate: async () => open,
       worker: async () => {
-        // Another role's cycle, finishing while this one's worker runs.
+        // Another role's cycle saving its own mark while this cycle's worker runs. This cycle
+        // saves its mark after the work, onto the file as it is then.
         const now = stored.get('discovery.json') as { watermarks: Record<string, unknown> } | undefined
         stored.set('discovery.json', {
           watermarks: { ...(now?.watermarks ?? {}), 'other-role-source': { lastSeen: ago(1) } },
@@ -153,9 +160,10 @@ describe('a claim the tracker refuses outright', () => {
   })
 
   /**
-   * One serve cycle whose tracker claims through `claim`, which the tests use to refuse only #1,
-   * then a bare `planCycle` that claims nothing. Returns the items each triage call was asked about, so a second entry
-   * means the second cycle found something fresh to triage again.
+   * One serve cycle whose tracker claims through `claim`, which each test makes refuse only #1,
+   * then a bare `planCycle` that claims nothing. Returns the items each triage call was asked
+   * about: a second entry means the mark was held below an item and the second cycle triaged it
+   * again.
    */
   async function afterRefusal(claim: (c: Candidate) => Promise<boolean>): Promise<string[][]> {
     stored.clear()
@@ -175,8 +183,8 @@ describe('a claim the tracker refuses outright', () => {
   }
 
   it('lets the mark pass an item whose claim the tracker answered and did not record', async () => {
-    // The mark moved past #1, which a retry would only see refused again, so the second cycle
-    // finds nothing fresh and makes no triage call.
+    // The tracker answered #1's claim and refused it, and a retry would only be refused again, so
+    // the mark moves past #1. The second cycle finds nothing fresh and makes no triage call.
     const asks = await afterRefusal(async (c) => c.native !== '1')
     expect(asks).toEqual([['1', '2']])
   })

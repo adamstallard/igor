@@ -45,9 +45,11 @@ export interface ServeOptions extends CycleOptions {
    */
   credential?: () => Promise<true | string>
   /**
-   * Appends the row saying the next item is a condition's probe, before it is claimed, so no
-   * other Igor takes one too; and, with `void`, the row saying it ended with no run, so the
-   * next item may probe. Asked only where the gate says the item is a probe.
+   * Appends the row saying the next item is a condition's probe: the one item let through, once
+   * the condition's cooldown has passed, to find out whether it still holds. The row goes in
+   * before the claim, so no other Igor takes a probe too. With `void`, appends the row saying
+   * the probe ended with no run, so the next item may probe. Called only when the gate lists
+   * `probes`.
    */
   probe?: (keys: readonly string[], outcome: 'taken' | 'void', item: string) => Promise<void>
 }
@@ -147,10 +149,11 @@ export async function serve(
       // `options.gate` reaches `planCycle` through the spread. `planCycle` calls it only where
       // there is something to triage, so triage spends the seat a worker would have chosen.
       //
-      // `planCycle` leaves the discovery watermark unsaved; `report.settle` at the end of this
-      // block saves it once the items are worked, kept earlier than any item the cycle chose to
-      // claim and never took: not attempted at all, or attempted with no answer from the tracker.
-      // An item whose claim the tracker answered and refused counts as taken (`passesMark`).
+      // `planCycle` leaves the discovery watermark unsaved. `report.settle` at the end of this
+      // block saves it once the items are worked, kept earlier than every item the cycle chose
+      // to claim and never took: one never attempted, or one whose claim the tracker did not
+      // answer. An item whose claim the tracker answered with a refusal counts as taken
+      // (`passesMark`), because every retry would meet the same refusal.
       const report = await planCycle(deps, role, { ...options, identity, markAfterWork: true })
       const taken = new Set<string>()
       summary.costUsd += report.triageCostUsd
@@ -220,11 +223,14 @@ export async function serve(
           break
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
-        // Read before the probe row goes in. Reading the lore throws on a malformed entry, and a
-        // throw after the probe row would leave a probe that never runs, holding the role for hours.
+        // Read the lore before the probe row goes in. Reading the lore throws on a malformed
+        // entry, and a throw after the probe row would leave a probe that never runs, holding
+        // what the condition stops until the row ages out after `SWEEP_AFTER_MS`, the longest a
+        // run can hold a tree (about seven hours).
         const lore = await options.loreFor(candidate)
-        // A condition whose cooldown has passed lets exactly one item through: this one. The row
-        // goes in before the claim, so the next gate, here or in another Igor, sees a probe running.
+        // A condition whose cooldown has passed lets exactly one item through, this one, to find
+        // out whether the condition still holds. The probe row goes in before the claim, so the
+        // next gate, here or in another Igor, sees a probe running and lets no second item through.
         const probes = gate.probes ?? []
         if (probes.length > 0) await options.probe?.(probes, 'taken', candidate.id)
         const run = await runItem(deps, candidate, role, identity, {
@@ -240,8 +246,9 @@ export async function serve(
         })
         summary.worked += 1
         if (passesMark(run)) taken.add(candidate.id)
-        // A probe that produced no outcome observed nothing, so the condition stays open and the
-        // next item may probe instead.
+        // A probe whose run recorded no execution observed nothing, so it neither clears the
+        // condition nor counts toward it. The `void` row ends the probe: the condition stays
+        // open, and the next item may probe instead.
         if (probes.length > 0 && run.execution === undefined) await options.probe?.(probes, 'void', candidate.id)
         // A run whose cost never arrived adds nothing here, so this total is a floor. The
         // ledger records the absence rather than a zero.
@@ -252,8 +259,9 @@ export async function serve(
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
         if (abandon(run)) break
       }
-      // A directed item is found by its label each cycle, whatever the watermark says, so it never
-      // needs the mark held back for it.
+      // A directed item, one a person handed to this Igor, is found each cycle by its holder field
+      // (the `igor:<role>` label on GitHub), whatever the watermark says, so it never needs the
+      // mark held back for it.
       const untaken = report.toClaim.filter((c) => c.directed !== true && !taken.has(c.candidate.id))
       await report.settle?.(untaken.map((c) => c.candidate.id))
     } catch (error) {

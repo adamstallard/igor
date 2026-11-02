@@ -7,7 +7,10 @@ import type { SeatUsage, SpendRecord } from '../src/budget.js'
 import { CONDITION_DEFAULTS } from '../src/conditions.js'
 import { tempDir } from './tmp.js'
 
-/** The execution log, in memory: appends land here, stamped as `appendRecord` stamps them. */
+/**
+ * The execution log, in memory: appends to `executions.ndjson` land in `log.rows`, stamped with
+ * `at` as `appendRecord` stamps them, and `readLog` serves them back to the gate.
+ */
 const log = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[], delayMs: 0, writable: true }))
 vi.mock('../src/state.js', async (actual) => ({
   ...(await actual<typeof import('../src/state.js')>()),
@@ -21,7 +24,10 @@ vi.mock('../src/state.js', async (actual) => ({
     path === 'executions.ndjson' ? log.rows.map((r) => JSON.stringify(r)).join('\n') : '',
 }))
 
-/** What each seat resolves to this time, without running `claude`. */
+/**
+ * Every seat reads as almost unused and resolves to the credential hash in `seats.fingerprint`,
+ * without running `claude`. Setting another hash stands for the seat's token being replaced.
+ */
 const seats = vi.hoisted(() => ({ fingerprint: undefined as string | undefined }))
 vi.mock('../src/budget.js', async (actual) => ({
   ...(await actual<typeof import('../src/budget.js')>()),
@@ -49,7 +55,10 @@ const role = { name: 'web', seat: 'pool:eng' } as unknown as Role
 const quiet = { say: () => {}, warn: () => {} }
 const wiring = () => wire(config, role, 'o/state', quiet, { root: tempDir('igor-condition-wiring-') })
 
-/** A row as old as `minutes`, stamped from the real clock, since the gate reads the real clock. */
+/**
+ * A row `minutes` old by the real clock. The gate takes its `now` from the real clock, so rows
+ * dated from a fixed time would put every cooldown far in the past or the future.
+ */
 const row = (minutes: number, over: Partial<SpendRecord>): Record<string, unknown> => ({
   at: new Date(Date.now() - minutes * 60_000).toISOString(),
   ...over,
