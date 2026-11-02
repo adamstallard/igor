@@ -38,13 +38,13 @@ the role's query enters triage only by a mention from someone with authority.
 
 ### Requirement: An answered mention is not answered again, and a stop is read as a stop
 
-Every run a mention starts SHALL end with a reply from the role's bot account linking the
-mention, which makes it answered; a reply giving only when the role's seats reset does not. The Igor SHALL
-NOT answer an answered mention, or one it holds a claim to act on. Where an issue links the
-mention and no reply does, the Igor SHALL post that reply.
+A run a mention starts SHALL end with the role's bot account replying, linking the mention; that
+reply answers it. A reply sent when no process is available, giving only the seats' reset time,
+does not, and SHALL NOT be posted where one exists. The Igor SHALL NOT answer an answered
+mention, or one it holds a claim to act on. If an issue links the mention and no reply does, the
+Igor SHALL reply.
 
-A stop or go-ahead under `work-claiming` SHALL be read as that, never as a request; a stop holds
-back answers as it holds back work.
+A `work-claiming` stop or go-ahead SHALL NOT be read as a request. A stop holds back answers too.
 
 #### Scenario: A reply makes the mention answered
 
@@ -65,8 +65,14 @@ back answers as it holds back work.
 
 #### Scenario: The reset time is not an answer
 
-- **WHEN** no process of the role could answer, and the role replied with when its seats reset
+- **WHEN** no process of the role was available, and the role replied with when its seats reset
 - **THEN** the mention is still unanswered, and is answered once a process can
+
+#### Scenario: The reset time is given once
+
+- **WHEN** the role already replied to a mention with when its seats reset, and on a later poll
+  still no process of the role is available
+- **THEN** no process of the role posts the reset time again, and the mention keeps waiting
 
 #### Scenario: Filed, but the reply was never posted
 

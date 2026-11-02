@@ -16,7 +16,10 @@
 - [ ] 1.2e Search only the repositories the role's `sources` name, and read a mention in an
       item's body with the item's author as requester
 - [ ] 1.2f Hold back answers on a stopped item until it is eligible again, without losing the
-      mention; a reply giving only the seats' reset time does not answer a mention
+      mention
+- [ ] 1.2g When no process of the role is available for a mention, reply with when the role's seats
+      (its model subscriptions) reset, only if that mention has no such reply yet; that reply
+      does not answer the mention
 - [ ] 1.3 Requests are their own source and are considered first
 - [ ] 1.4 Tests: mentioned outside the query reaches triage; a stranger's mention outside it
       does not; a request is screened like any other candidate; an answered mention is not

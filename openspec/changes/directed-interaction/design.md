@@ -225,10 +225,16 @@ or a rule already in force:
   Two of a role's processes can still each answer a plain mention before either sees the
   other's reply, which #179's decision 37 accepts.
 - **The reply giving the seats' reset time is not an answer.** #179's decision 67 has a role
-  with no available process reply with when its seats reset. If that reply counted, the mention
-  would never get its real answer. #179's decision 70 counts any bot reply as an answer when it
-  decides whether a process may move its watermark past a mention, so #179 needs the same
-  exception, that a reset-time reply is not an answer; this is reported to #179, not edited there.
+  with no available process reply with when its seats reset, and #179 owns sending it, with
+  "available" as #179 defines it; this change only limits it. If that reply counted, the mention
+  would never get its real answer. A rank posts it only if no reset-time reply to that mention
+  is there yet; otherwise every poll would post it again. Two ranks reading a stale heartbeat
+  can still each post one, which #179's decision 37 accepts for any duplicate reply. After the
+  reply the mention keeps waiting, and the mentions source holds its watermark before the
+  mention, as for a stop, so a later poll reads it again. The same rule belongs in #179, as an
+  agents' decision beside its decisions 67 and 70: decision 70 lets a rank move its watermark
+  past a mention once a reply from the role's bot account exists, so without the rule it would
+  count the reset-time reply and lose the mention.
 - **A stop holds back answers as well as work.** A stop is the brake anyone can pull, including
   on a runaway exchange, so a mention on a stopped item is answered only once the item is
   eligible again. Meanwhile the mentions source holds its watermark back before the mention, so
@@ -358,8 +364,8 @@ found.
 modifies *Budget is the only limit* and the requirement *Conversation is bounded by budget, not
 by a count of exchanges* itself, so this change leaves both as they are.
 
-**A mention held back for days re-enters triage every cycle.** A stop's cooldown or a spent share
-holds the mentions source's watermark at a point before the mention. `work-discovery`'s
+**A mention held back for days re-enters triage every cycle.** A stop's cooldown, a spent share,
+or a role with no process available holds the mentions source's watermark at a point before the mention. `work-discovery`'s
 *Watermarks reduce reconsideration without governing it* rejects holding a watermark back to
 reconsider one item: every item updated after the mark is triaged again each cycle while it is
 held. Until this is decided, the spec holds the watermark back. *Recommend:* record a mention left
