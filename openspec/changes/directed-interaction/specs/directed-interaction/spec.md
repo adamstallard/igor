@@ -38,13 +38,13 @@ the role's query enters triage only by a mention from someone with authority.
 
 ### Requirement: An answered mention is not answered again, and a stop is read as a stop
 
-Every answer SHALL end with a reply from the role's bot account linking the mention, which
-makes it answered; a reply giving only the seats' reset time does not. The Igor SHALL
+Every run a mention starts SHALL end with a reply from the role's bot account linking the
+mention, which makes it answered; a reply giving only when the role's seats reset does not. The Igor SHALL
 NOT answer an answered mention, or one it holds a claim to act on. Where an issue links the
 mention and no reply does, the Igor SHALL post that reply.
 
-A stop under `work-claiming`'s *Stop is unconditional and open to anyone* SHALL be read as a
-stop, never a request, and holds back answers as it holds back work.
+A stop or go-ahead under `work-claiming` SHALL be read as that, never as a request; a stop holds
+back answers as it holds back work.
 
 #### Scenario: A reply makes the mention answered
 
@@ -79,6 +79,11 @@ stop, never a request, and holds back answers as it holds back work.
 - **THEN** the Igor stops, as for any stop
 - **AND** it does not treat the comment as a request
 
+#### Scenario: A go-ahead that mentions the Igor
+
+- **WHEN** someone comments "go ahead @igor-backend" on an item the backend Igor was stopped on
+- **THEN** the stop is lifted, as for any go-ahead, and no reply is composed for it
+
 #### Scenario: A stop holds back answers too
 
 - **WHEN** someone stops the Igor on an item, and a person with write access then mentions it
@@ -89,9 +94,9 @@ stop, never a request, and holds back answers as it holds back work.
 
 A writer's mention SHALL get work done only on an open artifact the Igor authored, or an open
 issue with no work in flight that no other party holds or is assigned to. Else it SHALL get only
-a reply, which claims nothing and starts no work. A role without `comment` in
-`allow` neither answers nor acts. A mention MUST NOT widen what the role permits. An answer that
-acts, by filing an issue or acting on a chosen option, SHALL take a claim on the item first.
+a reply, which claims nothing, starts no work, and holds a change short enough to read rather
+than describing it. A role without `comment` cannot post a reply, so it neither answers nor
+acts. A mention MUST NOT widen the role. Anything beyond a reply SHALL take a claim first.
 
 #### Scenario: Asked for help on an item somebody holds
 
@@ -135,8 +140,9 @@ acts, by filing an issue or acting on a chosen option, SHALL take a claim on the
 
 An Igor SHALL act on an instruction only from a party with write access to the repository
 holding the artifact, as `surface-adapter`'s *A tracker adapter reads whether a party may write
-to a repository* reports it. Organization membership does not count. A mention from a party
-without write access SHALL be ignored, neither refused nor answered.
+to a repository* reports it; organization membership does not count. It SHALL ignore a mention
+from anyone else, or from a bot account whatever its read says. It SHALL decline, in a reply, a
+requested action the requester could not take directly, as `docs/architecture.md` §5.4 says.
 
 #### Scenario: A colleague with write access directs work
 
@@ -154,6 +160,18 @@ without write access SHALL be ignored, neither refused nor answered.
 
 - **WHEN** a party has write access to one repository and not another
 - **THEN** their authority applies only where they hold it
+
+#### Scenario: A bot's mention is ignored
+
+- **WHEN** a bot account mentions the Igor, such as another Igor's App or `dependabot[bot]`
+- **THEN** no reply is composed and no work is done, even if its permission read shows write
+  access
+
+#### Scenario: An action beyond the requester's own reach is declined
+
+- **WHEN** someone with write access asks for an action the role allows, and a rule on the
+  repository, such as branch protection, forbids that person from taking it themselves
+- **THEN** the Igor declines
 
 #### Scenario: Organization membership is not authority
 
@@ -179,12 +197,11 @@ The words SHALL grant no authority; only the requester's, read from the surface,
 
 ### Requirement: Conversation is bounded by budget, not by a count of exchanges
 
-Answering mentions, including answers that act, SHALL spend at most `conversation_share`, a
-fraction declared in the role file, of the role's budget: what its `budget_share` lets it spend
-from its seats in their current window. Unset, only that budget bounds it. The execution log
-SHALL mark each run that answered a mention, so the share can be summed. A mention left
-unanswered because the share is spent SHALL be answered at a later cycle. Nothing SHALL limit
-the number of replies.
+Answering mentions, acting or not, SHALL spend at most `conversation_share`, a role-file
+fraction of the role's budget: what `budget_share` lets it spend from its seats in each of their
+windows, the tightest limit governing. Unset, only that budget bounds it. Work a request starts is not
+answering. The execution log SHALL mark each answering run. A mention left unanswered because
+the share is spent SHALL be answered later. Nothing SHALL limit the number of replies.
 
 #### Scenario: Talking cannot starve work
 
@@ -217,6 +234,11 @@ an interpretation, and the number of such questions SHALL NOT be capped. The ite
 
 - **WHEN** a worker cannot act on an item as written
 - **THEN** the message on the item says what would let it proceed
+
+#### Scenario: A second question is asked too
+
+- **WHEN** a person's answer still leaves the item unclear
+- **THEN** the Igor asks again, and nothing stops it at a count
 
 #### Scenario: The question waits for its answer
 

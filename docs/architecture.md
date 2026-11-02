@@ -1046,8 +1046,8 @@ what it will *do* in response. The action-space cap (§6.1) already bounds the d
 successful prompt injection — it cannot merge, send, or delete — but reversible is not
 harmless: a draft PR that exfiltrates a secret is closable, and the secret is still burned.
 
-**Authority to instruct never exceeds authority over the artifact.** If someone cannot merge
-to a repository, their instruction to an Igor working in it carries no weight. Injection by an
+**Authority to instruct never exceeds authority over the artifact.** If someone has no write
+access to a repository, their instruction to an Igor working in it carries no weight. Injection by an
 outsider therefore gains them nothing they could not already do directly. In practice
 "authorized" means write access to the repository holding the artifact, read from the surface's
 own permission record.
@@ -1067,8 +1067,9 @@ this dependency" has to be something it **reasons about**, never something it **
 
 **Instructions do still reach an Igor** — that is what §5.4 is for. The difference is where
 authority comes from: **the person, verified against their permissions on the artifact, not the
-text being present in something the Igor happened to read.** Someone who can merge to the
-repository can direct it. An issue body cannot, however imperatively phrased.
+text being present in something the Igor happened to read.** Someone with write access to the
+repository can direct it, within what they could do themselves. An issue body cannot, however
+imperatively phrased.
 
 **Identity comes from platform metadata, never from content.** The authenticated author id the
 surface reports — GitHub login or node id, Linear user id, Slack user id. Never a name parsed
@@ -1084,10 +1085,13 @@ manipulating one is that it does something the manipulator could have done direc
 the confused-deputy problem and the standard fix — the deputy acts with the requester's
 authority, never its own.
 
-Three consequences: **fail closed** when the permission check cannot be made, rather than
-assuming goodwill. **Igor-to-Igor is bounded identically** — another Igor is an entity with its
-own permissions and gets no special trust. And **stop stays exempt**, because contracting what
-an Igor does needs no authority while expanding it always does.
+Two consequences: **fail closed** when the permission check cannot be made, rather than
+assuming goodwill. And **stop stays exempt**, because contracting what an Igor does needs no
+authority while expanding it always does.
+
+**No bot directs an Igor.** A bot account speaks for an App, not for a person whose reach could
+bound the request, so a mention from one, another Igor's included, gets no answer and no work,
+whatever its permission lookup reports.
 
 That asymmetry has a pleasing effect on the classic injection: *"ignore your previous
 instructions and do X"* splits cleanly. The first clause contracts, so it succeeds and costs

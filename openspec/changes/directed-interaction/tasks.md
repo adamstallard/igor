@@ -11,7 +11,8 @@
 - [ ] 1.2c Every answer ends with a reply from the role's bot account linking the mention. Skip a
       mention that has such a reply or a held claim for its answer; where only an issue links it,
       post the reply with the issue's link
-- [ ] 1.2d Read a comment that is a stop under `work-claiming` as a stop, never as a request
+- [ ] 1.2d Read a comment that is a stop or a go-ahead under `work-claiming` as that, never as a
+      request
 - [ ] 1.2e Search only the repositories the role's `sources` name, and read a mention in an
       item's body with the item's author as requester
 - [ ] 1.2f Hold back answers on a stopped item until it is eligible again, without losing the
@@ -37,9 +38,20 @@
       test account a custom role on a repository and read the collaborator permission endpoint.
       If it does not, *Authority is `permissions.push`* in `design.md` is wrong; record what the
       endpoint returned there and stop before building 2.1
-- [ ] 2.7 Measure whether an Igor App's bot account, installed with Contents write, reads
-      `push: false` on the collaborator permission endpoint. If it reads true, refuse mentions
-      from `[bot]` accounts and record the result in `design.md`
+- [ ] 2.7 Ignore a mention from a bot account (on GitHub, a login ending in `[bot]`), whatever
+      its permission read says
+- [ ] 2.8 Before a requested action the requester's write access does not settle, read whether
+      the requester could take it directly, and decline if not. No action a mention can ask for
+      today is such a case; build the seam and test it with a fake rule
+- [ ] 2.9 Measure, for information, how an Igor App's bot account installed with Contents write
+      reads on the collaborator permission endpoint, and record it in `design.md`; 2.7 does not
+      depend on it
+- [ ] 2.10 Tests: a bot's mention is ignored even with `push: true`; an action a rule forbids
+      the requester is declined
+- [ ] 2.11 Establish whether the GitHub adapter reports an Igor's own open pull request, returned
+      by the mentions source, as an item with work in flight. The in-flight exception lets a
+      writer's mention through on that pull request only if it reads as in flight; otherwise
+      the exception is not needed there. Record it in `design.md`
 
 ## 3. What a mention may get
 
@@ -104,6 +116,7 @@
 - [ ] 8.6 A reply naming a question or option that was not recorded has no effect — including one
       edited into the description
 - [ ] 8.7 A reply mentioning a different Igor gets that Igor's answer only
+- [ ] 8.7a Measure against live GitHub that a copied `@` written as `&#64;` notifies nobody
 - [ ] 8.8 Tests for each, including an edited-in question, a reply from someone without write
       access, a second request for the same issue, a copied `@`, and a filed issue that a
       role's query finds

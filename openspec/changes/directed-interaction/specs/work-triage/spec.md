@@ -10,8 +10,7 @@ Requests SHALL be their own source, which Igor places ahead of every discovery s
 
 #### Scenario: A request is screened like anything else
 
-- **WHEN** a candidate requested for work is closed, has work in flight, or falls outside the
-  role's lane
+- **WHEN** a candidate requested for work falls outside the role's lane
 - **THEN** it is skipped exactly as a discovered candidate would be
 
 #### Scenario: Requests are considered first
@@ -108,8 +107,9 @@ be configurable.
 
 - **WHEN** an item's in-flight artifact was produced by this Igor, and the role's label holds the
   item with a claim message of a rank that is gone
-- **THEN** it is not skipped, and the process that takes the claim over resumes the gone rank's
-  unfinished work on it
+- **THEN** it is not skipped, and the process that takes the claim over catches the item up
+- **AND** catching up is `work-claiming`'s: the process carries on the gone rank's claim and
+  brings the Igor's artifact up to date
 
 #### Scenario: An approved specification of one's own is a candidate
 

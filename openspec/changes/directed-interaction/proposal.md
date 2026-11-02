@@ -19,8 +19,8 @@ to reply to.
 - **Answering is liberal; acting is strict.** To anyone with write access, it answers about its own work — what it
   claimed, why, current status, what it intends. Acting on what it is told
   requires authority.
-- **Authority to instruct never exceeds authority over the artifact.** Someone who cannot
-  merge to a repository carries no weight instructing an Igor working in it. Injection by an
+- **Authority to instruct never exceeds authority over the artifact.** Someone without
+  write access to a repository carries no weight instructing an Igor working in it. Injection by an
   outsider therefore gains them nothing they could not already do directly, which is a
   stronger guarantee than trying to detect manipulation.
 
@@ -129,9 +129,10 @@ to reply to.
   collaborator, and blocking an account, which is nuclear — and an Igor's App can write to the
   repository, so locking a conversation does not restrain it either. **What bounds a loop on a
   surface with no usable moderation is open.**
-- **Igors do not question each other through mentions** (decided 2026-10-04). An App's bot
-  account has no write access, so its mention gets no reply, and allowing a reply but not an
-  action would need an identity test this change avoids.
+- **Igors do not question each other through mentions** (decided 2026-10-04). Every Igor posts
+  as its GitHub App's bot account, and a mention from any bot account gets no answer and no
+  work, whatever GitHub's permission lookup reports for it. So neither another Igor nor any
+  other bot directs an Igor.
 - **A requested item records who asked and what they said.** The decision log already carries
   the item, the stage, the outcome and triage's reason, and the execution record adds the seat,
   the cost, what changed and what was refused. For a discovered item that is complete, because

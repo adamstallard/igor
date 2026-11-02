@@ -162,15 +162,35 @@ wherever this change says an Igor claims or does not claim an item, the claim is
 
 **Two Apps' bots read as having no authority, measured.** On 2026-10-04 the collaborator-permission endpoint on
 this repository returned `permission: none` and `push: false` for two installed Apps' bot
-accounts, `dependabot[bot]` and `github-actions[bot]`. So under *Authority is
-`permissions.push`*, a comment from an Igor never instructs another: it cannot have an issue
-filed, and it cannot answer an Igor's question. That agrees with #156's rule that an Igor's
-review never counts, and needs no identity test of its own.
+accounts, `dependabot[bot]` and `github-actions[bot]`. `surface-adapter`'s *An Igor that cannot
+act as its App does not start*, in its rule that an Igor reads its own access from its
+installation, already says a collaborator record reports an App's bot account as having no write
+access. Task 2.9 confirms it for an Igor App, for information only: the bot rule below, *A bot
+account's mention gets no answer and no work*, does not depend on it.
 
-**One Igor questioning another through a mention stays ruled out (decided 2026-10-04).** An App's
-bot reads as having no write access (`permissions.push` false, measured above), so a mention from
-an Igor gets no reply. Revisit only if someone needs it. An Igor's word acting on another Igor is what #156 rules out for reviews, and
-allowing a reply but not an action would need the identity test this change avoided.
+**One Igor questioning another through a mention stays ruled out (decided 2026-10-04).** An
+Igor's word acting on another Igor is what #156 rules out for reviews. Revisit only if someone
+needs it.
+
+**A bot account's mention gets no answer and no work (agents, 2026-11-02, under Adam's rule for
+what agents may settle).**
+Whatever its permission read says, a mention from a bot account, on GitHub a login ending in
+`[bot]`, is ignored. That enforces the decision above without relying on how an Igor App's bot
+reads, and no other bot, such as Dependabot, should direct an Igor either. It also means one
+Igor's mention cannot direct another, as #156 rules out for reviews.
+
+**An Igor declines what the requester could not do (agents, 2026-11-02, under Adam's rule for
+what agents may settle).**
+`docs/architecture.md` §5.4 promises that an Igor can never be used to exceed the requester's
+own reach: effective authority is what both the role and the person may do. Write access,
+`permissions.push`, decides whether a person may direct work at all. Some actions
+write access does not settle, because a repository rule such as branch protection could forbid
+the requester. Before such an action, the Igor reads whether the requester could take it
+themselves, and declines in a reply if not. Today no action a mention can ask for is such a
+case. A mention gets work only on the Igor's own pull request, which `task-execution` forbids
+the Igor to merge, or on an issue, and on those the Igor does only what a writer could. The
+rule stands for actions a later change might let a mention ask for, such as merging another
+party's pull request.
 
 **No per-thread exchange cap (decided 2026-10-06 by Adam).** Conversation is bounded by budget,
 not by a count of exchanges, and a fourth question is answered (task 5.3). A count bounds a proxy
@@ -300,15 +320,14 @@ surface in use it has no unit. GitHub issue comments are a flat list with no thr
 reply-to and no grouping; review comments have threads, but the place an Igor gets asked things
 is the issue.
 
-**Refusing bot accounts by an identity test.** Not needed. An App can write to the repository
-through its installation, but the collaborator-permission endpoint reports its bot account as
-having no write access, so *Authority is `permissions.push`* already gives an Igor's mention no reply. A test of
-its own would be a second mechanism for the same outcome.
+**Relying on the permission read alone to exclude bots.** The collaborator record reports an
+App's bot account as having no write access, but that record is not what the App can do: an App
+writes through its installation. Excluding bot accounts by name does not depend on the read at
+all.
 
 **Letting Igors question each other through mentions.** A frontend Igor asking a backend Igor
 what an endpoint returns would beat the human relay it replaces. It is ruled out by the decision
-of 2026-10-04 above: allowing a reply but not an action would need the identity test this change
-avoids.
+of 2026-10-04 above.
 
 **Declining a stranger politely.** A decline is still a reply, and a reply anybody can trigger
 is a reply anybody can trigger repeatedly. Silence grants nothing and costs nothing, and the
@@ -339,17 +358,9 @@ found.
 modifies *Budget is the only limit* and the requirement *Conversation is bounded by budget, not
 by a count of exchanges* itself, so this change leaves both as they are.
 
-**Is write access the right ceiling for directing work?** `docs/architecture.md` §5.4 says an
-Igor can never be used to exceed the requester's own reach, and that effective authority is the
-intersection of the role's and the person's. This change tests `permissions.push`, but push is
-not merge: branch protection can stop a writer merging, while a role that allows `merge` would
-merge for them. *Recommend:* keep `push` as the test, and decline a requested action the
-requester could not do directly, since the intersection is what §5.4 promises. Knowing that
-needs a second read before such an action, such as of the base branch's protection before a
-merge.
-
-**Does an Igor App's bot account read as having no write access?** The measurement behind *Two
-Apps' bots read as having no authority, measured* used two GitHub-owned Apps, not an Igor App holding Contents
-write. If an Igor's bot reads `push: true`, one Igor's mention would direct another. *Recommend:*
-measure it (task 2.7) before building the permission read; if it reads true, refuse any mention
-from an account whose login ends in `[bot]`.
+**A mention held back for days re-enters triage every cycle.** A stop's cooldown or a spent share
+holds the mentions source's watermark at a point before the mention. `work-discovery`'s
+*Watermarks reduce reconsideration without governing it* rejects holding a watermark back to
+reconsider one item: every item updated after the mark is triaged again each cycle while it is
+held. Until this is decided, the spec holds the watermark back. *Recommend:* record a mention left
+unanswered, as the deferral record does for a handed-back item, and let the watermark move on.
