@@ -24,7 +24,7 @@ import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
 import { catchUpItem, honourIdleStop, passesMark, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
 import { waitingNotice } from './claiming.js'
-import { renderProgress } from './execute.js'
+import { renderProgress, workerEnv } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
@@ -34,7 +34,7 @@ import { noCapacity } from './handoff.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
 import {
-  BudgetError, budgetGate, loadLog, percent, readAllSeats, renderBudget, renderCredentials, runsOf,
+  BudgetError, budgetGate, describeWorkers, loadLog, percent, readAllSeats, renderBudget, renderCredentials, runsOf,
 } from './budget.js'
 import { conditionsFrom, describeCondition, scopeOf } from './conditions.js'
 import { boundsForSeats, loadObservations, observeSeat, seatToObserve } from './capacity.js'
@@ -703,7 +703,9 @@ program
     const config = loadConfig(program.opts()['config'])
     const repo = await repoFromCheckout(config.destination)
     const [readings, rows, observations] = await Promise.all([
-      readAllSeats(config.budget.seats),
+      readAllSeats(config.budget.seats).then((read) =>
+        describeWorkers(read, (seat) => workerEnv(seat, process.env, seat.id)),
+      ),
       loadLog((path) => readLog(repo, path)),
       loadObservations((path) => readLog(repo, path)),
     ])

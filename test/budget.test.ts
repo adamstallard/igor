@@ -5,6 +5,7 @@ import { tempDir } from './tmp.js'
 import {
   budgetGate,
   BudgetError,
+  describeWorkers,
   chooseSeat,
   parseOrgBudget,
   parseUsage,
@@ -29,6 +30,7 @@ import {
   type WindowReport,
 } from '../src/budget.js'
 import { boundsForSeats, type Observation, type SeatBounds } from '../src/capacity.js'
+import { workerEnv } from '../src/execute.js'
 import { composeHandoff } from '../src/handoff.js'
 import type { Role } from '../src/role.js'
 
@@ -1950,4 +1952,122 @@ describe('regression: what the hunt on §5 found', () => {
     expect(d.resets).toBe('2026-09-13T16:30:00.000Z')
   })
 
+})
+
+/**
+ * `igor budget` reports what a worker on each seat would pay with, as `claude auth status` reports
+ * it under the worker's own environment, rather than what this process can read.
+ */
+describe('what a worker on a seat would pay with', () => {
+  const PAD = 'readable here but cannot pay'
+  const read = (over: Partial<SeatUsage> = {}): SeatUsage => ({
+    seat: seat({ id: 'shared' }),
+    usage: parseUsage(REAL),
+    ...over,
+  })
+
+  it('notes a seat paying with a login stored under HOME, rather than warning it cannot pay', () => {
+    const text = renderBudget([read({ worker: { loggedIn: true, authMethod: 'claude.ai' } })])
+    expect(text).not.toContain(PAD)
+    expect(text).toContain('pays with the login stored under HOME')
+  })
+
+  it("names a token in claude's settings as one, not as a login, since it overrides a seat token", () => {
+    const text = renderBudget([read({ worker: { loggedIn: true, authMethod: 'oauth_token' } })])
+    expect(text).toContain("pays with the oauth_token credential in claude's settings under HOME, which overrides any seat token")
+    expect(text).not.toContain('login')
+  })
+
+  it('warns where a worker would not be logged in, as with a keychain login, though a token resolves', () => {
+    const text = renderBudget([read({ fingerprint: 'f', worker: { loggedIn: false, authMethod: 'none' } })])
+    expect(text).toContain(PAD)
+  })
+
+  it('warns where a worker would pay with an API key, naming where the key comes from', () => {
+    for (const worker of [
+      { loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' },
+      { loggedIn: true, authMethod: 'api_key_helper', apiKeySource: 'apiKeyHelper' },
+    ]) {
+      const text = renderBudget([read({ worker })])
+      expect(text).toContain(`would pay with an API key from ${worker.apiKeySource}, not a subscription`)
+      expect(text).toContain('#195')
+      expect(text).not.toContain('pays with the')
+    }
+  })
+
+  // Measured with `claude auth status`. It reports the key a Console `/login` stores as
+  // `apiKeySource: '/login managed key'` even where a seat token outranks it and pays. It reports a
+  // gateway token as `oauth_token`, exactly as it reports a seat token, so `beside` stands for both:
+  // an `ANTHROPIC_API_KEY` beside either pays.
+  it('reads a stored Console key as outranked where a subscription pays, and no other key source', () => {
+    for (const authMethod of ['oauth_token', 'claude.ai']) {
+      const managed = { loggedIn: true, authMethod, apiProvider: 'firstParty', apiKeySource: '/login managed key' }
+      expect(renderBudget([read({ fingerprint: 'f', worker: managed })])).not.toContain('#195')
+    }
+    const beside = { loggedIn: true, authMethod: 'oauth_token', apiProvider: 'firstParty', apiKeySource: 'ANTHROPIC_API_KEY' }
+    expect(renderBudget([read({ fingerprint: 'f', worker: beside })])).toContain('an API key from ANTHROPIC_API_KEY')
+    const alone = { loggedIn: true, authMethod: 'api_key', apiKeySource: '/login managed key' }
+    expect(renderBudget([read({ worker: alone })])).toContain('an API key from /login managed key')
+  })
+
+  // Measured: with a cloud provider set, `claude auth status` still reports any Anthropic key it
+  // found as `apiKeySource`, but the provider's own credentials pay and the key is not used.
+  it('warns where a worker would pay through a cloud provider, naming it over any key found', () => {
+    for (const apiKeySource of [undefined, '/login managed key', 'ANTHROPIC_API_KEY']) {
+      const worker = { loggedIn: true, authMethod: 'third_party', apiProvider: 'bedrock', ...(apiKeySource === undefined ? {} : { apiKeySource }) }
+      const text = renderBudget([read({ fingerprint: 'f', worker })])
+      expect(text).toContain('would pay with bedrock, not a subscription')
+      expect(text).not.toContain('an API key')
+    }
+  })
+
+  // `claude` uses an API key it finds over a seat token or a login, so the reading itself finds no
+  // subscription and the seat reads as unmeasured. `budgetGate` still lets the loop spend such a
+  // seat, so it must be asked too.
+  it('asks about and warns on a seat read as unmeasured because an API key answered', async () => {
+    const apiKey = { loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' }
+    const env = { PATH: '/usr/bin', HOME: '/h', T: 'sk-ant-oat01-x' }
+    const readings = await readAllSeats(
+      [seat({ id: 'shared', tokenEnv: 'T' })],
+      env,
+      async () => JSON.stringify({ type: 'result', result: 'Total cost: $0.00' }),
+      async () => apiKey,
+    )
+    expect(readings[0]?.unmeasured).toBe(true)
+    const text = renderBudget(await describeWorkers(readings, (s) => workerEnv(s, env, s.id), async () => apiKey))
+    expect(text).toContain('would pay with an API key from ANTHROPIC_API_KEY')
+  })
+
+  it('says nothing where a worker would pay with the seat token', () => {
+    const text = renderBudget([read({ fingerprint: 'f', worker: { loggedIn: true, authMethod: 'oauth_token' } })])
+    expect(text).not.toContain('!')
+  })
+
+  it('judges from the hash where claude was not asked', () => {
+    expect(renderBudget([read()])).toContain(PAD)
+    expect(renderBudget([read({ fingerprint: 'f' })])).not.toContain(PAD)
+  })
+
+  it("asks claude under a worker's environment, which carries HOME and not USER, for readable seats only", async () => {
+    const asked: NodeJS.ProcessEnv[] = []
+    const host = { PATH: '/usr/bin', HOME: '/home/igor', USER: 'igor', T: 'seat-token' }
+    const readings = await describeWorkers(
+      [read({ seat: seat({ id: 'a', tokenEnv: 'T' }) }), { seat: seat({ id: 'b' }), error: 'unreadable' }],
+      (s) => workerEnv(s, host, s.id),
+      async (env) => {
+        asked.push(env)
+        return { loggedIn: true, authMethod: 'oauth_token' }
+      },
+    )
+    expect(asked).toEqual([{ PATH: '/usr/bin', HOME: '/home/igor', CLAUDE_CODE_OAUTH_TOKEN: 'seat-token' }])
+    expect(readings[0]?.worker?.authMethod).toBe('oauth_token')
+    expect(readings[1]?.worker).toBeUndefined()
+  })
+
+  it('leaves a seat whose worker environment cannot be built unanswered', async () => {
+    const [r] = await describeWorkers([read()], async () => {
+      throw new Error('token source unreadable')
+    })
+    expect(r?.worker).toBeUndefined()
+  })
 })
