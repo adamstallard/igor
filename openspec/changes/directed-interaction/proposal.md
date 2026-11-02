@@ -6,8 +6,8 @@ talked into anything.
 
 Both halves matter and they pull in opposite directions. Someone asking a legitimate
 question deserves an answer; someone injecting instructions into an issue body must gain
-nothing. This change handles both with one rule: **answering is cheap and changes nothing,
-acting requires authority the speaker already holds.**
+nothing. This change handles both with one rule: **an Igor answers only people with
+write access, and does nothing for them that they and its role could not already do.**
 
 **Depends on `core-igor-loop`** — this cannot be tested before there are claims for people
 to reply to.
@@ -16,8 +16,8 @@ to reply to.
 
 - **An Igor replies when addressed, and only then.** Not to every comment on an item it
   claimed. Otherwise a busy pull request becomes a budget sink.
-- **Answering is liberal; acting is strict.** It answers about its own work — what it
-  claimed, why, current status, what it intends — and about lore. Acting on what it is told
+- **Answering is liberal; acting is strict.** To anyone with write access, it answers about its own work — what it
+  claimed, why, current status, what it intends. Acting on what it is told
   requires authority.
 - **Authority to instruct never exceeds authority over the artifact.** Someone who cannot
   merge to a repository carries no weight instructing an Igor working in it. Injection by an
@@ -33,7 +33,7 @@ to reply to.
   `{admin, maintain, push, triage, pull}`, and `user.role_name`. The string reports `admin`
   for an admin and `write` for a maintainer, so comparing it to `"write"` excludes the people
   with the most authority. GitHub does support fine-grained custom repository roles and names
-  them in `role_name`, but every one of them still resolves to those booleans, so no mapping
+  them in `role_name`, but every one of them is assumed to resolve to those booleans (task 2.6 measures it), so no mapping
   from a role name to Igor's semantics is needed.
 
 - **An Igor does not talk to strangers.** Answering anyone who can comment on a public
@@ -55,23 +55,26 @@ to reply to.
 - **Being mentioned is how an Igor learns it was addressed.** Discovery is a query and
   comments are read only on items it returns, so a mention on any other item is invisible.
   A `mentions:` source fixes that with no new mechanism: it flows through the same watermark,
-  screening and triage as every other candidate.
-- **A mention narrows the action space rather than widening it, and claims nothing.** An Igor
-  asked to look at an item investigates and answers; it does not claim the item, take the work,
-  or publish. That resolves what would otherwise be a collision with the universal skip for an
-  item somebody else holds — reading is not taking, so the rule needs no exception and Alice
-  keeps her issue.
+  screening and triage as every other candidate. It checks the author's write access before it
+  hands an item on, so a stranger's mention cannot bring an item to triage.
+- **A mention narrows the action space rather than widening it.** A mention from someone with
+  write access gets work done only on an item nobody else holds and, for an artifact such as a
+  pull request, only on one the Igor authored. Anywhere else it gets an answer only: the Igor
+  investigates and replies, and does not claim the item, take the work, or publish. An answer
+  only passes triage's skip of an item somebody else holds, because reading is not taking, so
+  the holder keeps the item and still gets an answer.
 
   It also makes mention-handling incapable of escalation. Permissions merge monotonically, so
   a level may restrict and never widen; if a mention can only narrow, then a successful
   injection through a comment gains the attacker strictly less than the Igor could already do.
-  That is a stronger guarantee than detecting manipulation, and it needs no permission lookup.
+  That is a stronger guarantee than detecting manipulation.
 
-  Not claiming is the point, not an omission. Nobody was told to stand off, so nothing is owed
-  a receipt, nothing blocks, and no marker or settle interval applies. You do not claim an item
-  to read it.
+  A plain answer claims nothing. A claim tells other Igors to stand off an item; with none, no
+  stop receipt is owed, nothing blocks, and no claim marker or settle interval applies. An answer that acts, by opening an
+  issue or acting on an option the person chose, takes a claim first, as Adam decided on #179 on
+  2026-10-28 (its decision 62): two of a role's processes acting would act twice.
 
-  Read-only is not a mode that can only describe problems. The worker still investigates and
+  An answer is not a mode that can only describe problems. The worker still investigates and
   still works out the change; a comment carrying the fix is delivery, and for a small one it
   beats a draft — readable in the thread where the question was asked, with the reasoning
   beside it, and leaving nobody a branch to close. It needs no new plumbing either: the worker
@@ -93,8 +96,8 @@ to reply to.
   highest rank starts at the first request; a process already working an item is not planning
   a cycle, so "unless they are busy" needs no concept of busy.
 - **Out-of-lane requests are declined with a route**, not a bare refusal — "not my lane,
-  `igor-backend` covers it" — which also makes the fleet legible to people who have no idea
-  which Igor does what.
+  `igor-backend` covers it" — is not in this change:
+  [#162](https://github.com/adamstallard/igor/issues/162) builds it, and answering lore questions.
 - **Ambiguity is asked about rather than guessed at, and nothing counts the questions.** A
   question costs a comment; acting on a bad guess costs a wrong pull request and somebody's
   time reading it. The bias belongs on the side of asking, and budget bounds it as it bounds
@@ -102,10 +105,11 @@ to reply to.
 
   This is the existing hand-back phrased as a question rather than a new path: an item the
   worker cannot act on already produces a message carrying its own account of why. The
-  deferral record already supplies the waiting — a handed-back item stays quiet until somebody
-  replies or edits it, and a reply is what lifts it.
-- **Conversation is bounded by budget, not by a count of exchanges.** A fraction of cycle
-  budget for talking, so talking cannot starve work.
+  deferral record already supplies the waiting: a handed-back item stays quiet until what
+  `work-triage` says lifts the hold, such as a reply or an edit.
+- **Conversation is bounded by budget, not by a count of exchanges.** A role file declares
+  `conversation_share`, the fraction of the role's budget that answering may spend, so talking
+  cannot starve work.
 
   There is deliberately no "three replies and stop". Once strangers get no reply and
   Igor-to-Igor exchange is structured, the only conversation partner left is a colleague with
@@ -125,14 +129,9 @@ to reply to.
   collaborator, and blocking an account, which is nuclear — and an Igor's App can write to the
   repository, so locking a conversation does not restrain it either. **What bounds a loop on a
   surface with no usable moderation is open.**
-- **Igors may talk to each other.** A frontend Igor asking a backend Igor what an endpoint
-  returns is worth more than the human relay it replaces, and the rules that govern talking to
-  a person govern it unchanged: write access on the artifact, budget, and stop.
-
-  An earlier draft forbade it on cost, which is the argument already rejected for people — the
-  budget bounds the resource, and a count of exchanges bounds a proxy for it. The asymmetry
-  that is real is that two agents will not get bored of each other, and that is what the
-  paragraph above is about.
+- **Igors do not question each other through mentions** (decided 2026-10-04). An App's bot
+  account has no write access, so its mention gets no reply, and allowing a reply but not an
+  action would need an identity test this change avoids.
 - **A requested item records who asked and what they said.** The decision log already carries
   the item, the stage, the outcome and triage's reason, and the execution record adds the seat,
   the cost, what changed and what was refused. For a discovered item that is complete, because
@@ -143,9 +142,11 @@ to reply to.
   abstract — it is what distinguishes a request from an injection after the fact, and "who told
   it to" is the first question anybody asks about an Igor that did something odd.
 
-- **A person with authority can have an Igor file an issue.** Asked on a pull request to track
-  something, an Igor opens an issue carrying what was asked, where, and by whom — and does not
-  claim or work it. Without this, work suggested on a pull request lives only in a comment
+- **A person with authority can have an Igor file an issue.** Asked to track something on a pull
+  request it authored, or on an issue nobody holds, an Igor opens an issue in the same repository
+  carrying what was asked, where, and by whom, and does not work it. It claims the item it was asked on first,
+  looks for an issue that already links the request, and quotes any `@` in a code span so the
+  issue notifies nobody. Without this, work suggested on a pull request lives only in a comment
   thread, where nothing can discover it or be scoped to it. Opening an issue is a new role
   action and must be granted like any other, so a mention still cannot widen a role.
 - **An answer to a question the Igor asked may be acted on.** An Igor that posts a decision with
@@ -153,10 +154,13 @@ to reply to.
   [#139](https://github.com/adamstallard/igor/issues/139) — takes the answer from a comment that
   mentions it. Matched against what it recorded when it asked, never read back out of the
   description, so a reply can choose among options the Igor already proposed but cannot add one.
-  Mentioning a different Igor routes the answer to that role.
+  Mentioning a different Igor gets that Igor's answer only, since it did not author the
+  artifact (Adam, 2026-11-02); for that role to do the work, the person opens an issue for it.
 
 Explicitly out of scope:
 
+- **What #162 builds:** declining an out-of-lane request with a route, answering people's
+  questions about lore, and a cap on requests per requester.
 - **Acting on anything irreversible.** The action-space cap from `core-igor-loop`, the set of
   actions a role allows, still holds and is what bounds the damage of a successful injection.
 
@@ -166,14 +170,19 @@ Explicitly out of scope:
 
 - `directed-interaction`: learning it was addressed through a mentions source; replying to
   people with write access on the artifact and to no one else; a mention narrowing the action
-  space and claiming nothing; treating everything ingested as data; bounding conversation by
+  space; treating everything ingested as data; bounding conversation by
   budget rather than by a count; asking rather than guessing; and recording who asked.
 
 ### Modified Capabilities
 
 - `work-triage`: gains a second entry point. A requested candidate arrives from a mention
   rather than from discovery, carries its requester, and is ordered ahead of discovered work
-  by being its own source listed first.
+  by being its own source listed first. A mention that gets an answer only passes the skip of
+  an item somebody else holds.
+- `role-config`: `allow` gains `issue`, and a role file gains `conversation_share`.
+- `surface-adapter`: an adapter finds the comments that mention the Igor, with their author as
+  the requester; reads whether a party may write to a repository; and opens an issue or finds
+  one linking a comment.
 
 ## Impact
 
@@ -182,6 +191,3 @@ Explicitly out of scope:
 - Introduces the only path by which an outsider can influence an Igor, which is why the
   authority rule is framed as "gains them nothing they could not already do" rather than as
   detection.
-- Makes lore queryable by humans as a side effect. A question lore cannot answer is a
-  repeated-retrieval miss, which is a consolidation signal — so questions people actually
-  ask become demand-driven evidence of what lore is missing.

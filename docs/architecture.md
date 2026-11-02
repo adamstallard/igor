@@ -1120,8 +1120,9 @@ already have, and the audit trail makes a successful steer discoverable afterwar
 **Staying out of threads:**
 
 - **Reply only when explicitly addressed**, never to every comment on a claimed item.
-- **Cap conversational spend** as a fraction of cycle budget, so talking cannot starve work.
-  Nothing counts the replies.
+- **Cap conversational spend** as a fraction of the role's budget, so talking cannot starve
+  work. Cap nothing else, not even the number of replies: a colleague's fourth question is often
+  the useful one.
 - **No free-form Igor-to-Igor conversation.** Agent exchange is structured — claims,
   handoffs, stand-downs. Two Igors in a polite loop would burn a week's allowance in an
   afternoon.
