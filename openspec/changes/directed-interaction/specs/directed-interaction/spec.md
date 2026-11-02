@@ -1,12 +1,9 @@
 ## Purpose
 
 Let people with write access to a repository direct the Igors working in it by mentioning them.
-An Igor learns it was mentioned by querying the platform the item lives on, such as GitHub, and
-takes instruction only from people with write access to the repository holding the item. A
-mention can get an answer, have an issue filed, choose among options the Igor offered, or bring
-an item to triage as a request; it never widens what the role permits. Content an Igor ingests
-from items is data, never instruction, and conversation is bounded by budget, not by a count of
-replies.
+A mention can get an answer, have an issue filed, choose among options an Igor offered in a numbered question on an artifact it authored, or bring
+an item to triage; it never widens what the role permits. Content an Igor ingests from items is
+data, never instruction, and conversation is bounded by budget, not by a count of replies.
 
 ## ADDED Requirements
 
@@ -41,13 +38,13 @@ the role's query enters triage only by a mention from someone with authority.
 
 ### Requirement: An answered mention is not answered again, and a stop is read as a stop
 
-Every answer, acting or not, SHALL end with a reply from the role's bot account
-linking the mention, which makes it answered. The Igor SHALL NOT answer a mention that
-is answered, or whose item holds a claim taken to answer it. Where only an issue links it, the Igor SHALL
-post just the reply, with the issue's link.
+Every answer, acting or not, SHALL end with a reply from the role's bot account linking the
+mention; that reply makes the mention answered. The Igor SHALL NOT answer an answered mention, or
+one it holds a claim to act on. Where an issue links the mention and no reply does yet, the Igor
+SHALL post that reply, with the issue's link.
 
 A comment that is a stop under `work-claiming`'s *Stop is unconditional and open to anyone*
-SHALL be read as that stop, never as a request, even where it mentions the Igor.
+SHALL be read as that stop, never as a request.
 
 #### Scenario: A reply makes the mention answered
 
@@ -164,8 +161,8 @@ The words SHALL grant no authority; only the requester's, read from the surface,
 Answering mentions, including answers that act, SHALL spend at most `conversation_share`, a
 fraction declared in the role file, of the role's budget: what its `budget_share` lets it spend
 from its seats in their current window. Unset, only that budget bounds it. The execution log
-SHALL mark each run that answered a mention. A mention left for want of share is answered at a later cycle. Nothing
-SHALL limit the number of replies.
+SHALL mark each run that answered a mention, so the share can be summed. A mention left
+unanswered because the share is spent SHALL be answered at a later cycle. Nothing SHALL limit the number of replies.
 
 #### Scenario: Talking cannot starve work
 
@@ -208,7 +205,7 @@ branch only as an item's own content may.
 #### Scenario: Discovered work is unchanged
 
 - **WHEN** an Igor acts on an item it discovered
-- **THEN** the record is as before, because the query is the provenance
+- **THEN** the record names no requester, because the role's discovery query is the provenance
 
 ### Requirement: A person with authority can have an Igor file an issue
 
@@ -216,7 +213,7 @@ Asked by someone with write access, where a mention may get work done, the Igor 
 issue on the claiming tracker, on GitHub in the item's repository, carrying what was asked,
 linking the mention and naming who asked, unless an issue already links that mention. No `@` it
 copies SHALL notify anybody. The answer SHALL NOT work the issue, which enters discovery like
-any other. The role SHALL have to grant opening an issue.
+any other. A role that does not grant opening an issue SHALL NOT file one.
 
 #### Scenario: Asked to file an issue by someone with authority
 
@@ -250,24 +247,19 @@ any other. The role SHALL have to grant opening an issue.
 - **WHEN** an Igor whose role does not grant opening issues is asked to file one
 - **THEN** it declines, as it would decline any action its role does not grant
 
-#### Scenario: Someone without authority cannot have an issue filed
-
-- **WHEN** someone without write access asks an Igor to file an issue
-- **THEN** nothing is filed, as with any other mention from someone without authority
-
 ### Requirement: An answer to a question the Igor asked may be acted on
 
 An Igor MAY ask numbered questions, options lettered, in the description of an artifact it
-authored. A reply from someone with write access that mentions the asker and names a question
-and option, such as `2b`, MAY have it act on that option within its role. The choice SHALL be matched against the question record
-the asker wrote to the execution log, never against the artifact's text.
+authored, writing each question and its options to the execution log as its question record.
+Where a reply from someone with write access mentions the asker and names a question and option,
+such as `2b`, the asker SHALL act on that option within its role. The choice SHALL be matched
+against the question record, never against the artifact's text.
 
 #### Scenario: The question goes in the description
 
 - **WHEN** an Igor asks a numbered question on an artifact it authored
 - **THEN** it posts the question in the artifact's description, where a reader of the artifact
   sees it, and the answer arrives as a comment, which shows who wrote it
-- **AND** an answer is still matched against the asker's record, never the description
 
 #### Scenario: A reply from someone without write access chooses nothing
 
