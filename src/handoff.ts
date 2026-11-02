@@ -4,6 +4,7 @@ import type { ExecutionResult } from './execute.js'
 import type { Role } from './role.js'
 import type { SeatVerdict } from './budget.js'
 import { carried } from './worktree.js'
+import { singleFullStop, withoutFullStop } from './text.js'
 
 /**
  * What an Igor says before it lets go of something it claimed.
@@ -294,7 +295,7 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
   const directed = handoff.directed === true
   // A directed item's hand-over is the label a person added, and the release that follows this
   // handoff removes it, so nothing brings the item back but the person: every tail says so.
-  const relabel = relabelSentence(role).replace(/\.$/, '')
+  const relabel = withoutFullStop(relabelSentence(role))
   const tail =
     reason.kind !== 'failure'
       ? undefined
@@ -319,11 +320,11 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
       ? noCapacity(reason, now) + (directed ? `. ${relabel}` : '')
       : reason.kind === 'nothing-to-do'
         ? directed
-          ? `${reason.detail.replace(/\.$/, '')}. ${relabel}`
+          ? `${singleFullStop(reason.detail)} ${relabel}`
           : reason.detail
         : // Another layer's sentence, and several of them end in a full stop of their own —
           // the seat's "export it." among them, which the reader then meets as "export it.."
-          `it hit something it could not get past: ${reason.detail.replace(/\.$/, '')}. ${tail}`
+          `it hit something it could not get past: ${singleFullStop(reason.detail)} ${tail}`
 
   const who =
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''

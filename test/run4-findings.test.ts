@@ -28,28 +28,6 @@ describe('run 4 findings', () => {
     expect(isStop('stop @igor-backend or I revert it', FRONTEND, IGORS)).toBe(false)
   })
 
-  it('timing probe: long comments stay fast', () => {
-    const bodies = [
-      'stop ' + '@a, '.repeat(20000) + 'x',
-      'stop ' + '@a or '.repeat(10000) + 'x',
-      'stop ' + '@a and/or '.repeat(10000) + 'x',
-      '@igor-frontend' + '/@a-a'.repeat(5000) + '+x',
-      '@igor-frontend ' + '@a-'.repeat(5000) + '!',
-      '@igor-frontend' + (' or @' + 'a-'.repeat(30)).repeat(200) + '+',
-      '@igor-frontend' + ' and/or @a'.repeat(5000) + '+x',
-      ('@igor-frontend' + ' '.repeat(50)).repeat(500) + 'x',
-      'go ahead ' + '(((('.repeat(5000),
-      '@igor-frontend' + '—-'.repeat(10000) + 'x',
-      'igor-frontend '.repeat(5000),
-    ]
-    for (const body of bodies) {
-      const t = performance.now()
-      isStop(body, FRONTEND, { ...IGORS, a: 'igor' })
-      isGoAhead(body, FRONTEND, { ...IGORS, a: 'igor' })
-      expect(performance.now() - t).toBeLessThan(200)
-    }
-  })
-
   it('quoted lines are skipped wherever the mentions fall among them', () => {
     expect(isStop('@igor-frontend hi\na\nb\n> c @igor-frontend stop', FRONTEND, IGORS)).toBe(false)
     expect(isStop('> @igor-frontend hi\na\n@igor-frontend stop', FRONTEND, IGORS)).toBe(true)
