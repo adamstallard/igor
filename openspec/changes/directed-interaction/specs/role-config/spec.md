@@ -83,6 +83,11 @@ since a worker could widen a list read from the repository it edits.
 - **WHEN** a `sources` entry omits `tracker`
 - **THEN** validation fails, because a query cannot be dispatched without knowing who executes it
 
+#### Scenario: A role may declare a conversation share
+
+- **WHEN** a role declares `conversation_share: 0.2` and inherits none
+- **THEN** the role loads, with that share
+
 #### Scenario: A conversation share cannot exceed what is inherited
 
 - **WHEN** the org base sets `conversation_share: 0.1` and a role sets `conversation_share: 0.3`

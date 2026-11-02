@@ -12,8 +12,10 @@
       mention that has such a reply or a held claim for its answer; where only an issue links it,
       post the reply with the issue's link
 - [ ] 1.2d Read a comment that is a stop under `work-claiming` as a stop, never as a request
-- [ ] 1.2e Search only the repositories the role works, and read a mention in an item's body
-      with the item's author as requester
+- [ ] 1.2e Search only the repositories the role's `sources` name, and read a mention in an
+      item's body with the item's author as requester
+- [ ] 1.2f Hold back answers on a stopped item until it is eligible again, without losing the
+      mention; a reply giving only the seats' reset time does not answer a mention
 - [ ] 1.3 Requests are their own source and are considered first
 - [ ] 1.4 Tests: mentioned outside the query reaches triage; a stranger's mention outside it
       does not; a request is screened like any other candidate; an answered mention is not
@@ -35,12 +37,17 @@
       test account a custom role on a repository and read the collaborator permission endpoint.
       If it does not, *Authority is `permissions.push`* in `design.md` is wrong; record what the
       endpoint returned there and stop before building 2.1
+- [ ] 2.7 Measure whether an Igor App's bot account, installed with Contents write, reads
+      `push: false` on the collaborator permission endpoint. If it reads true, refuse mentions
+      from `[bot]` accounts and record the result in `design.md`
 
 ## 3. What a mention may get
 
-- [ ] 3.1 A mention gets work done only on an item no other party holds and, for an artifact,
-      only one the Igor authored; elsewhere it gets an answer only
-- [ ] 3.2 An answer-only mention passes triage's skip of held items, and nothing else changes
+- [ ] 3.1 A mention gets work done only on an open artifact the Igor authored, or an open issue
+      with no work in flight that no other party holds or is assigned; elsewhere it gets an
+      answer only. A role without `comment` neither answers nor acts
+- [ ] 3.2 An answer-only mention passes triage's skips of held items, items with work in flight
+      and closed items, and nothing else changes
 - [ ] 3.3 For an answer only, the worker is told it may not publish and that its answer should
       carry the change; reply on the item with no claim, no settle interval and no marker
 - [ ] 3.4 An answer that opens an issue or acts on a chosen option takes a claim on the item
@@ -86,8 +93,8 @@
 - [ ] 8.2 Asked by someone with write access where a mention may get work done, claim the item,
       look for an issue that already links the mention, and file one only if none does: in the
       claiming tracker (on GitHub, the item's repository), naming what was asked, where, and by
-      whom. Put every copied `@` in a code span fenced with more backticks than any run in the
-      copied words, so a backtick in them cannot end it. Do not work the issue
+      whom. Neutralize every copied `@` on its own, such as `&#64;`, since a code span around the
+      quote ends at a backtick or blank line. Do not work the issue
 - [ ] 8.3 Decline where the role does not grant the action, and do nothing for a requester
       without write access
 - [ ] 8.4 Where an Igor posts numbered questions with lettered options, write the questions and
@@ -110,6 +117,7 @@
       archived before it: `role-config`'s *Merge semantics differ by field kind* and *A role
       declares its sources, lane, behaviour, permissions, and reviewers* (from
       `lore-from-corrections`, #143, #153 and #216), and `work-triage`'s *An item held by another
-      party is never a candidate* (from #179). Check every sentence and key, not only scenarios:
+      party is never a candidate* (from #179) and *Items with work already in flight are skipped*
+      (from #179 and #150). Check every sentence and key, not only scenarios:
       a dry archive refuses a dropped scenario but not dropped text. Compact each copy to stay
       under 500 characters

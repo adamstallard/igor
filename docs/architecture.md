@@ -1140,6 +1140,13 @@ novel part, not the only part.
 - **Ambiguity gets a question rather than a guess**, and nothing counts the questions: a
   question costs a comment, and a bad guess costs a wrong artifact and somebody's time. The
   item then waits, through the deferral record, until someone answers.
+- **An Igor is never "busy", only out of budget.** It fans out subagents, so serial attention
+  is not its constraint the way it is a human's. Running out of budget is the one case where it
+  cannot take a request: when every process running the role has spent what its seats, the model
+  subscriptions it pays with, allow, the role replies with the time those seats next reset, a
+  fixed reply that spends nothing (`concurrent-instances`,
+  [#179](https://github.com/adamstallard/igor/pull/179), decision 67). Silence is the worst
+  available response.
 
 **Audit what was accepted.** Every instruction acted on, who gave it, and what changed as a
 result. If someone did successfully steer an Igor, that should be discoverable afterwards
@@ -1152,10 +1159,8 @@ No task in `directed-interaction` builds these. Building them is #162, which rem
 - **Cap requests per requester per period**, so one enthusiastic person cannot consume a seat.
 - **Out-of-lane requests are declined with a route** — "not my lane, `igor-backend` covers it"
   — which also makes the fleet legible to people who have no idea which Igor does what.
-- **An Igor is never "busy", only out of budget.** It fans out subagents, so serial attention
-  is not its constraint the way it is a human's. When the allowance is gone, say so with the
-  reset time and route via the handoff machinery (§6.4) pointed at the requester. Silence is
-  the worst available response.
+- **Beyond the reset-time reply, a request that waits for budget goes back to its requester**
+  through the handoff machinery (§6.4).
 - **Lore is queryable by humans, not only injected into agents.** "What's our convention for
   X?" is a legitimate question to put to an Igor. A question lore cannot answer is a
   repeated-retrieval miss, which is already a consolidation salience signal (§3.5), so questions

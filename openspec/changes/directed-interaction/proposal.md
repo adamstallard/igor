@@ -58,10 +58,10 @@ to reply to.
   screening and triage as every other candidate. It checks the author's write access before it
   hands an item on, so a stranger's mention cannot bring an item to triage.
 - **A mention narrows the action space rather than widening it.** A mention from someone with
-  write access gets work done only on an item nobody else holds and, for an artifact such as a
-  pull request, only on one the Igor authored. Anywhere else it gets an answer only: the Igor
+  write access gets work done only on an open pull request the Igor authored, or on an open issue
+  that nobody else holds or is assigned to and that has no work in flight. Anywhere else it gets an answer only: the Igor
   investigates and replies, and does not claim the item, take the work, or publish. An answer
-  only passes triage's skip of an item somebody else holds, because reading is not taking, so
+  only passes triage's skips of held, closed and in-flight items, because reading is not taking, so
   the holder keeps the item and still gets an answer.
 
   It also makes mention-handling incapable of escalation. Permissions merge monotonically, so
@@ -145,7 +145,7 @@ to reply to.
 - **A person with authority can have an Igor file an issue.** Asked to track something on a pull
   request it authored, or on an issue nobody holds, an Igor opens an issue in the same repository
   carrying what was asked, where, and by whom, and does not work it. It claims the item it was asked on first,
-  looks for an issue that already links the request, and quotes any `@` in a code span so the
+  looks for an issue that already links the request, and neutralizes each `@` it copies so the
   issue notifies nobody. Without this, work suggested on a pull request lives only in a comment
   thread, where nothing can discover it or be scoped to it. Opening an issue is a new role
   action and must be granted like any other, so a mention still cannot widen a role.

@@ -35,11 +35,20 @@ stands until he overrides it. Below, "Adam's rule" means that rule.
 - A mention gets work done only from a person with write access (*A colleague with write access
   directs work*). Anyone else's mention gets no more than an answer (*A mention narrows what an
   Igor may do*), and under *A stranger's mention changes nothing* not even that.
-- On an item another party holds, or an artifact the Igor did not author, every mention gets an
-  answer only (*An answer on an artifact the Igor did not author is only an ordinary mention*).
-- A mention that may only be answered passes triage's skip of held items, so *Asked for help on
-  an item somebody holds* is answered. The `work-triage` delta modifies *An item held by another
-  party is never a candidate* to say so.
+- On an item another party holds or is assigned, an artifact the Igor did not author, a closed
+  item, or an issue with work in flight, every mention gets an answer only (*A mention narrows
+  what an Igor may do*). An assignee counts as a holder here because `work-claiming`'s *An item
+  someone else holds is not claimed* forbids claiming an item assigned to a person. GitHub's
+  holder field holds only Igor labels, so an assignee has to be named on its own.
+- A mention that may only be answered passes triage's skips of held items, items with work in
+  flight and closed items, so *Asked for help on an item somebody holds* is answered, and so is
+  "can you look at this?" on an issue with an open pull request. An answer acts on nothing and
+  is cheap to reverse, so it is allowed whatever state the item is in: reading is not taking.
+  The Igor's own open pull request is itself work in flight, so the in-flight skip lets any
+  writer's mention through, not only an answer-only one. There a mention may get work done,
+  such as acting on a chosen option, because the Igor authored the pull request. The `work-triage` delta modifies *An item held by
+  another party is never a candidate*, *Items with work already in flight are skipped* and *A
+  closed item is never a candidate* to say so.
 - A reply to a numbered question (*An answer to a question the Igor asked may be acted on*) that
   mentions a different Igor than the one that asked is on an artifact that Igor did not author,
   so it gets an answer only (Adam's decision below).
@@ -132,10 +141,12 @@ Igor, within its own role, before anyone replied; a reply chooses among them, wh
 set of things the Igor was ready to do and adds none. The monotonic-merge argument — that a
 successful injection gains strictly less than the Igor could already do — therefore holds.
 
-What would break it is reading the options back out of the artifact. A description is editable
-by anyone with write access, so a question parsed from it is a question anyone could insert. The
-options are read from the asking Igor's own record instead, written to the execution log on
-the state branch when it posted them.
+What would break it is reading the options back out of the artifact. The options are read from
+the asking Igor's own record instead, written to the execution log on the state branch when it
+posted them, so every option is one the Igor itself proposed. Anyone with write access could
+edit the description or the state branch, and could also do the option's action directly; the point is not to stop a
+writer but to keep a reviewer's `2b` meaning what the Igor offered, not an option an unnoticed
+edit to the description added.
 
 **Rejected: checkboxes in the description.** Considered for #139 and dropped. A ticked box
 notifies nobody, and once an Igor publishes its claim is released, so nothing re-reads its own
@@ -149,7 +160,7 @@ attributable in REST, and a mention is what makes it visible.
 GitHub App, which claims an issue with its `igor:<role>` label and cannot be an assignee. So
 wherever this change says an Igor claims or does not claim an item, the claim is that label.
 
-**An Igor never has authority, measured.** On 2026-10-04 the collaborator-permission endpoint on
+**Two Apps' bots read as having no authority, measured.** On 2026-10-04 the collaborator-permission endpoint on
 this repository returned `permission: none` and `push: false` for two installed Apps' bot
 accounts, `dependabot[bot]` and `github-actions[bot]`. So under *Authority is
 `permissions.push`*, a comment from an Igor never instructs another: it cannot have an issue
@@ -190,13 +201,28 @@ or a rule already in force:
   ranks, may move its discovery watermark past a mention that another rank is to answer. It
   treats the mention as answered once a reply, a linking issue or the claim exists. This
   change's linking reply is one of those, so any mention this change counts as answered, #179
-  counts as answered too.
+  counts as answered too. "Once" means that nobody answers a mention after its reply exists.
+  Two of a role's processes can still each answer a plain mention before either sees the
+  other's reply, which #179's decision 37 accepts.
+- **The reply giving the seats' reset time is not an answer.** #179's decision 67 has a role
+  with no available process reply with when its seats reset. If that reply counted, the mention
+  would never get its real answer. #179's decision 70 counts any bot reply as an answer when it
+  decides whether a process may move its watermark past a mention, so #179 needs the same
+  exception, that a reset-time reply is not an answer; this is reported to #179, not edited there.
+- **A stop holds back answers as well as work.** A stop is the brake anyone can pull, including
+  on a runaway exchange, so a mention on a stopped item is answered only once the item is
+  eligible again. Meanwhile the mentions source holds its watermark back before the mention, so
+  it is not lost.
 - **An answer only is not a pickup.** `work-claiming`'s *An Igor claims before it starts* has
   every pickup claim before work begins. A plain answer produces a comment, no artifact, and
   takes no claim, as #179's decision 37 (Adam) has it; an answer that acts takes one.
-- **A role without `comment` in `allow` answers nothing**, since an answer is a comment.
-- **Mentions are searched only on the repositories the role works**, so a writer elsewhere, where
-  the App is also installed, cannot bring an item to triage. A mention in an item's body counts,
+- **A role without `comment` in `allow` neither answers nor acts on a mention**, since every
+  answer ends with a reply, and an action with no reply would never count as answered.
+- **`issue` gates filing from a mention only.** `work-claiming`'s *An organization's Igors claim
+  on one tracker* has a chat request become an issue, which today needs no role action. This
+  change leaves that path as it is.
+- **Mentions are searched only on the repositories the role's `sources` name**, so a writer
+  elsewhere, where the App is also installed, cannot bring an item to triage. A mention in an item's body counts,
   with the item's author as requester.
 - **`conversation_share` unset leaves answering bounded only by the role's budget**, as an unset
   `budget_share` leaves a role bounded only by its seats. The execution log marks each run that
@@ -209,8 +235,8 @@ or a rule already in force:
   repository's words stay in it.
   Before filing, the Igor looks for an issue that already links the mention, as `work-claiming`'s
   *An issue created from chat points back to the chat* does for a chat message. Every `@` it
-  copies goes in a code span fenced with more backticks than any run in the copied words, so a
-  backtick in them cannot end the span early and the issue notifies nobody.
+  copies is neutralized on its own, such as by writing it as `&#64;`, since a code span around
+  the whole quote ends at a backtick or a blank line in the copied words and frees what follows.
 - **A numbered question numbers each question and letters its options**, and a reply chooses
   with both, such as `2b`. Matching needs a form, and this one is short to type.
 - **The question record, and a request's requester and words, go in the execution log on the
@@ -247,13 +273,20 @@ Whichever change archives second carries the other's text into its own copy:
   #143, #153 and #216 each add keys to the list, and this change adds `conversation_share`.
 - `work-triage`'s *An item held by another party is never a candidate*: #179 adds how a sibling
   process's item is passed over, and this change lets an answer-only mention through.
+- `work-triage`'s *Items with work already in flight are skipped*: #179 adds an exception for a
+  claim left by one of the role's processes that stopped running (a gone rank), and [#150](https://github.com/adamstallard/igor/pull/150) adds the two-gate exceptions.
+  This change's copy holds both, compacted, and lets an answer-only mention through.
+- `work-triage`'s *A closed item is never a candidate*: this change alone modifies it.
 
 This change is not yet placed in [#204](https://github.com/adamstallard/igor/issues/204)'s
 archive order, so it archives after all of them, and its copies must take in their text before
 it does (task 9.1). A dry archive of every open change at its pushed head on 2026-11-02, in
 #204's order and then the rest, refused this change only for that: its copies drop #179's
 scenario *A sibling's item is passed over before triage*, and #216's and #153's scenarios on
-`skills` and `igor lore-search`. With those three requirements removed from this change's deltas, the rest archived. A dry
+`skills` and `igor lore-search`. When the dry run left out the three requirements holding those scenarios, the rest of this
+change archived, including
+this change's copies of *Items with work already in flight are skipped* and *A closed item is never
+a candidate*. A dry
 archive refuses only a dropped scenario, so it cannot show a dropped key or sentence, such as
 #143's `reserve`; task 9.1 checks the text.
 
@@ -306,11 +339,17 @@ found.
 modifies *Budget is the only limit* and the requirement *Conversation is bounded by budget, not
 by a count of exchanges* itself, so this change leaves both as they are.
 
-**Does a mention get an answer on an item with work in flight, or a closed one?** Only the skip of
-held items lets an answer-only mention through. The skips of an item with work in flight, such
-as an open pull request, and of a closed item still drop it, so "can you look at this?" on an
-issue with an open pull request gets no answer. The reason for the held-item exception, that
-reading is not taking, applies to both. Exempting them would modify *Items with work already in
-flight are skipped*, which #179 and #150 already modify, and *A closed item is never a
-candidate*. *Recommend:* exempt both for an answer only, giving this change its own copy of
-*Items with work already in flight are skipped* that carries #179's and #150's text.
+**Is write access the right ceiling for directing work?** `docs/architecture.md` §5.4 says an
+Igor can never be used to exceed the requester's own reach, and that effective authority is the
+intersection of the role's and the person's. This change tests `permissions.push`, but push is
+not merge: branch protection can stop a writer merging, while a role that allows `merge` would
+merge for them. *Recommend:* keep `push` as the test, and decline a requested action the
+requester could not do directly, since the intersection is what §5.4 promises. Knowing that
+needs a second read before such an action, such as of the base branch's protection before a
+merge.
+
+**Does an Igor App's bot account read as having no write access?** The measurement behind *Two
+Apps' bots read as having no authority, measured* used two GitHub-owned Apps, not an Igor App holding Contents
+write. If an Igor's bot reads `push: true`, one Igor's mention would direct another. *Recommend:*
+measure it (task 2.7) before building the permission read; if it reads true, refuse any mention
+from an account whose login ends in `[bot]`.

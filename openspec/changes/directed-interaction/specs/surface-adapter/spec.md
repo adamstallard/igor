@@ -16,7 +16,8 @@ carry those as its requester, beside the normalized shape.
 #### Scenario: A mention in an issue's body
 
 - **WHEN** a person opens an issue whose body mentions `@acme-backend`
-- **THEN** the adapter returns the issue, with its body's link, author and text as its requester
+- **THEN** the adapter returns the issue, with the issue's id and link, its author and the
+  author's numeric id, and its body's text as its requester
 
 ### Requirement: A tracker adapter reads whether a party may write to a repository
 
