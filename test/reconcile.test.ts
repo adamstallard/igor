@@ -43,6 +43,19 @@ vi.mock('../src/github.js', () => ({
     return landed.get(number) ?? []
   },
   fileAtRef: async (_repo: string, path: string, ref: string) => atCommit.get(`${ref}:${path}`),
+  // Nobody has commented anywhere, so every quiet proposal is nudged. What a nudge already
+  // posted does to the next run is proved over the real `github.ts`, in reconcile-over-gh.
+  comments: async (_repo: string, number: number) => {
+    fetched.push(`comments:${number}`)
+    return []
+  },
+  commentsSince: async () => {
+    fetched.push('recent')
+    return []
+  },
+  comment: async (_repo: string, number: number) => {
+    fetched.push(`post:${number}`)
+  },
 }))
 
 // The watermark is the bound, not the behaviour under test here, and unmocked it would reach
@@ -300,13 +313,15 @@ describe('a proposal is recognized by the entry files it adds', () => {
 })
 
 describe('an open pull request costs a fetch only once it is quiet', () => {
-  it('fetches nothing for a backlog of open pull requests inside the window', async () => {
+  it('fetches nothing per pull request for a backlog inside the window', async () => {
+    // One read of the destination's recent comments, for the whole backlog: a nudge is
+    // activity, and only the comments can say a proposal that looks active was nudged instead.
     const dir = tempDir('igor-reconcile-')
     for (let n = 1; n <= 20; n += 1) openPr(n, 1)
 
     const result = await reconcile(config(dir), { now: new Date(NOW), staleAfterDays: 7 })
 
-    expect(fetched).toEqual([])
+    expect(fetched).toEqual(['recent'])
     expect(result.stale).toEqual([])
   })
 
@@ -323,9 +338,17 @@ describe('an open pull request costs a fetch only once it is quiet', () => {
 
     const result = await reconcile(config(dir), { now: new Date(NOW), staleAfterDays: 7 })
 
-    // #99's diff settles it in one request. #98's diff shows no entry file, which could still
-    // mean a proposal the reviewer emptied, so its proposing commit is asked too.
-    expect(fetched).toEqual(['landed:99', 'landed:98', 'proposing:98'])
+    // #99's diff settles it in one request, and then its comments say it was never nudged.
+    // #98's diff shows no entry file, which could still mean a proposal the reviewer emptied,
+    // so its proposing commit is asked too — and it is not a proposal, so nothing more is.
+    expect(fetched).toEqual([
+      'recent',
+      'landed:99',
+      'comments:99',
+      'post:99',
+      'landed:98',
+      'proposing:98',
+    ])
     expect(result.stale.map((s) => s.pr)).toEqual([99])
   })
 
@@ -348,6 +371,8 @@ describe('what the report says it did', () => {
       promoted: [],
       declined: [],
       stale: [],
+      nudged: [],
+      unnudged: [],
       deferred: [],
       carried: [],
       evicted: [],

@@ -124,7 +124,7 @@ export function pullRequestBody(entries: readonly Entry[], author: string): stri
     ``,
     `## How to review`,
     ``,
-    `- **Delete a file** to reject that entry. Rejection is permanent: it will not be proposed again.`,
+    `- **Delete a file** to reject that entry. Rejection is remembered: it will not be proposed again unless its record in \`rejected/\` is deleted.`,
     `- **Edit a file** to fix the wording, the conditions, or the scope. Edits are kept as-is.`,
     `- **Merge** to accept everything still present.`,
     `- **Close without merging** to defer. Nothing is rejected and these can be proposed again.`,
