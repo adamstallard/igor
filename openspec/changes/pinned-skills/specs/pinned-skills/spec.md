@@ -307,7 +307,7 @@ release of its hold, whether by `igor release` or by an edit to the item from so
 access. When an execution of a work item ends, flagged or not, Igor SHALL delete, in its own state
 directory, the copies of every execution of the same item that meets all three of these: it
 started before the one that just ended; it has ended, or its process has stopped; and it left no
-flagged hold (Adam, 2026-10-24). An execution that leaves a flagged hold SHALL count as ended
+flagged hold (Adam, 2026-10-24). Igor SHALL find those copies by listing that directory, never from the execution record, and SHALL delete each without following a link, and only where it is a regular file. An execution that leaves a flagged hold SHALL count as ended
 only once that hold is in place, so that no other execution's end, coming after this execution
 stops working and before its hold exists, can delete its copies. Copies in another host's state
 directory stay until an execution of the item ends on that host, and where the item never runs
@@ -362,6 +362,12 @@ record may name a copy Igor has deleted.
   item on the same host ends before #216 has put the flagged hold
 - **THEN** the flagged execution does not yet count as ended, so the later end keeps its copies
 
+#### Scenario: A link among the log copies is not followed
+
+- **WHEN** an execution of an item ends, and in Igor's state directory an earlier execution's
+  log copy has been replaced by a link to a file elsewhere
+- **THEN** Igor leaves the link in place and deletes nothing it points to, since it deletes only regular files
+
 #### Scenario: Igor deletes no flagged execution's log copies
 
 - **WHEN** a flagged execution of an item ends, and a later execution of the same item ends
@@ -413,9 +419,10 @@ Which seat it spends:
   seat's reading. Every limit and exclusion of a probe applies to it, such as #143's hourly
   limit and its skip of a refused seat. Like #143's probe it runs with no tools; its other arguments are
   those of the command above. Its two directories are the ones #143's *A seat probe runs where only
-  the Igor can write* places and checks. Where #143 refuses to start the probe because one of
-  those directories fails that check, the startup check SHALL fail: Igor refuses to start, naming
-  the directory, rather than wait for a later probe.
+  the Igor can write* places and checks. Where #143 refuses to start the seat probe because one
+  of those directories fails that check or cannot be created, the startup check SHALL fail: Igor
+  refuses to start, naming the directory and what is wrong with it, rather than wait for a later
+  seat probe.
 - **Under `igor serve` where no seat may be probed when Igor starts,** because each has an
   unexpired reading or #143's hourly limit or back-off holds it off, the call spends the seat the
   gate chooses for it, as for any call, and does not wait for a held-off seat (Adam,
@@ -425,7 +432,9 @@ Which seat it spends:
   seat, the one seat `igor run` makes from the token in `IGOR_RUN_TOKEN` (#171), through the
   gate; its two directories are new directories under Igor's state directory, as #216 defines
   it, not under the system's temporary directory, which other users of the host can write
-  (Adam, 2026-10-24).
+  (Adam, 2026-10-24). Igor SHALL remove both once the call ends, and an `igor run` that finds
+  them left by an earlier run whose process is gone SHALL remove them with that run's home and
+  plugin directory.
 
 Under `igor run` where `skills_dir` does not exist and the person's installed skills hold none the role's `skills` list names or Igor's own code runs, no check is
 made (*Skills come from one plugin directory the server names*); where the run assembled a
@@ -433,7 +442,7 @@ plugin directory from the person's skills, the check runs against it. Where Igor
 probe a seat nor spend one the gate names when it starts, as when the gate has found every seat
 refused by the provider, no call
 is made, as #171's *A spend with no seat behind it is not made* requires. Igor starts, and runs
-the check before its first model call, once a probe or the gate allows one.
+the check before its first model call, once a seat probe or the gate allows one.
 
 Igor SHALL read the `skills` list of the `system/init` event and confirm that `igor:<name>` is in
 it for every entry under `<skills_dir>/skills/`. A call that fails after printing the event
@@ -509,10 +518,15 @@ checked, and the check still passes on the list alone.
 
 #### Scenario: A probe #143 refuses stops the start
 
-- **WHEN** the startup check is a seat's first probe under `igor serve`, and #143 refuses to start
-  it because one of its two working directories is writable by other users
-- **THEN** Igor refuses to start, naming that directory
+- **WHEN** the startup check is a seat's first seat probe under `igor serve`, and #143 refuses to
+  start it because one of its two directories, its working directory and its `HOME`, fails #143's check
+- **THEN** Igor refuses to start, naming that directory and what is wrong with it
 - **AND** the process exits with status 78
+
+#### Scenario: The `igor run` check leaves no directories behind
+
+- **WHEN** an `igor run` startup check's call ends
+- **THEN** its working directory and its `HOME` under Igor's state directory are gone
 
 #### Scenario: No init event stops the start
 

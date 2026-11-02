@@ -1,6 +1,6 @@
 ## 0. Before building
 
-**Build order:** #171's (`seat-files`) code is built before this change's (proposal, decision
+**Build order:** #171's (`seat-files`) code is built before this change's (design.md, decision
 30), although issue #204's archive order puts this change first.
 
 - [x] 0.1 Run `claude -p --plugin-dir <dir>` against a plugin and ask the model to use
@@ -41,6 +41,11 @@
         (task 2.4);
       - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone.
         It stops on git's ownership check; `-c safe.directory=<clone root>` fixes it (task 3.2)
+
+- [ ] 0.4 Run the startup check's exact command from task 3.1, `--tools ""` included, on a seat's
+      setup-token under `env -i`, from an empty directory with an empty `HOME`, against a plugin
+      with one skill, and record in design.md whether the `system/init` event lists the skill.
+      Decision 42 rests on a call made on a login, without `--setting-sources user` and `--strict-mcp-config`. If the event does not list the skill, stop: revisit decision 42 before building task 3.1
 
 ## 1. Where the skills are
 
@@ -132,7 +137,7 @@
       ```
 - [ ] 2.5 Build the reset here, in `claudeWorker` (`src/execute.ts`): before every model step
       Igor starts in the worker's home, and never between the calls of one step, such as a
-      `claude -p --resume` of the step's session (proposal, decision 31), replace `~/.claude`
+      `claude -p --resume` of the step's session (design.md, decision 31), replace `~/.claude`
       and `~/.claude.json` with a fresh copy of the template, keeping nothing of what was
       there, `~/.claude/.credentials.json` included. Reset nothing else in the home. With a
       worker user, the reset runs as that user, through #175's `sudo` spawn. #153 wires each of
@@ -162,7 +167,7 @@
       names each copy's path, where Igor wrote it, beside its step's session id, or says the log
       was not copied. Where #216 later fails to move a copy, the record's path is still right
       (decision 34). Redact the
-      log as it is copied, with `redact` from #217's `src/redact.ts` (proposal, decision 29).
+      log as it is copied, with `redact` from #217's `src/redact.ts` (design.md, decision 29).
       Tests: each of the worker's, the bug hunt's and the prose pass's logs is copied and named in
       the record; a seat token the worker printed reads `[redacted]` in the copy; after
       the worker exits and a later call resets the home, the record names a file that still
@@ -172,7 +177,9 @@
       directory the session log copies of every execution of the item that started before it,
       has ended or whose process has stopped, and left no #216 flagged hold, so never one still
       running; leave a flagged execution's copies to #216's deletion of that execution's files
-      (proposal, decision 38). Record an execution as ended only after #216 has put any flagged
+      (design.md, decision 38). Find the copies by listing this host's state directory, never
+      from the execution record, and delete each without following a link and only where it is a
+      regular file (decision 43). Record an execution as ended only after #216 has put any flagged
       hold it leaves (decision 40), a rule the TLA+ model in `model/` shows is needed.
       Tests: after an unflagged execution and then a flagged one of the same item, the first's
       copies are gone and the second's remain; after a flagged execution and then an unflagged
@@ -180,7 +187,8 @@
       an unflagged one, the killed one's copies are gone; with an earlier execution still
       running when a later one ends, the earlier one's copies remain; with a later execution
       ending after a flagged one stops working and before its hold is recorded, which the test
-      arranges by holding back #216's hold write, the flagged one's copies remain
+      arranges by holding back #216's hold write, the flagged one's copies remain; a link put in
+      place of an earlier execution's copy is not followed
 
 ## 3. Startup check
 
@@ -195,20 +203,22 @@ check exits 78 wherever it runs.
       environment of `PATH`, the host's network settings, a `HOME` that is another empty
       directory, and one seat's token. Under `igor serve`, make it the first seat probe after
       the start, through #143's probe code, in the two directories #143 places under
-      `/var/lib/igor/probes`, recording its `rate_limit_event` as that seat's reading (proposal, decision 42: like #143's probe,
+      `/var/lib/igor/probes`, recording its `rate_limit_event` as that seat's reading (design.md, decision 42: like #143's probe,
       it denies every tool). Where #143 refuses to start that probe because one of its directories
-      is writable by other users, refuse to start, exiting 78, naming the directory (proposal,
-      decision 41). Message (may be reworded):
+      fails #143's check or cannot be created, refuse to start, exiting 78, naming the directory
+      and what is wrong with it (design.md, decision 41). Under `igor run`, remove the check's two
+      directories once its call ends, and have the next `igor run` remove those of a run whose
+      process is gone (decision 44). Message (may be reworded):
 
       ```
-      the startup check is the first probe of seat <seat>, and #143 refused to start it because <dir> is writable by other users; fix the directory's permissions and start Igor again
+      the startup check is the first probe of seat <seat>, and #143 refused to start it because <dir> <what is wrong>; fix the directory and start Igor again
       ```
 
       Where no
       seat may be probed, because none is due or #143's hourly limit or back-off holds off every
-      seat that is due, spend the seat the budget gate chose (proposal, decision 36). Under `igor run`, spend the
+      seat that is due, spend the seat the budget gate chose (design.md, decision 36). Under `igor run`, spend the
       implicit local seat, with the token in `IGOR_RUN_TOKEN`, from two new directories under
-      Igor's state directory (proposal, decisions 28 and 39). Let the call run to its `result` event and record its
+      Igor's state directory (design.md, decisions 28 and 39). Let the call run to its `result` event and record its
       cost against that seat as any call's is. Where no seat can be probed and the gate names
       none, make no call, and run the check before the first model call, once a seat can be
       probed or the gate names one. Read
@@ -309,8 +319,11 @@ check exits 78 wherever it runs.
 - [ ] 5.4 `docs/deployment.md`, in the same section, this note (decision 17). It may be
       reworded, but it must say that Igor uses no stored login, that the reset deletes one, and
       where a person creates a token. The section it points at, "Getting the token", is #171's
-      task 9.5, built before this change (proposal, decision 30):
+      task 9.5, built before this change (design.md, decision 30):
 
       ```
       Igor never uses a stored Claude login. Every seat has a token, and each call gets only its seat's token, in its environment; docs/seats.md, "Getting the token", shows how to create one. Before every model step in a worker's home Igor replaces ~/.claude and ~/.claude.json from its template, which deletes any login stored there, so don't log the service user or a worker user in to Claude.
       ```
+- [ ] 5.5 When this change is archived, move `model/` to `openspec/specs/pinned-skills/model/` and
+      point `.github/workflows/tla-pinned-skills.yml`'s paths and working directory there, so
+      TLC keeps running once the change's directory moves under `archive/`
