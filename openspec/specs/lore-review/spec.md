@@ -138,26 +138,12 @@ silently.
 
 ### Requirement: Reconciliation happens on invocation, not on a timer
 
-There is no daemon, so the tool SHALL reconcile outstanding proposals at invocation:
-promoting what merged, recording what was rejected, and reporting pull requests that have gone
-quiet past a configured window so they can be escalated to the store-level `reviewers`.
-
-No event SHALL promote an entry except through reconciliation. A merge-triggered job in the
-destination repository is one such invocation and SHALL run reconciliation rather than a
-mechanism of its own: a second promoter has a blind spot of its own to maintain, and the two
-disagree about exactly the cases nobody is watching. Promotion by a person's own hand is not an
-event and is covered below.
-
-A pull request SHALL be recognized as a lore proposal by the entry files it **adds** to the
-store — every path it puts there that the default branch did not have, including one arriving
-as a rename, since an entry's filename is its id — whoever opened it and whatever its branch is
-called. A proposal is defined by proposing an entry, not by which tool made the branch. A pull
-request that only edits or removes an entry file SHALL NOT be recognized as proposing it:
-editing changes a claim someone already approved and removing retires it, and neither is a
-claim being put up for review.
-
-Reconciliation MUST be idempotent over what it has already settled, because the merge-triggered
-job and a person's local invocation sweep the same pull requests.
+The tool SHALL reconcile outstanding proposals when invoked: promote what merged, record what
+was rejected, and report pull requests quiet past a configured window to escalate to the
+store's `reviewers`. A merge-triggered job in the destination, like the one `init` writes, is an
+invocation and SHALL run reconciliation. No event, such as a merge, SHALL promote an entry
+except through reconciliation; a person promoting by hand is not one. Reconciliation MUST be
+idempotent over what it has settled.
 
 #### Scenario: Merged proposal promoted on the next run
 
@@ -175,6 +161,27 @@ job and a person's local invocation sweep the same pull requests.
 - **THEN** the destination's merge-triggered job reconciles
 - **AND** the entries it landed become active and every candidate the reviewer deleted is
   recorded as rejected
+
+#### Scenario: A merge that lands no entry file
+
+- **WHEN** a proposal is merged with every candidate deleted on its branch, so that against the
+  default branch the merge adds and modifies nothing under the store's entry path
+- **THEN** reconciliation still runs on that merge, although it changed no entry file
+- **AND** each deleted candidate is recorded as rejected
+
+#### Scenario: Already promoted by repository automation
+
+- **WHEN** entries were already set active by an earlier reconciliation, whether the
+  merge-triggered job or a person ran it
+- **THEN** reconciliation leaves them unchanged
+- **AND** records no second approval
+
+### Requirement: A pull request proposes the entry files it adds
+
+A pull request SHALL be recognized as proposing each entry file it puts in the store that the
+default branch did not have, the new path of a rename included, whoever opened the pull request
+and whatever its branch is called. It SHALL NOT be recognized as proposing an entry file it only
+edits or removes.
 
 #### Scenario: A proposal nothing of ours opened
 
@@ -195,20 +202,6 @@ job and a person's local invocation sweep the same pull requests.
 - **THEN** the new entry is proposed and promoted, because its filename is an id nothing has
   reviewed
 
-#### Scenario: A merge that lands no entry file
-
-- **WHEN** a proposal is merged with every candidate deleted, so the merge adds and modifies
-  nothing under the store's entry path
-- **THEN** reconciliation still runs on that merge
-- **AND** each deleted candidate is recorded as rejected
-
-#### Scenario: Already promoted by repository automation
-
-- **WHEN** entries were already set active before reconciliation runs — by the merge-triggered
-  job, or by an earlier invocation
-- **THEN** reconciliation leaves them unchanged
-- **AND** records no second approval
-
 ### Requirement: A public destination refuses privately-sourced entries
 
 Where the destination repository is public, proposing SHALL refuse candidates whose provenance
@@ -227,25 +220,11 @@ the check does not require a network call.
 
 ### Requirement: Lore reaches the default branch by pull request
 
-Every change to an entry SHALL arrive on the default branch through a pull request.
-Reconciliation sweeps pull requests, so an entry that never had one is an entry nothing will
-ever promote: it stays `provisional`, and only active entries fire. The remaining blind spot is
-closed by requiring the pull request, not by adding a mechanism that watches for commits
-without one — that mechanism is the one being retired.
-
-"Require a pull request before merging" SHALL be recommended to every destination, including
-one with a single writer. It still lets an author merge their own proposal, and it is what
-makes the promotion path total rather than a courtesy between collaborators. "Require
-approvals" SHALL NOT be recommended: GitHub refuses to let anyone approve their own pull
-request, which hard-blocks a solo maintainer.
-
-Setup documentation SHALL state the requirement and what becomes of an entry committed
-directly, where a destination is being set up. Discovered any other way, it is discovered by
-noticing lore that never fires.
-
-Promoting an entry in place SHALL remain available as a manual repair for one already on the
-default branch without a pull request, recording whoever ran it as the approver. It is invoked
-by a person and MUST NOT be wired to an event.
+Every change to an entry SHALL reach the default branch through a pull request. Igor SHALL
+recommend "Require a pull request before merging" to every destination, including one with a
+single writer, and SHALL NOT recommend "Require approvals". Setup documentation SHALL state this
+and that an entry committed directly stays `provisional` and never fires. A person SHALL be able
+to promote it in place with a command, recorded as its approver; no event SHALL run that command.
 
 #### Scenario: Entry committed straight to the default branch
 

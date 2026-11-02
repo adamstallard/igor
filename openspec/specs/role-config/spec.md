@@ -204,14 +204,6 @@ accepted ones. The refusal SHALL apply wherever a role file is read — the role
 org base it inherits, and a parent read only for what it contributes — and SHALL extend to the
 nested mappings: `lane`, its `labels`, `paths` and `age`, and each `sources` entry.
 
-A role already refuses an action inside `allow` that it does not recognise, on the grounds that
-a typo must fail rather than silently grant nothing. The keys around it had no such rule, so
-the same typo one line higher granted nothing just as quietly.
-
-Inside `lane` it is not a setting that fails to take but a constraint that disappears. A
-misspelt `excludes` leaves a lane that admits everything its author meant to keep out, and a
-lane is where `Human` and `wontfix` are kept away from an Igor.
-
 #### Scenario: An unreadable key on a role is named
 
 - **WHEN** a role file names a key the parser does not read
