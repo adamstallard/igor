@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Config } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
 import { ENTRIES_DIR, REJECTED_DIR, serialize } from '../src/store.js'
-import { tempDir } from './tmp.js'
+import { templated } from './tmp.js'
 
 /**
  * `propose` over the real `github.ts`, with only the `gh` process faked.
@@ -92,12 +92,11 @@ function entry(id: string): Entry {
 }
 
 /** A checkout whose origin is the destination, which is where `repoFromCheckout` reads it. */
-function store(): string {
-  const dir = tempDir('igor-propose-gh-')
+const checkout = templated((dir) => {
   execFileSync('git', ['-C', dir, 'init', '-q'])
   execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/org/lore.git'])
-  return dir
-}
+})
+const store = (): string => checkout('igor-propose-gh-')
 
 function config(destination: string): Config {
   return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] }, conditions: { threshold: 3, cooldownMs: 900_000, maxCooldownMs: 21_600_000 } }
