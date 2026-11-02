@@ -1,3 +1,10 @@
+# Lore pull
+
+Builds on: stopped-scope-visible (adamstallard/igor#82)
+
+This change builds on #82 because it modifies a requirement #82 adds. It only cites #171, #179
+and #220, which *Impact* lists.
+
 ## Decisions
 
 Terms used here:
@@ -178,9 +185,9 @@ and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in is
     between two of its writes leaves a state a restart already handles. The one shared write,
     decision 14's record, rests on a single create that fails where the record exists, and the
     scenario *A rotated token is announced once* states that. `design.md` gives each.
-20. **Igor fetches once per poll interval** (Adam, 2026-10-19), on every second firing of #179's
-    heartbeat timer, which fires every half interval apart from the cycle, never blocking the
-    heartbeat write. A removed seat thus applies within one interval even while a worker runs for
+20. **Igor fetches once per poll interval** (Adam, 2026-10-19), on a timer of its own apart from
+    the cycle, never blocking the heartbeat write; `design.md` says why that timer is not #179's
+    heartbeat timer. A removed seat thus applies within one interval even while a worker runs for
     hours; any other new commit applies at the start of the next cycle. *Rejected:* fetching
     only at the start of a cycle, which would leave a removed seat in use until the running
     worker finishes.
@@ -333,15 +340,13 @@ intervals:
   reopen `lore:config:<role>`.
 - For Adam: a process with no applied ref, after a lost checkout or as a new rank, never
   announces the seat changes it applies; no decision states that.
-- For the author: task 6.2's four "in place of" strings no longer match #171's text. A seat file
+- For the author: a seat file
   that one commit deletes and a later commit adds back, both between the applied commit and the
   fetched one, as a revert does, kills its workers under the design and task 4.1 but not under
-  the requirement; the fixed case below is a file that goes and comes back between two applies.
-  Also: "the condition's record" is defined nowhere,
-  where #171 keeps no condition state apart from the log; a start fetch has no poll interval to
-  bound it before the first read; the object-store limit, a second refused commit while the
-  condition is open, and submodule recursion have no scenario, and *A later passing commit clears
-  the condition* is broader than its rule; `condition-backoff`'s *A condition's scope is its
+  the requirement. (The case the later 2026-10-21 read fixed is different: a file deleted and added
+  back across two separate applies, not within one fetch's range.)
+  Also: nothing ends a hung fetch at start, since no poll interval is in force before the first read, and *A later
+  passing commit clears the condition* is broader than its rule; `condition-backoff`'s *A condition's scope is its
   cure's scope* names a change, not the `stuck-conditions` capability; and three requirements
   carry reasons that belong in `design.md`.
 
@@ -361,9 +366,8 @@ between two applies; and two missing scenarios. None of the items below is fixed
   says it need not be, and no decision states that move.
 - For the author: the scenarios *A rotated token is announced once* and *A token changed back is
   announced again* promise one notice without saying who pushed, while the rule excludes a lender
-  who opened the pull request and pushed the change, as in a lender's own rotation; the condition
-  a refused cycle-start read raises is defined both here and in #179's *A retired rank does not
-  hold its items forever*; the `stuck-conditions` delta leaves no way for a fix in a separate
+  who opened the pull request and pushed the change, as in a lender's own rotation; the condition a refused cycle-start read raises is defined both in this change's spec and in #179's *A process reads
+  the roster and its configuration at each cycle start*; the `stuck-conditions` delta leaves no way for a fix in a separate
   `destination` repository to arrive; a merged symlink or committed `.igor` path in a worktree is
   not refused; `SIGHUP` "from its first moment" is unmeasured for the window before Node installs
   the handler; `git worktree repair` with no path rewrites the links of every linked worktree, other processes'
@@ -426,6 +430,24 @@ yet (the reads' other findings are fixed in this revision):
   ref* is used before it is defined; and the scenarios do not cover the rename case, the
   re-checkout after a local fault, or a config key added after start counting as a local fault.
 
+**Findings of the 2026-11-02 consistency read, for the next revision.** It also found that "the
+condition's record" was undefined, that the term definitions came after their first use, that the
+exit 1 for a local fault at start had no `SHALL`, and that four rules had no scenario; all are
+fixed. None of the items below is fixed:
+- For Adam: a process restarted on a stricter Igor refuses commit F and opens `lore:config:<role>`,
+  but a sibling on the older Igor passes F at its next cycle and clears it. From then on the
+  upgraded rank refuses F at every cycle start, which decision 37 never lets reopen the
+  condition, so it runs on its older commit with nothing open. This is a case of the first *For Adam* item of the later 2026-10-21 read, on checks that depend
+  on the server.
+- For Adam: a retired rank's two refs and worktree stay in the checkout, and nothing removes or
+  ages them out. A rank added back months later would fall back to that old applied commit where
+  its fetched commit fails, and would compare its first seat notice with it.
+- For #171: its rule that a lender's login appears only in `igor doctor` and `igor budget`
+  contradicts the seat notice, which @-mentions the lender on the lore repository.
+- For #179: its scenario that a configuration setting a 45-minute poll interval makes a starting
+  process exit 78 contradicts this change's start on the applied commit where the fetched commit
+  fails the startup checks.
+
 **Measurements**, each a task: that fetches into distinct refs and checkouts of distinct
 worktrees, from several processes sharing one object store, do not fail on each other's git
 locks, and how long one fetch takes, which says how often a fetch would be killed when the next
@@ -483,5 +505,5 @@ The lore repository is where an organization directs its Igors. Merging there sh
 - Text in #82, #171 and #179 that calls pulling future work, and #171's scenario that nothing
   comments on a pushed commit, are rewritten (tasks 6.1 to 6.3).
 - Depends on #171 for seat files, the read-cleared condition and the removal, on #179 for the
-  per-cycle reread and its heartbeat timer, on #82 for the requirement it modifies, and on #220
+  per-cycle reread and its heartbeat, on #82 for the requirement it modifies, and on #220
   for its visibility read.

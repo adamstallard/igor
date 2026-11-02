@@ -1,42 +1,34 @@
+## Purpose
+
+Keep each running `igor serve` process on its organization's current lore repository with no
+person pulling or restarting on the server. Each process fetches the lore repository on a timer
+of its own, as its role's GitHub App, and at each cycle start reads its whole configuration from
+one fetched commit. A commit that passes the startup checks applies for that cycle; one that fails
+them is refused, and the process keeps the last commit that passed. A removed seat file applies at
+once, and when Igor applies a change to a seat's file it tells the seat's owner, except in the
+cases its notice requirement excludes.
+
 ## ADDED Requirements
 
 ### Requirement: `igor serve` fetches its lore repository once per poll interval
 
-The *lore checkout* is the git working tree holding the `igor.config.yaml` that `igor serve`
-loads, whether `igor serve` found that file by searching up from its working directory or was
-given its path. Its branch is the upstream of the branch checked out there. A
-*fetch* downloads that branch's new commits; a *lore read* is a process loading its whole
-configuration from one commit; a *pull* is a fetch and the lore read that follows it. The
-*configuration in force* is the one a process runs under: the configuration its last passing
-lore read loaded, less the seats that the requirement *A removed seat file applies as soon as a
-fetch brings it* keeps out.
-
-An `igor serve` process SHALL fetch that branch once per poll interval of its role, from a timer
-apart from its cycle and from any worker. A fetch SHALL NOT delay `work-claiming`'s heartbeat
-write (#179), and a fetch still running when the next fetch is due SHALL be ended and counted as
-failed.
-The fetch SHALL name the repository's `https://github.com/<owner>/<repo>` URL itself, SHALL act
-as the role's GitHub App as `surface-adapter`'s *On GitHub, every call an Igor makes acts as its
-App* requires, SHALL read no system-wide or per-user git configuration, and SHALL run no git
-hook. It SHALL update only the process's own fetched ref, which *`igor serve` starts on the newest
-commit that passes* defines, and SHALL change no file in any working tree.
-
-`igor serve` SHALL refuse to start where the lore checkout has no branch checked out or its branch
-has no upstream, where that upstream's remote URL is not an `https://github.com/` URL free of
-credentials, or where the checkout's git configuration sets any key under `url.`, `http.`,
-`credential.`, `filter.`, `include.`, `includeIf.` or `submodule.`, or sets `core.fsmonitor`,
-`core.sshCommand`, `core.gitProxy`, `core.askPass`, `core.alternateRefsCommand` or
-`extensions.worktreeConfig`. Each refusal names the checkout and what is wrong, naming such a key
-by its section and last part only, such as `url.*.insteadOf`: a `url.` key's name can hold a
-credential. A fetch SHALL NOT recurse into submodules. The process SHALL check the checkout's
-configuration again before each git command it runs there. Where such a key has appeared since
-start, it SHALL run no git command in the checkout: a fetch due then counts as failed, a lore read
-fails for a local reason, and each cycle report names the key in the same form.
-
-A fetch that fails, for any reason including a git lock held by another process, SHALL be tried
-again when the next fetch is due. Until a fetch succeeds, each cycle's report SHALL say how long ago the
-process's last successful fetch was, or "none since start". The process SHALL go on applying the
-commit it has, and SHALL open no condition for the failure.
+The *lore checkout* is the server's shared git working tree holding the `igor.config.yaml` that
+`igor serve` loads, whether found by searching up from its working directory or given as a path,
+and its branch is the upstream of the branch checked out there. A *fetch* downloads that branch's
+new commits, a *lore read* is a process loading its whole configuration from one commit, and a
+*pull* is a fetch and the lore read that follows it. The *configuration in force* is the one the
+process's last passing lore read loaded, less the seats *A removed seat file applies as soon as a
+fetch brings it* keeps out. An `igor serve` process SHALL fetch that branch once per its role's
+poll interval in the configuration in force, on a timer of its own, apart from its cycle, its
+workers and its heartbeat. The fetch SHALL name the repository's
+`https://github.com/<owner>/<repo>` URL, act as the role's GitHub App, read no system-wide or
+per-user git configuration, run no git hook, move only the process's own fetched ref, which *`igor
+serve` starts on the newest commit that passes* defines, and change no file in any working tree. A
+fetch still running when the next is due SHALL be ended and count as failed. A fetch that fails,
+for any reason, SHALL open no condition; the process SHALL keep applying the commit it has and
+SHALL fetch again when the next fetch is due. Each cycle report made after a failed fetch, until a
+fetch succeeds, SHALL say how long ago the process's last successful fetch was, or "none since
+start" where none has.
 
 #### Scenario: A merged change is fetched without a person
 
@@ -69,6 +61,24 @@ commit it has, and SHALL open no condition for the failure.
 - **THEN** the process keeps applying the commit it applied before, opens no condition, and each
   cycle report until a fetch succeeds says when its last fetch succeeded, or "none since start"
 
+#### Scenario: A lengthened poll interval spaces the fetches out
+
+- **WHEN** a process started on the 10-minute poll interval applies a commit that sets 30 minutes
+- **THEN** it fetches once every 30 minutes from then on, whatever the pace of its heartbeat timer
+
+### Requirement: The lore checkout's git configuration cannot route git around the App
+
+`igor serve` SHALL refuse to start where the lore checkout has no branch checked out, its branch
+has no upstream, that upstream's remote URL is not an `https://github.com/` URL free of
+credentials, or the checkout's git configuration sets any key under `url.`, `http.`, `credential.`,
+`filter.`, `include.`, `includeIf.` or `submodule.`, or sets `core.fsmonitor`, `core.sshCommand`,
+`core.gitProxy`, `core.askPass`, `core.alternateRefsCommand` or `extensions.worktreeConfig`. Each
+refusal names the checkout and what is wrong, naming such a key by its section and last part only,
+such as `url.*.insteadOf`. A fetch SHALL NOT recurse into submodules. The process SHALL check that
+configuration again before each git command it runs in the checkout, and where such a key has
+appeared it SHALL run none there: a fetch due then counts as failed, a lore read fails for a local
+reason, and each cycle report names the key in the same form.
+
 #### Scenario: A key added to the checkout's config while the process runs is not used
 
 - **WHEN** someone adds `http.extraHeader` to the lore checkout's `.git/config` while `igor serve`
@@ -83,35 +93,31 @@ commit it has, and SHALL open no condition for the failure.
   `http.extraHeader`
 - **THEN** it refuses to start, naming the checkout and what is wrong
 
+#### Scenario: A fetch does not recurse into submodules
+
+- **WHEN** the lore repository's branch adds a submodule
+- **THEN** the fetch brings no commit of the submodule's repository
+
 ### Requirement: A process applies one lore commit at a time, whole
 
-A lore read loads the process's configuration, its role files, the seat files and, where
-`destination` names the lore repository itself, the lore entries it injects. An `igor serve`
-process SHALL make each lore read from one commit of the lore repository, in a working tree of its
-own detached at that commit and named by its role and rank. It SHALL never read them from the
-lore checkout's own working tree. The process SHALL create, repair and update that working tree
-with no git hook run and no system-wide or per-user git configuration read, and before each
-cycle start's lore read SHALL make it match the commit read exactly, discarding any change or
-extra file in it. Where that read is refused or fails for a local reason, the process SHALL make
-the working tree match the commit its applied ref names again before the cycle runs. Except in a
-cycle whose working tree cannot be put back, below, the working tree SHALL hold the commit the
-cycle applies between cycle starts, and a read of one file during the cycle, such as a lore entry
-before an item or `seat-budget`'s re-read of one seat file (#171), SHALL read it there and SHALL
-NOT move the working tree to another commit.
+A lore read loads the process's configuration, role files, seat files and, where `destination`
+names the lore repository, the lore entries. An `igor serve` process SHALL make each lore read from
+one commit, in a working tree of its own named by its role and rank and detached at that commit,
+and never from the lore checkout's own working tree. It SHALL create, repair and update that
+working tree with no git hook run and no system-wide or per-user git configuration read. Before
+each cycle start's read it SHALL make the working tree match the commit exactly, discarding any
+change or extra file, and where that read is refused or fails for a local reason it SHALL make it
+match the applied commit again before the cycle runs. Except as *A working tree that cannot be put
+back leaves the rank on its last passing read* says, between cycle starts the working tree SHALL
+hold the commit the cycle applies, and a read of one file during the cycle, such as a lore entry or
+a seat file's re-read, SHALL read it there and SHALL NOT move the working tree.
 
-**A working tree that cannot be put back.** The process SHALL keep in memory the configuration
-and lore entries of its last passing read. Where the working tree cannot be made to match the
-applied commit, the cycle SHALL run on what memory holds, SHALL take each file it reads during the
-cycle, a seat file's re-read included, from memory and not from the working tree, and SHALL try
-the repair again at the next cycle start. Such a cycle start is a local fault toward
-`lore:read:<role>-<rank>`, as *A lore read at each cycle start applies what passes and refuses
-what fails* defines it. A
-relative path in `igor.config.yaml` SHALL resolve against the directory holding
-`igor.config.yaml` in the lore checkout, as the code on the `main` branch resolves it. Where the result lies inside the lore checkout, the
-process SHALL read that path in its working tree; where it lies outside, such as a `seatKey`
-beside the checkout, it SHALL read the file at the resolved path. Each cycle report SHALL name the
-commit applied. A `destination` naming another repository SHALL be read where the configuration
-names it, and SHALL NOT be fetched.
+A relative path in `igor.config.yaml` SHALL resolve against the directory holding
+`igor.config.yaml` in the lore checkout, exactly as `igor serve` resolves such a path without this
+change. A result inside the lore checkout SHALL be read in the process's working tree, and one
+outside it, such as a `seatKey` beside the checkout, at the resolved path. A `destination` naming
+another repository SHALL be read where the configuration names it, and SHALL NOT be fetched. Each
+cycle report SHALL name the commit applied.
 
 #### Scenario: A seat file being rewritten in the shared checkout is not read as removed
 
@@ -155,50 +161,58 @@ names it, and SHALL NOT be fetched.
 - **WHEN** a cycle report is written
 - **THEN** it names the lore commit the process applied during that cycle
 
+### Requirement: A working tree that cannot be put back leaves the rank on its last passing read
+
+The process SHALL keep in memory the configuration and lore entries of its last passing read. Where
+its working tree cannot be made to match the applied commit, the cycle SHALL run on what memory
+holds, taking each file it reads, a seat file's re-read included, from memory and not from the
+working tree, and the process SHALL try the repair again at the next cycle start. Such a cycle
+start is a local fault, as *A lore read that fails for a local reason is not a refused commit*
+says.
+
+#### Scenario: A working tree that cannot be put back keeps the rank working
+
+- **WHEN** the `backend-2` process's read is refused, and making its working tree match the applied
+  commit then fails
+- **THEN** the cycle runs on the configuration and lore entries of the last passing read, held in
+  memory, and reads nothing from the working tree
+- **AND** the next cycle start tries the repair again
+
+#### Scenario: Three cycles with a stuck working tree open a condition
+
+- **WHEN** the `backend-2` process's working tree cannot be put back at three cycle starts in a row
+- **THEN** `lore:read:backend-2` opens
+- **AND** the process keeps working from memory
+
 ### Requirement: `igor serve` starts on the newest commit that passes
 
 The *startup checks* on a lore read are every check a starting `igor serve` makes on the
-configuration it reads, among them validation of the configuration files and the check that the
-App can act on every repository the role works and on the lore repository, as
-`surface-adapter`'s *An Igor that cannot act as its App does not start* says, but not the check
-that the roster declares the process's rank. A passing read whose roster drops the rank retires
-it, as #179's *A retired rank does not hold its items forever* says, and a start whose fetched
-commit drops it is refused, as #179's *A rank removed from the roster exits cleanly* says, with
-no fallback to the applied commit.
+configuration it reads, among them validation of the configuration files and `surface-adapter`'s
+check that the App can act on every repository the role works and on the lore repository. They
+leave out the check that the roster declares the process's rank: a passing read whose roster drops
+the rank retires it, as `work-claiming`'s *A process reads the roster and its configuration at each
+cycle start* says, and a start whose fetched commit drops it is refused, as `work-claiming`'s *A
+rank removed from the roster exits cleanly* says, with no fallback to the applied commit. A check
+that fails because GitHub did not answer, or refused the App's credential, fails no read: at a
+cycle start the process stays on the commit it applied, opens no condition for the read and reads
+again at the next cycle start, and at start it SHALL exit with status 1. A read at start that fails
+for a local reason SHALL also end the start with status 1, with no fallback to the applied commit.
 
-A check that fails because GitHub did not answer, or because GitHub refused the App's
-credential, fails no read. At a cycle start the process stays on the commit it applied, opens no
-condition for the lore read, and reads again at the next cycle start; a refused credential is
-handled as `surface-adapter`'s *An Igor that cannot act as its App does not start* says of
-credentials GitHub refuses while the Igor runs. At start the process exits with status 1:
-`stuck-conditions`' *A process that refuses to start exits with status 78* counts such a check
-as no refusal, and exits 1 for it. A read at start that fails for a local
-reason, as *A lore read at each cycle start applies what passes and refuses what fails* defines
-it, SHALL also end the start with status 1, and SHALL NOT fall back to the applied commit.
-
-Each process keeps two refs of its own,
-named by its role and rank: the *fetched* ref, which each fetch moves, and the *applied* ref,
-which names the last commit whose lore read passed. Both survive a restart.
-
-At start an `igor serve` process SHALL fetch, and SHALL make its first lore read from the commit
-its fetched ref names. Where that fetch fails, the fetched ref still names what the process
-fetched before it last stopped. A process with no fetched ref whose first fetch fails SHALL set
-its fetched ref to the commit the lore checkout itself last fetched for the branch's upstream,
-copying a ref with no network call.
-
-Where the commit the fetched ref names fails the startup checks and the process has an applied
-ref whose commit passes them, judged with every seat file it holds so that a removed seat cannot
-make the commit that held it fail, the process SHALL start on
-the commit its applied ref names, with the condition `lore:config:<role>` open as for any
-refused read. Where it has no applied ref, or the applied commit fails them too, the process
-SHALL refuse to start. Whichever commit it starts on, the configuration in force SHALL then leave
-out every seat *A removed seat file applies as soon as a fetch brings it* leaves out, even where
-that leaves a role with no seat, as `seat-budget`'s *A removed seat file always takes effect*
-(#171) allows.
+Each process keeps two refs of its own, named by its role and rank, that survive a restart: the
+*fetched* ref, which each fetch moves, and the *applied* ref, naming the last commit whose lore
+read passed. At start the process SHALL fetch, then make its first lore read from the commit its
+fetched ref names. A process with no fetched ref whose first fetch fails SHALL set its fetched ref
+to the commit the lore checkout itself last fetched for its branch's upstream, with no network
+call. Where the fetched commit fails the startup checks and the applied commit, judged with every
+seat file it holds, including any a later commit removed, passes them, the process SHALL start on
+the applied commit with `lore:config:<role>` open. Where it has no applied ref, or the applied
+commit fails too, it SHALL refuse to start. Whichever commit it starts on, every seat *A removed
+seat file applies as soon as a fetch brings it* leaves out SHALL stay out of the configuration in
+force.
 
 The process SHALL report each uncommitted change in the lore checkout's working tree, and each
-local commit that the commit its fetched ref names does not hold, naming each and saying that
-`igor serve` does not apply it, and SHALL run without them.
+local commit its fetched commit does not hold, naming each and saying that `igor serve` does not
+apply it, and SHALL run without them.
 
 #### Scenario: A restart whose fetch fails keeps a seat removal
 
@@ -264,67 +278,35 @@ local commit that the commit its fetched ref names does not hold, naming each an
 
 ### Requirement: A lore read at each cycle start applies what passes and refuses what fails
 
-At the start of each cycle an `igor serve` process SHALL make a lore read from the commit its
-fetched ref names, whether or not that commit changed since its last read. That read is the one
-at which `work-claiming` rereads the configuration (#179) and `seat-budget` decrypts seat files
-(#171). A read SHALL fail the startup checks where the configuration no longer declares the role
-the process runs, or that role's file is missing. Where the read passes, the process SHALL apply
-that commit for the whole cycle and move its applied ref to it. Where it fails, the process SHALL
-refuse it as `work-claiming`'s rule for a configuration read at the start of a cycle says (#179,
-in *A retired rank does not hold its items forever*), the last configuration that passed being
-the configuration held by the commit that the applied ref names, and SHALL open the condition below. A
-read that fails for a local reason, as defined below, is neither a passing nor a refused read. A
-newly fetched commit SHALL NOT change the configuration or lore entries of a cycle already
-running, the workers it runs included, except under *A removed seat file applies as soon as a
+At each cycle start an `igor serve` process SHALL make a lore read from the commit its fetched ref
+names, whether or not it changed; it is the read at which `work-claiming` rereads the configuration
+and `seat-budget` decrypts seat files. A configuration that no longer declares the process's role,
+or lacks that role's file, SHALL fail the startup checks. A passing read SHALL apply its commit for
+the whole cycle and move the applied ref to it. A failing read SHALL be refused as
+`work-claiming`'s *A process reads the roster and its configuration at each cycle start* says,
+keeping as the last configuration that passed the one the commit the applied ref names holds, and
+SHALL open `lore:config:<role>`. A newly fetched commit SHALL NOT change the configuration or lore
+entries of a running cycle or its workers, except under *A removed seat file applies as soon as a
 fetch brings it*.
 
-The condition a refused read opens SHALL be the read-cleared condition `lore:config:<role>`, of
-the kind `stuck-conditions`' *A read-cleared condition opens on a failing read and clears on a
-passing one* defines, keyed by its cure as `condition-backoff`'s *A condition's scope is its
-cure's scope* requires. A refused read by any rank of the role SHALL open it
-where it is not open. The condition is on the role's configuration at the refused commit and
-after it: a passing read by any rank of the role, of the refused commit or of a commit that
-descends from it, SHALL clear it. A passing read of the rank's fetched head, the commit the
-rank's own fetch last brought into its fetched ref, SHALL also clear it where the refused commit
-is not in that head's history, as after a force-push that dropped the refused commit. Two limits
-apply to this second case:
-- The rank's fetch that brought the head SHALL have started after the rank first knew the
-  condition was open, from its own refusal or from reading the condition's record at a cycle
-  start. A rank that restarts learns it again at its first cycle start.
-- The rank's object store SHALL hold the refused commit. The rank that refused the commit always
-  holds it, and so does every rank sharing that server's object store.
+`lore:config:<role>` is a read-cleared condition, of the kind `stuck-conditions` defines. A refused
+read by any rank of the role SHALL open it where it is not open, naming the refused commit, which a
+refusal of another commit while it is open SHALL NOT change. A passing read by any rank of the role
+SHALL clear it where the commit read is the refused commit or descends from it. A rank's passing
+read of its fetched head, the commit its own fetch last brought, SHALL also clear it where the
+refused commit is not in that head's history, as after a force-push, but only where that fetch
+started after the rank first knew the condition was open, from its own refusal or from reading the
+condition's rows in the execution log at a cycle start, and where the rank's object store holds the
+refused commit. A rank that restarts learns again that the condition is open at its first cycle
+start. A passing read of any other commit SHALL NOT clear it. The log row that clears it names the
+commit whose read cleared it, the *clearing commit*.
 
-A passing read of any other commit that does not descend from the refused one, such as an older
-commit a rank reads before its fetch brings the refused one, SHALL NOT clear it. The condition names the commit whose refusal opened it, and a refusal of another commit while it is
-open SHALL NOT change that commit. The record that clears the condition names the commit whose
-read cleared it. A rank whose last read was refused applies the passing commit at its own next
-cycle start after its fetch brings that commit.
-
-A refused read SHALL NOT reopen a cleared `lore:config:<role>` where the commit read is the one
-the condition refused, or is the commit whose read cleared it or one of its ancestors. The rank still
-refuses the commit, and runs that cycle on the commit its applied ref names. This exception
-SHALL NOT cover a read the App check refuses (below), nor a read at process start, where the
-condition opens as for any refused read. The condition's report SHALL name the commit, the file that
-failed and the check it failed, except as *A lore read writes nothing of a private repository to a
-public state branch* forbids, and SHALL quote no value from the file.
-
-A lore read *fails for a local reason* where a git or filesystem operation that puts the commit in
-the process's working tree, or reads a file from it, fails, rather than a check on what the
-commit holds. Such faults are a git lock held elsewhere, such as `packed-refs.lock` in the shared
-repository or an `index.lock` left in the process's own working tree, a full disk, and a working
-tree git can no longer use. A local fault SHALL NOT open or clear `lore:config:<role>`. The process SHALL run that cycle on the commit its
-applied ref names, as for a refused read, and SHALL read again at its next cycle start. Where
-three cycle starts in a row fail for a local reason, the process SHALL open the read-cleared
-condition `lore:read:<role>-<rank>`. Its report SHALL name the operation that failed and the kind
-of fault, such as a held lock or a full disk, and SHALL quote no path outside the lore checkout,
-no file's content and no text of git's error. #171's read-cleared kind lets each rule that
-uses the kind set such a count. A cycle start is a local fault where its read fails for a local
-reason, or where its working tree cannot then be put back (*A process applies one lore commit at a
-time, whole*). The process's own next cycle start that is not a local fault SHALL clear
-`lore:read:<role>-<rank>`, whether its read passed the startup checks or was refused.
-
-An App that has lost access to a repository the role works, or to the lore repository, fails the
-startup checks, so the read is refused under `lore:config:<role>`.
+A refused read SHALL NOT reopen a cleared `lore:config:<role>` where the commit read is the refused
+commit, or the clearing commit or one of its ancestors; the rank still refuses it and runs that
+cycle on its applied commit. This exception SHALL NOT cover a refusal by the App check, nor a read
+at process start. The condition's report SHALL name the commit, the file that failed and the check
+it failed, except as *A lore read writes nothing of a private repository to a public state branch*
+forbids, and SHALL quote no value from the file.
 
 #### Scenario: GitHub not answering at a cycle start fails no read
 
@@ -447,37 +429,6 @@ startup checks, so the read is refused under `lore:config:<role>`.
 - **WHEN** `lore:config:backend` is open and the `frontend-1` process's read passes
 - **THEN** `lore:config:backend` stays open
 
-#### Scenario: A git lock fails one read and opens no condition
-
-- **WHEN** the `backend-2` process's cycle-start read fails because `packed-refs.lock` is held, and
-  its next cycle start's read passes
-- **THEN** it runs the first cycle on the commit its applied ref names, and opens no condition
-- **AND** `lore:config:backend` is neither opened nor cleared by the failed read
-
-#### Scenario: Three local faults in a row open a condition for the process
-
-- **WHEN** the `backend-2` process's read fails at three cycle starts in a row because the disk is
-  full
-- **THEN** `lore:read:backend-2` opens, naming the failed operation and a full disk, and
-  `lore:config:backend` is not opened
-- **AND** it clears at the process's next cycle start that is not a local fault, whether its read
-  passes or is refused
-- **AND** its report quotes no path outside the lore checkout
-
-#### Scenario: A working tree that cannot be put back keeps the rank working
-
-- **WHEN** the `backend-2` process's read is refused, and making its working tree match the applied
-  commit then fails
-- **THEN** the cycle runs on the configuration and lore entries of the last passing read, held in
-  memory, and reads nothing from the working tree
-- **AND** the next cycle start tries the repair again
-
-#### Scenario: Three cycles with a stuck working tree open a condition
-
-- **WHEN** the `backend-2` process's working tree cannot be put back at three cycle starts in a row
-- **THEN** `lore:read:backend-2` opens
-- **AND** the process keeps working from memory
-
 #### Scenario: A fix on the server is picked up with no new commit
 
 - **WHEN** a seat's file could not be decrypted because the key file named by `seatKey` was
@@ -499,18 +450,57 @@ startup checks, so the read is refused under `lore:config:<role>`.
 - **THEN** the process keeps running on its last commit that passed, and does not exit
 - **AND** `lore:config:backend` names the file that no longer holds the role
 
+#### Scenario: A second refused commit does not change the one the condition names
+
+- **WHEN** `lore:config:backend` is open on commit R, and a rank refuses a later commit S that
+  does not descend from R
+- **THEN** the condition still names R
+
+#### Scenario: A rank without the refused commit's object clears nothing by its head
+
+- **WHEN** `lore:config:backend` is open on commit R, the branch is force-pushed to a commit that
+  drops R and passes, and a rank on another server, whose object store lacks R, reads it
+- **THEN** that rank's read passes, and `lore:config:backend` stays open
+
+### Requirement: A lore read that fails for a local reason is not a refused commit
+
+A lore read *fails for a local reason* where a git or filesystem operation that puts the commit in
+the process's working tree, or reads a file from it, fails, rather than a check on what the commit
+holds; such a read neither passes nor is refused. It SHALL NOT open or clear `lore:config:<role>`:
+the process SHALL run that cycle on its applied commit and read again at its next cycle start. A
+cycle start is a local fault where its read fails for a local reason, or where its working tree
+cannot then be put back. After three in a row the process SHALL open the read-cleared condition
+`lore:read:<role>-<rank>`, whose report SHALL name the operation that failed and the kind of fault,
+and SHALL quote no path outside the lore checkout, no file's content and no text of git's error.
+The process's next cycle start that is not a local fault SHALL clear it, whether its read passed or
+was refused.
+
+#### Scenario: A git lock fails one read and opens no condition
+
+- **WHEN** the `backend-2` process's cycle-start read fails because `packed-refs.lock` is held, and
+  its next cycle start's read passes
+- **THEN** it runs the first cycle on the commit its applied ref names, and opens no condition
+- **AND** `lore:config:backend` is neither opened nor cleared by the failed read
+
+#### Scenario: Three local faults in a row open a condition for the process
+
+- **WHEN** the `backend-2` process's read fails at three cycle starts in a row because the disk is
+  full
+- **THEN** `lore:read:backend-2` opens, naming the failed operation and a full disk, and
+  `lore:config:backend` is not opened
+- **AND** it clears at the process's next cycle start that is not a local fault, whether its read
+  passes or is refused
+- **AND** its report quotes no path outside the lore checkout
+
 ### Requirement: A removed seat file applies as soon as a fetch brings it
 
-When a fetch brings a commit that lacks a seat file the configuration in force holds, whether a
-commit after the applied one deleted it or the fetched commit does not descend from the applied
-one, the process SHALL apply #171's *A removed seat file always takes effect* at once, without waiting for the next
-cycle, even while a worker runs and even where that commit fails the startup checks. Once any commit
-after the applied commit, up to and including the fetched commit, deletes a seat's file, that
-seat SHALL stay out of the configuration in force until a lore read that passes holds the file
-again. A process with no applied ref has nothing in force to remove from, and its configuration
-holds the seats its fetched commit holds.
-A worker the process starts while the removal applies SHALL either never receive the seat's token
-or be among the workers killed.
+When a fetch brings a commit that lacks a seat file the configuration in force holds, the process
+SHALL apply `seat-budget`'s *A removed seat file always takes effect* at once, mid-cycle included,
+even where that commit fails the startup checks. Once any commit after the applied one, up to and
+including the fetched one, deletes a seat's file, that seat SHALL stay out of the configuration in
+force, even where the fetched commit holds the file again, until a passing lore read holds it. A
+worker started while the removal applies SHALL either never receive the seat's token or be among
+the workers killed.
 
 #### Scenario: A removal reaches a running worker within one poll interval
 
@@ -543,6 +533,12 @@ or be among the workers killed.
 - **WHEN** the process starts a worker on `bob` while it applies the removal of `seats/bob.yaml`
 - **THEN** that worker either never receives `bob`'s token or is killed with the others
 
+#### Scenario: A process with no applied ref removes nothing
+
+- **WHEN** a process with no applied ref starts, and its fetched commit holds `seats/bob.yaml`,
+  which an earlier commit of the branch deleted and a later one added back
+- **THEN** its configuration in force holds `bob`, since it has nothing in force to remove from
+
 ### Requirement: Processes apply new commits independently
 
 Each `igor serve` process SHALL apply the newest commit it has fetched at its own cycle start, with
@@ -557,12 +553,11 @@ different commits until each has fetched and started a cycle.
 
 ### Requirement: A pull can be forced with SIGHUP
 
-An `igor serve` process SHALL fetch at once when it receives `SIGHUP`, and SHALL apply what that
-fetch brings as it applies any fetch. It SHALL handle `SIGHUP` from its first moment, so that the
-signal never ends the process, and the signal SHALL NOT interrupt a worker. The shipped systemd
-unit SHALL set `ExecReload=` to send the process `SIGHUP`, so that `systemctl reload` forces a
-fetch. Under the shipped compose file, `docker compose kill -s HUP <service>` SHALL reach the
-process the same way.
+An `igor serve` process SHALL handle `SIGHUP` from its first moment by fetching at once, and SHALL
+apply what that fetch brings as it applies any fetch. The signal SHALL NOT end the process or
+interrupt a worker. The shipped systemd unit SHALL set `ExecReload=` to send the process `SIGHUP`,
+and under the shipped compose file `docker compose kill -s HUP <service>` SHALL reach it the same
+way.
 
 #### Scenario: A SIGHUP during start does not end the process
 
@@ -583,36 +578,31 @@ process the same way.
 ### Requirement: Igor posts at most one notice for each seat-file change it applies
 
 When an `igor serve` process's lore read passes, it SHALL compare the seat files of the commit it
-reads with those of the commit its applied ref named until then, before moving the ref. For each
-seat file the new commit changes and still holds at the same path, and for each seat file it adds,
-Igor SHALL post one notice @-mentioning the seat's owner, saying that the change has landed and
-is the one Igor now reads. A seat file counts as *added* where the most recent commit that
-changed it created it, its first parent holding no file at that path. That holds even where the
-commit the process applied before held a file at that path, as when the file was deleted and
-added back between two of the process's reads. For a changed file, the owner is the one the file names just before the
-most recent commit that changed it, in that commit's first parent; where the commit the process
-applied before names another owner, Igor SHALL mention that one too. For an added file, the owner
-is the one the added file names. A seat file added again with ciphertext from the lore
-repository's history is an added file like any other. A seat file the new commit deletes or renames SHALL get no notice; a renamed file is one
-that git's rename detection pairs with a deleted one. Only a file whose name has a seat id's form,
-#171's `seats/<id>.yaml`, SHALL get a notice, whether changed or added. A process with no applied
-ref compares nothing and posts nothing.
+reads with those of its applied commit, before moving the applied ref. For each seat file the new
+commit changes and still holds at the same path, and each it adds, Igor SHALL post one notice
+@-mentioning the seat's owner, saying that the change has landed and is the one Igor now reads. A
+seat file is *added* where the most recent commit that changed it created it, that commit's first
+parent holding no file at that path; this is judged against that first parent, not against the
+applied commit, which may have held a file at that path. For a changed file the owner is the one
+the file names in the first parent of the most recent commit that changed it, and Igor SHALL also
+mention the owner the applied commit names where it differs; for an added file it is the owner the
+file names. Only a file named `seats/<id>.yaml` with a seat id's form SHALL get a notice. A deleted
+file, or a renamed one that git's rename detection pairs with a deleted one, SHALL get none, and a
+process with no applied ref compares and posts nothing.
 
-The notice SHALL go on the merged pull request that brought the most recent commit to change that
-file. Where no pull request brought that commit, it SHALL go on the commit itself, as a commit
-comment. Igor SHALL NOT mention an owner who both opened that pull request and made the push that brought
-that commit into it, nor an `owner` without a GitHub login's form. Where the merge itself made
-that commit, by squashing or rebasing, the push judged is the one that brought the pull
-request's own last commit changing the file. These are the two exclusions
-of #171's *A pull request that changes a seat file mentions that seat's owner*, applied after the
-merge. Where these rules leave no one to mention, Igor SHALL post no notice.
+The notice SHALL go on the merged pull request that brought the most recent commit to change the
+file, or, where no pull request brought that commit, on the commit as a commit comment. Igor SHALL
+NOT mention an owner who both opened that pull request and made the push that brought that commit
+into it, nor an `owner` without a GitHub login's form. Where a squash or rebase merge made that
+commit, the push judged is the one that brought the pull request's own last commit changing the
+file. Where these rules leave no one to mention, Igor SHALL post no notice.
 
 Before posting, the process SHALL create a record on the state branch named by the seat's id and
-the most recent commit that changed the file, with a call that fails where the record already
-exists. A process whose call failed because the record exists SHALL NOT post. A call that failed
-for any other reason SHALL be tried again at each later passing read while the process runs.
-Where no process crashes between creating the record and posting, exactly one notice SHALL be
-posted for each change a process applies that leaves someone to mention.
+the most recent commit that changed the file, with a call that fails where the record exists, and
+SHALL NOT post where the call failed for that reason. A call that failed for any other reason SHALL
+be tried again at each later passing read while the process runs. Where no process crashes between
+creating the record and posting, exactly one notice SHALL be posted for each applied change that
+leaves someone to mention.
 
 #### Scenario: A workflow mention before the merge does not stop the notice
 
@@ -716,6 +706,12 @@ posted for each change a process applies that leaves someone to mention.
   applied ref then starts and applies that commit
 - **THEN** Igor posts the notice for it
 
+#### Scenario: A renamed seat file gets no notice
+
+- **WHEN** a merged commit renames `seats/bob.yaml` to `seats/robert.yaml` with its content
+  unchanged, which git's rename detection pairs
+- **THEN** Igor posts no notice for either path
+
 ### Requirement: `igor run` reads the checkout as it finds it
 
 `igor run` SHALL NOT fetch the lore repository, and SHALL read its configuration from the lore
@@ -728,18 +724,14 @@ checkout's working tree as it finds it, uncommitted edits included.
 
 ### Requirement: A lore read writes nothing of a private repository to a public state branch
 
-The *store* is the repository `igor.config.yaml` names as `destination`, whose state branch
-holds Igor's records; `visibility-guard` (#220) calls it the lore store. Igor SHALL read the lore
-repository's visibility the way `visibility-guard`'s *A private repository is never worked
-through a public lore store* reads a worked repository's, with an `internal` lore repository
-counting as private, and SHALL read the store's visibility as that requirement does.
-
-Where the lore repository is private and the store is public, every record this capability writes
-to the state branch SHALL name a commit only by its id, a seat only by its id and a failed check
-only by its name, and SHALL hold no path, no file's content, no commit message and no text of
-git's error. A seat's id is its file's name under `seats/`, and naming it is allowed. These
-records are a condition's report and a seat notice's record. Where GitHub does not answer the
-visibility read of the lore repository, or of the store, or of both, Igor SHALL write the record
+The *store* is the repository `igor.config.yaml` names as `destination`, whose state branch holds
+Igor's records. Igor SHALL read the lore repository's and the store's visibility as
+`visibility-guard`'s *A private repository is never worked through a public lore store* reads a
+worked repository's and the store's. Where the lore repository is private and the store public,
+every record this capability writes to the state branch, a condition's report or a seat notice's
+record, SHALL name a commit only by its id, a seat only by its id, which is its file's name under
+`seats/`, and a failed check only by its name, and SHALL hold no path, file content, commit message
+or text of git's error. Where GitHub does not answer one or both visibility reads, Igor SHALL write
 as for a private lore repository. This requirement SHALL take precedence over every other
 requirement of this capability that names a file, a path or git's error in a record.
 
@@ -774,3 +766,9 @@ requirement of this capability that names a file, a path or git's error in a rec
 - **WHEN** the lore repository and the store are both public, and a commit fails the startup
   checks on `seats/bob.yaml`
 - **THEN** the condition's report names `seats/bob.yaml`, the commit and the check
+
+#### Scenario: A store visibility read GitHub does not answer writes as for a private lore repository
+
+- **WHEN** a commit fails the startup checks on `seats/bob.yaml`, and GitHub does not answer the
+  store's visibility read
+- **THEN** the condition's report on the state branch does not name `seats/bob.yaml`

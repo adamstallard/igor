@@ -89,16 +89,24 @@ Because the checkout's `.git/config` is still read, the start also refuses any k
 per-worktree config file the check never sees. A fetch never recurses into submodules, whose URLs
 the config could choose. The process checks the file again before each git command, and where
 such a key has appeared it runs no git command in the checkout: a due fetch counts as failed and
-a read as a local fault. It checks before each command because anyone who can write the file could add a key after start. A URL rewrite could send the fetch to SSH, an extra header
+a read as a local fault. A refusal names such a key by its section and last part only, such as `url.*.insteadOf`,
+because a `url.` key's name can hold a credential. The process checks the file before each command because anyone who can write it could add a
+key after start. A URL rewrite could send the fetch to SSH, an extra header
 or a credential helper could authenticate it as a person, a proxy could take it elsewhere, an
 include could bring any of these from another file, and a filter, an fsmonitor or an alternate
 refs command runs a command.
 
-The fetch runs as a child process, so it never holds up #179's heartbeat timer it rides on: the
-heartbeat is written at each firing whether or not a fetch is running. A fetch rides every second
-firing, once per poll interval. One still running when the next fetch is due is killed and counts
-as a failed fetch, so a hung fetch costs one poll interval and never makes siblings count a live
-rank gone.
+The fetch runs as a child process on a timer of its own, so it never holds up #179's heartbeat
+write, and a hung fetch never makes siblings count a live rank gone. One still running when the
+next fetch is due is killed and counts as a failed fetch, so a hung fetch costs one poll interval.
+
+**The fetch keeps its own timer, set by the current poll interval (agents' decision,
+2026-11-02).** Each process fetches once per its role's poll interval in the configuration in
+force; when that interval changes, the next fetch is due one new interval after the last fetch
+started. The fetch does not ride every second firing of #179's heartbeat timer, because #179's decision
+77 fires that timer every half of the *shortest* poll interval the process has applied since it
+started. Every second firing would then come once per shortest interval, so a process lengthened from 10 to 30
+minutes would fetch every 10 minutes, three times as often as decision 20 intends.
 
 The fetch and the worktree checkouts share the checkout's object store. Each process writes only
 its own refs, its own worktree and its own index, and one shared file: at start, where
@@ -106,7 +114,7 @@ its own refs, its own worktree and its own index, and one shared file: at start,
 once can at worst write it twice, which git reads as one rule. Concurrent writes of new objects into one store
 are safe in git. Whether git still contends some lock shared by the whole repository, such as
 one taken for packed refs, is task 1.5's measurement; a lock failure is a failed fetch, retried
-at the next firing.
+when the next fetch is due.
 
 **No process prunes another's worktree.** Every process, and under compose every container,
 shares the checkout's `.git`. A process recreating its worktree leaves its directory missing for
@@ -121,7 +129,7 @@ worktree.
   seat file always takes effect* would kill the workers using a seat that nobody removed. A
   half-written role file could also pass validation and apply a configuration nobody committed.
 - **Lock contention.** Each process fast-forwarding the same checkout takes the same index lock,
-  so all but one fail at each firing and report a failed pull that is not a fault.
+  so all but one fail at each pull and report a failed pull although nothing is wrong.
 
 A file lock around every read and every fast-forward would prevent both, but every loader, and
 the per-item read of lore entries, would have to take it. Node has no portable file lock, and a
@@ -156,20 +164,19 @@ clears it where `--is-ancestor <refused> <head>` does not hold, so a force-push 
 refused commit clears it (Adam, 2026-10-21).
 
 That head counts only where the fetch that brought it started after the rank first knew the
-condition was open, from its own refusal or from the condition's record read at a cycle start.
+condition was open, from its own refusal or from the condition's rows in the execution log, read at a cycle start.
 A head from an earlier fetch is usually just older than the refused commit, and says nothing
 about whether the branch still holds it. The rank keeps that order in memory, as "this fetch
-began after I knew", rather than comparing a fetch time with the time on the condition's
-record: that time comes from another server's clock, which nothing keeps in step with this
+began after I knew", rather than comparing a fetch time with the time on the condition's log row: that time comes from another server's clock, which nothing keeps in step with this
 one's. A restarted rank learns the condition again at its first cycle start.
 
 The rank's object store must also hold the refused commit; where it does not,
 `--is-ancestor` exits 128 rather than 1, and the rank cannot tell whether the head holds it, so
 its read clears nothing by this rule. That costs little: the rank that refused the commit holds
 it, as does every rank sharing its server's object store, and one of them clears the condition
-once its own fetch brings the new head. The condition's
-record names the commit whose refusal opened it; a refusal of another commit while the
-condition is open changes nothing. The record that clears it names the commit whose read
+once its own fetch brings the new head. The log row that opens the
+condition names the commit whose refusal opened it; a refusal of another commit while the
+condition is open changes nothing. The log row that clears it names the commit whose read
 cleared it, the *clearing commit*.
 
 After the condition clears, a refused read of the refused commit, or of the clearing commit or
@@ -191,8 +198,9 @@ not as a condition.
 
 A process that restarts fetches first, then reads the commit `fetched` names; where that fetch
 fails, `fetched` still names what it fetched before stopping. Where that commit fails the startup
-checks and `applied` exists, the process reads `applied`. Where that passes, it starts there with
-the refused-read condition open. Where `applied` fails too, as after an Igor upgrade that tightens
+checks and `applied` exists, the process reads `applied`, with every seat file `applied` holds. Judged without a seat a later commit removed,
+`applied` could fail for lacking that seat's file, which it held when it passed. Where that passes, it starts there with
+`lore:config:<role>` open. Where `applied` fails too, as after an Igor upgrade that tightens
 a check, the process has nothing that passes and refuses to start, naming both commits (decision
 17). A process with no `applied` ref refuses to start on a failing commit: one that has
 never applied a commit, or whose checkout or volume was replaced.
@@ -226,6 +234,10 @@ brought the change, the seat-notice workflow has already mentioned the owner on 
 merge, so the lost notice is the owner's second. For a commit pushed without a pull request it is
 the owner's only one; that takes a crash in the second between two calls, and costs less than a
 duplicate on every busy merge.
+
+The notice's two exclusions, an owner who both opened the pull request and pushed the commit,
+and an `owner` that is not a GitHub login, are those of #171's *A pull request that changes a
+seat file mentions that seat's owner*, applied after the merge.
 
 Keying the record by the commit that last changed the file means that a later commit leaving the
 seat file unchanged posts nothing, and a file changed back to an earlier content, which may

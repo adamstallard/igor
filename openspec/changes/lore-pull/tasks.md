@@ -2,8 +2,7 @@
 
 - [ ] 0.1 Build after #171 (`seat-files`), #179 (`concurrent-instances`), #82
       (`stopped-scope-visible`) and #220 (`visibility-guard`) are built: this change uses #171's
-      seat files, read-cleared condition and seat removal, #179's per-cycle reread and heartbeat
-      timer, and #220's visibility read, and modifies #82's requirement
+      seat files, read-cleared condition and seat removal, #179's per-cycle reread and heartbeat, and #220's visibility read, and modifies #82's requirement
 - [ ] 0.2 Read Adam's answers to the proposal's *Still open* questions, which go into the
       proposal's *Decisions* section and this pull request's body, and change the named
       requirements where an answer differs from what they are written to
@@ -23,15 +22,16 @@
       `--no-recurse-submodules`. Check again before each git command in the checkout; where such
       a key has appeared, run none, count a due fetch as failed and a read as a local fault, and
       name the key the same way in each cycle report
-- [ ] 1.2 Fetch once per poll interval of the configuration in force, on #179's heartbeat timer at
-      every second firing, with the command `design.md` gives: the repository's URL named
+- [ ] 1.2 Fetch once per poll interval of the configuration in force, on a timer of the
+      process's own that the current poll interval sets, not on #179's heartbeat timer, with the
+      command `design.md` gives: the repository's URL named
       outright, into `refs/igor/lore/<role>-<rank>/fetched`, with no hook, no auto-gc, no
       `FETCH_HEAD`, no system-wide or per-user git config, and the App's token supplied for that
       command only by the credential helper `src/worktree.ts` uses. Run it as a child process
       that never holds up the heartbeat write, and kill one still running when the next fetch is
       due
-- [ ] 1.3 A failed fetch, a lock failure or a killed fetch included, is retried at the next
-      firing and opens no condition; each cycle report until a fetch succeeds gives the age of
+- [ ] 1.3 A failed fetch, a lock failure or a killed fetch included, is retried when the
+      next fetch is due and opens no condition; each cycle report until a fetch succeeds gives the age of
       the process's last successful fetch, or "none since start"
 - [ ] 1.4 `igor serve` installs its `SIGHUP` handler before anything else at start. `SIGHUP`
       triggers a fetch at once, and the signal ends nothing and interrupts no worker.
@@ -190,18 +190,13 @@ and are left alone.
       `MODIFIED` block that drops a scenario the in-force requirement has. If #82 is still open when this is built, also
       rewrite its task 0.3, its decision 6 and the passage in its `design.md` so that none says a
       lore fix waits for a restart
-- [ ] 6.2 #171: in `seat-budget`, *A seat's token travels as ciphertext in its file* says "at
-      start, and at each cycle start, where #179 rereads the configuration and #208 makes its
-      lore read", in place of "at start, and at each cycle start, where #179 rereads the
-      configuration and, once built, #208 makes its lore read", #208 being this change's pull
-      request, and loses "Until #208 pulls the checkout, the seat files change only when someone
-      updates the checkout by hand." *A removed seat file always takes effect* says "When a fetch
-      of the lore repository (`lore-pull`) brings a commit that lacks a seat file", in place of
-      "When a pull of the lore checkout (`lore-pull`, #208) removes a seat file"; says "The
-      removal applies as soon as the fetch brings it, as `lore-pull` specifies", in place of
-      "The removal applies at the next cycle start's lore read."; and loses "Until #208 pulls the
-      lore checkout, a seat file leaves the checkout only when someone updates the checkout by
-      hand." Its scenario *A push runs no notice workflow* says that the
+- [ ] 6.2 #171: in `seat-budget`, *A seat's token travels as ciphertext in its file* loses "Without #208's pull, the seat files change only when someone updates the checkout by
+      hand.", #208 being this change's pull request. *A removed seat file always takes effect* says "When a fetch of the lore repository
+      (`lore-pull`) brings a commit that lacks a seat file", in place of "When a pull of the lore
+      checkout (`lore-pull`, #208) removes a seat file"; says "The removal applies as soon as the
+      fetch brings it, as `lore-pull` specifies", in place of "Igor applies the removal at the
+      next cycle start's lore read."; and loses "Without #208's pull, a seat file leaves the
+      checkout only when someone updates the checkout by hand." Its scenario *A push runs no notice workflow* says that the
       workflow does not run and Igor's notice comments on the commit once a process applies it,
       in place of "nothing comments on the commit". While #171 is open, also rewrite its task
       3.7b where it waits on #176, the issue this change specifies, or on #208, whichever it names, and the passages in its `proposal.md` and `design.md` that say Igor
