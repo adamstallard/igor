@@ -28,7 +28,7 @@ is claimed and a worker spent against a fault that is probably still there. Adam
 
 ### Modified Capabilities
 
-- `stuck-conditions`: adds one requirement on who takes a due probe.
+- `stuck-conditions`: adds eight requirements on who takes a due probe.
 
 ## Impact
 
@@ -37,7 +37,7 @@ is claimed and a worker spent against a fault that is probably still there. Adam
   `src/state.ts`, for the append deadline and a read of every partition from yesterday on that
   bypasses the cache.
 - **Other changes:** cites only requirements already in force and modifies none. #179, which
-  archives later, cites the requirement this change adds, so this change must archive before
+  archives later, cites a requirement this change adds, so this change must archive before
   #179. [#204](https://github.com/adamstallard/igor/issues/204), which states the whole archive
   order, lists it second, just after #101 (already archived), so that it is not queued behind changes it
   has nothing to do with. #179 (`concurrent-instances`) changes how a probe row lapses, and

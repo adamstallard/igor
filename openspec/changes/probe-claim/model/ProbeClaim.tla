@@ -331,11 +331,11 @@ TypeOK ==
 ExactlyOneProbe ==
     Cardinality({i \in Igors : pc[i] \in {"claiming", "running"}}) <= 1
 
-\* Requirement: Exactly one Igor takes a due probe, decided by the log after
-\* it writes; its scenario "A probe row nobody is taking does not hold the
-\* scope". A probe row holds the scope only while its own Igor is still
-\* working it, or its end is on the way, or it is left to lapse because its
-\* Igor died or its end was lost.
+\* Requirement: An Igor that bid for a probe and takes no item voids its row;
+\* its scenario "A probe row nobody is taking does not hold the scope". A
+\* probe row holds the scope only while its own Igor is still working it, or
+\* its run or void row is appended and not yet landed, or it is left to lapse
+\* because its Igor died or its end was lost.
 HeldOnlyByItsProbe ==
     LET d == Deciding(log) IN
     d # 0 =>
@@ -344,9 +344,9 @@ HeldOnlyByItsProbe ==
         \/ \E i \in Igors : attempt[i] = p.id /\ pc[i] \in Active
         \/ \E f \in inflight : f.row.t \in {"void", "run"} /\ Ends(f.row, p)
 
-\* Requirement: Exactly one Igor takes a due probe, decided by the log after
-\* it writes; its scenario "A due probe is taken". Once the cooldown has passed
-\* and the condition is not closed, some Igor eventually runs the probe item,
+\* Requirement: A due probe is eventually taken; its scenario "A due probe is
+\* taken". Once the cooldown has passed and the condition is not closed, some
+\* Igor eventually runs the probe item,
 \* or a probe's run row already on its way closes the condition, or meets it
 \* again (out = "met") and so starts a new cooldown.
 \* Stated from the cooldown rather than from Due, because a probe row nobody

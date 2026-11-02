@@ -30,15 +30,16 @@ discards nothing* would retry it.
 Within a day's partition, a file's line order is the order the store accepted its rows. Across
 partitions, `readLog` puts the earlier day first, which can disagree with acceptance order at
 midnight: a row stamped just before midnight goes to the earlier day's file and can be accepted
-after a row already in the later day's file. This change's requirement (decision 1) defines storage order as this read
+after a row already in the later day's file. *The read that decides a probe is fresh, in storage order* defines storage order as this read
 order, which every Igor sees, not the store's acceptance order, which no Igor can read. `readLog`
 also caches a past day's partition for the life of the process, so a row accepted late into
 yesterday's file is never read by a process that cached the file first.
 
 ## Decisions
 
-1. **Adopt *Exactly one Igor takes a due probe, decided by the log after it writes*** as a new
-   `stuck-conditions` requirement. It adds to the in-force probe rules and modifies none of them.
+1. **Adopt eight new `stuck-conditions` requirements**: *Exactly one Igor takes a due probe,
+   decided by the log after it writes*, and seven that define its terms and its other rules. They
+   add to the in-force probe rules and modify none of them.
 2. **The oldest unended probe row decides, in the order a fresh read of the log returns rows, read
    again after a settle interval.** An Igor that finds the probe due appends its probe row, waits
    until any append that could land ahead of it has landed, reads the log again, and takes the
@@ -79,7 +80,7 @@ yesterday's file is never read by a process that cached the file first.
    skew** (2026-10-24, at Adam's request to bound the skew; the figure is this change's choice).
    Every lapse bound must cover it, so no Igor reads a live Igor's row as lapsed while the hosts'
    clocks agree within 5 minutes, as NTP keeps them. Hosts further apart are outside what the
-   requirement covers; the model holds no clocks. Igors whose clocks differ can still disagree on
+   requirements cover. The model holds no clocks, so it checks neither case. Igors whose clocks differ can still disagree on
    a row near its bound. That delays a probe but takes no item twice, since an Igor that still
    counts the row as holding takes no item.
 9. **The append deadline and the probe settle interval are fixed in code** (Adam, 2026-10-24),
@@ -219,9 +220,11 @@ keeps that margin before the first keepalive is open (*Open Questions*). A live 
 #101. A clean run of an item already running when the scope stopped also ends the condition; the
 model starts with nothing running, so it leaves that out. The model has one condition, so the rule
 for an item probing several is argued, not checked. A stale read is modelled as a prefix of the
-log: a snapshot taken after the settle interval, which the requirement's "every row the store had
-accepted by then", by the end of the settle interval, makes the only kind. A write accepted after its client gave up is not modelled;
-that is the midnight gap.
+log, missing only rows that landed after some point: *The read that decides a probe is fresh, in
+storage order* requires the deciding read to show every row landed before it, so a stale read
+served after the settle interval can lack only later rows. An append that lands while its Igor is
+told it failed is modelled (`Failed`, then `Land`); a write the store accepts only after its Igor has given up on
+it is not, and that write is the midnight gap.
 
 **How the model stays small.** Rows older than the last occurrence are never read again, so the
 log is cut to start at it. With nothing in flight and every probe row ended, the log is cut to the
@@ -240,7 +243,7 @@ change edits it.
 - **#171 (`seat-files`)** modifies three requirements this change leaves alone: *A condition
   clears by not recurring, and a probe is what observes that*, *A condition's scope is its cure's
   scope* and *A condition that recurs stops the affected scope from taking new work*. This change
-  only adds a requirement, so the two do not collide in `openspec archive`.
+  only adds requirements, so the two do not collide in `openspec archive`.
 - **The in-force scenario *A probe is taken once*** (under *A condition's scope is its cure's
   scope*), and #171's copy of it, keep their meaning under this change: no other Igor takes a
   probe item until the probe's outcome is in. This change defines that outcome, which includes a
