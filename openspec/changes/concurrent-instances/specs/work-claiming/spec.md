@@ -822,8 +822,8 @@ nothing.
 ### Requirement: A run by hand keeps a heartbeat file of its own
 
 Without `--plan`, each `igor run` SHALL write its own heartbeat file,
-`heartbeats/<role>-0-<run id>.json`, from a timer firing every half poll interval, as a serving
-process does, its first write before its first cycle. Siblings judge the run's claim messages
+`heartbeats/<role>-0-<run id>.json`, from a timer firing as a serving
+process's does, its first write before its first cycle. Siblings judge the run's claim messages
 gone by that file alone. The run SHALL remove the file as it exits, and a
 serving process SHALL remove it once it counts the run gone. A claim a run leaves is taken over
 by a serving rank once the run is gone, as any gone rank's is.
@@ -1125,14 +1125,21 @@ does not.
 - **THEN** it reads all of them, with their contents, in as few requests as the API allows, and
   judges each sibling's file changed by its blob id
 
-### Requirement: Every process writes a heartbeat every half poll interval
+### Requirement: Every process writes a heartbeat every half of its shortest interval
 
-Every process SHALL run a timer, apart from its cycle and any worker, firing every half of its
-own current poll interval, that overwrites its heartbeat file on the state branch, named by role
-and rank, and for `igor run` its run id; the first SHALL land before its first cycle. It SHALL
-hold a *start id* chosen at start; a counter raised each write; its host name and process
-number; whether it is available; its poll interval; its state-directory id, if any; and no time
-any process compares.
+Every process SHALL run a timer, apart from cycle and worker, firing every half of the shortest
+poll interval it has applied, that overwrites its heartbeat file on the state branch, named by role
+and rank, and for `igor run` its run id; the first SHALL land before its first cycle. The file SHALL hold
+a *start id* chosen at start; a counter raised each write; its host and process number; whether it
+is available; its poll interval; its state-directory id, if any; and no time any process compares.
+
+#### Scenario: A process that tripled its interval still writes every 5 minutes
+
+- **WHEN** a process started on the 10-minute interval applies a commit that sets 30 minutes
+- **THEN** it writes its heartbeat, and checks for a stand-down, every 5 minutes, half of the
+  shortest interval it has applied since it started, as a process on 10 minutes does
+- **AND** one failed or late write does not stand it down, since it stands down only after 20
+  minutes without a heartbeat
 
 #### Scenario: The first heartbeat comes before the first claim
 
@@ -1237,10 +1244,10 @@ heartbeat lands.
 
 ### Requirement: A process checks for a stand-down every half of its shortest interval
 
-A process's timer SHALL check whether the process has stood down every half of the shortest poll
-interval it has applied since it started, on a schedule separate from its heartbeat firings,
-which follow its current interval, and SHALL stop a running worker at the first check after the stand-down, without
-waiting for an event from it.
+A process's timer SHALL check, at each heartbeat firing, every half of the shortest poll interval it
+has applied since it started, whether the process has stood down, and SHALL stop a running worker at the first check
+after the stand-down, without waiting for an event from it. The timer does not check for a
+person's stop, which a process still sees at the claim re-read on a worker event.
 
 #### Scenario: A silent worker is still stopped by the timer
 
@@ -1351,8 +1358,8 @@ applies.
 
 - **WHEN** a process started on a poll interval of 10 minutes and has since applied a commit that
   sets 20 minutes
-- **THEN** it writes its heartbeat every 10 minutes, and stands down after 20 minutes without
-  writing one, not 40
+- **THEN** it writes its heartbeat every 5 minutes, half of the 10 it has applied, and stands
+  down after 20 minutes without writing one, not 40
 
 #### Scenario: A watcher that lost a declaration still finds the sibling stood down
 

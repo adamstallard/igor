@@ -8,7 +8,7 @@ identity. Everything here follows from refusing to conflate the two.
 
 Adam decided 1 to 52 on 2026-10-13, 2026-10-17, 2026-10-18, 2026-10-19 and 2026-10-21, and
 rewrote some of them on 2026-10-24, each marked with that date, such as 22 and 49. On 2026-10-24 he also made 55 and 58 himself, and approved 53, 54, 56 and 57, which this change drew up for him; those he approved count as his too. He made 62 and 63 on 2026-10-28, 74 on 2026-11-01 and 75 on 2026-11-02. The agents coordinating this work decided 59 and 61 on 2026-10-24,
-64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 on 2026-11-02, under a rule Adam set, kept outside this
+64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 and 77 on 2026-11-02, under a rule Adam set, kept outside this
 repository, on which questions they may settle without him: one with a single option that fits
 the rest of the change, an answer already given, or a proof or cheap reversal behind it. These
 stand until he says otherwise. They also made 60 and withdrew it, as *Open Questions* records.
@@ -68,8 +68,9 @@ The sections after this list give the reasoning. Decisions 39 to 52 are his answ
 
 **Recovery and the abandonment bound**
 
-12. **Each rank writes a heartbeat to its own file on the state branch every half poll
-    interval,** from a timer of Igor's own, its first before its first cycle. The file holds an
+12. **Each rank writes a heartbeat to its own file on the state branch every half of the shortest
+    poll interval it has applied since it started (decision 77),** from a timer of Igor's own, its first heartbeat before its
+    first cycle. A lore commit can change the interval while the process runs (decision 43). The file holds an
     id the process picks at each start and a counter it increments on each write, and a process
     counts a sibling gone only once it has itself watched that file fail to change for three
     poll intervals, each measured as decision 49 says. No time in the file is compared across
@@ -116,7 +117,8 @@ The sections after this list give the reasoning. Decisions 39 to 52 are his answ
     which for `discovery.json` and `deferred.json` means a log replayed on read.
 22. **A `condition-backoff` probe (PR #101), the one item let through after a cooldown to test whether a recurring fault has cleared its scope, the role or seat the fault stopped, lapses when its Igor stops keeping it alive in the log** (Adam, 2026-10-24, replacing his round-three rule that it lapse when its rank is gone).
     While it works the probe item, the process that took the probe appends a keepalive row
-    naming its probe row every poll interval, and the probe lapses after 90 minutes, three of the
+    naming its probe row once per shortest poll interval it has applied, at every second firing of
+    its heartbeat timer (decision 77), and the probe lapses after 90 minutes, three of the
     maximum poll interval, with no such row. A process of another role sharing the probe's scope
     cannot see the rank's heartbeat, and #228 (`probe-claim`) requires every Igor in the scope to
     judge a lapse alike from the log. The model does not cover probes.
@@ -367,14 +369,17 @@ settle**
     failing while the small heartbeat writes succeed and no stand-down stops the worker. After
     90 minutes another Igor would then count the probe lapsed and take a second probe item while
     the first still works. So the heartbeat timer, which runs whether or not a cycle does,
-    appends the keepalive at every other firing, which is once per poll interval, since the
-    timer fires every half interval; an append that has not landed within half a
-    poll interval counts as failed, before the next is due; and two failed appends in a row stop the probe's worker, append a
+    appends the keepalive at every other firing, which is once per shortest poll interval the
+    process has applied, since the timer fires every half of that interval (decision 77); an
+    append that has not landed within half of that interval counts as failed, so the failure is
+    counted before the next append is due; and two failed appends in a row stop the probe's worker, append a
     void row naming its probe row, so that the stopped probe neither clears the condition nor
     holds the scope, and give the claim back out loud. After the last keepalive that
-    landed, a live probe is stopped within two and a half poll intervals, at most 75 minutes at
-    decision 49's 30-minute maximum, inside the 90-minute bound. The 15 minutes beyond those 75
-    cover the 5 minutes of clock skew between hosts that #228 assumes. It mirrors the heartbeat's stand-down and is
+    landed, a live probe is stopped within two and a half of those intervals, at most 75 minutes at
+    decision 49's 30-minute maximum: the next append is due one interval after it and counts as
+    failed half an interval later, and the one after that is due at two and counts as failed at
+    two and a half. That is inside the 90-minute bound. Of the 15 minutes beyond those
+    75, 5 cover the clock skew between hosts that #228 assumes, and the other 10 are margin. It mirrors the heartbeat's stand-down and is
     cheap to reverse, so the agent coordinating this work decided it under the rule Adam set for
     questions it may settle.
 
@@ -528,23 +533,37 @@ sign that no rollback gives.
 **Decided on 2026-11-02 by the agents coordinating this work, under Adam's rule**
 
 76. **Igor's timer checks for a stand-down every half of the shortest poll interval the process
-    has applied since it started,** on a schedule of its own, apart from the firings that write
-    the heartbeat every half of its current interval. The agents could settle it under Adam's
-    rule because a proof stands behind it: TLC finds the failure without the rule and none with
-    it. A process stands down after two of the shortest interval it has applied, and a sibling
-    counts it gone after three of the longest it saw declared (decision 49). TLC's trace, with
-    `HaltOnShortest` FALSE in `NoHaltOnShortest.cfg`, has rank 2 start on 10 minutes and write a
-    heartbeat declaring 10, apply a commit that triples its interval to 30, and then fail every
-    write. It stands down 20 minutes after its last heartbeat, two of its 10. A check only at
-    the heartbeat's firings, every 15 minutes, comes at 15 and then 30, so its worker may still
-    be running 30 minutes after that heartbeat. Rank 1, on 10 minutes and having seen only 10
-    declared, may count rank 2 gone at that same moment and take the item over: the two events
-    can fall in either order, so two workers can run on the item at once (`NoTwoWorkers`). On a
-    doubled interval the firings come every 10 minutes, so one falls at 20, before the 30-minute
-    verdict; on the tripled one the next firing after 20 is at 30. With the check every half of
-    the shortest interval, every 5 minutes here, the worker stops within 25 minutes of the last
-    heartbeat. The check reads only the process's own state, so it costs no request.
+    has applied since it started,** at the same firings that write the heartbeat (decision 77).
+    The agents could settle it under Adam's rule because a proof stands behind it: TLC finds two
+    workers on one item without the rule and none with it. A process stands down after two of the shortest
+    interval it has applied, and a sibling counts it gone after three of the longest it saw
+    declared (decision 49). TLC's trace comes from `NoHaltOnShortest.cfg`, the configuration with `HaltOnShortest`
+    FALSE, in which the timer checks every half of the current interval instead. In it rank 2 starts on 10 minutes,
+    writes a heartbeat declaring 10, applies a commit that triples its interval to 30, and then
+    fails every write. It stands down 20 minutes after its last heartbeat, two of its 10. Its last heartbeat
+    that landed was written at a firing, and under this rule the timer fires every half of the
+    current interval, every 15 minutes, so its checks come 15 and then 30 minutes after it, and its worker may
+    still be running 30 minutes after that heartbeat. Rank 1, on 10 minutes and having seen only
+    10 declared, may count rank 2 gone at that same moment and take the item over: the two events
+    can fall in either order, so two workers can run on the item at once (`NoTwoWorkers`). The old rule was safe on a doubled interval, which is why the failure needs the tripled one: there
+    such checks come every 10 minutes, so one falls at 20, before the 30-minute verdict; on the
+    tripled one the first check after the stand-down at 20 is at 30. With the check
+    every half of the shortest interval, every 5 minutes here, the first check after the
+    stand-down comes by 25 minutes after the last heartbeat, however the firings fall against
+    it, and the worker stops there, before the 30-minute verdict. The check reads only the process's own state, so it costs no request.
     `ConcurrentInstancesPollTriple.cfg` passes with it.
+77. **The heartbeat is written every half of the shortest poll interval the process has applied
+    since it started,** at the same firings as decision 76's check, and a prober's keepalive at
+    every second firing. Writing every half of the current interval left a process that went
+    from 10 to 30 minutes writing every 15 minutes while it stands down 20 minutes after its last
+    write, so one failed or late write stood a healthy process down and stopped its worker. On
+    the tripled interval the writes now come every 5 minutes, the rate of a process on the
+    default 10-minute interval, so a process on a lengthened interval writes no more often than
+    one on the default. Against writing every half of its current interval it does write more,
+    which the rate-limit measurement in *Open Questions* covers. Writing more often cannot break
+    a safety invariant: the process's stand-down and a sibling's verdict that it is gone both
+    count from its last heartbeat, so a later heartbeat moves both later together and keeps
+    their order. So no new TLC configuration is needed. It is cheap to reverse.
 
 ### How the decisions were made
 
@@ -556,7 +575,7 @@ what round three left open, marked *round four*. His latest answers, given after
 list numbers them 29 to 38. His answers of 2026-10-21 are dated, and the list numbers them
 39 to 52. Decisions 45 to 48 the agent writing this change drew up from what other changes reported, and
 Adam confirmed them on 2026-10-21. On 2026-10-24 he rewrote some earlier decisions in place,
-which keep their numbers and carry that date, such as 22 and 49, and the list numbers that day's new ones 53 to 58. The agents made 59 and 61 on 2026-10-24, 64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 on 2026-11-02, under his rule, as the list's opening says.
+which keep their numbers and carry that date, such as 22 and 49, and the list numbers that day's new ones 53 to 58. The agents made 59 and 61 on 2026-10-24, 64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30, 73 on 2026-11-01 and 76 and 77 on 2026-11-02, under his rule, as the list's opening says.
 
 Where this file says *decision n*, it means decision n in the list above. The numbered rules 1 to 25
 under *Each decision, and what breaks without it* are a separate list, the model's rules, each
@@ -1008,7 +1027,8 @@ reads includes the seat files in the lore checkout, and where a read is refused 
 effect* makes.
 
 **Each rank writes a heartbeat** (Adam, 2026-10-13). Every process overwrites its own small file
-on the state branch, `heartbeats/<role>-<rank>.json`, every half poll interval (round three). A
+on the state branch, `heartbeats/<role>-<rank>.json`, every half of the shortest poll interval it has applied since it started. Round three chose
+half an interval, and decision 77 chose the shortest applied one as the interval it is half of. A
 timer of Igor's own writes it, apart from the cycle and from any worker, so it keeps writing
 while a worker runs. Its first heartbeat lands before its first cycle (Adam,
 2026-10-17): until then its file shows only its predecessor, who may have been gone long enough
@@ -1097,10 +1117,10 @@ down, a sibling may already count it gone and have taken the item over, so a rel
 the sibling's fresh claim. That is the stated exception to *A claim that cannot be kept is given
 back, out loud*. A sibling takes the claim over once the rank is gone.
 
-**The heartbeat timer stops a stood-down worker** (Adam, 2026-10-18, round three). One timer of
-Igor's own runs two schedules: it writes the heartbeat every half of the current poll interval,
-and, on a schedule of its own, checks every half of the shortest interval the process has
-applied since it started whether the process has stood down (decision 76). Where it has, the
+**The heartbeat timer stops a stood-down worker** (Adam, 2026-10-18, round three). At each firing,
+every half of the shortest interval the process has applied since it started, the timer of
+Igor's own that writes the heartbeat also checks whether the process has stood down (decisions 76
+and 77). Where it has, the
 timer stops the worker itself. Deciding to stand down needs no tracker read,
 so the timer needs nothing from the worker. On `main`, by contrast, a checkpoint is the claim
 re-read in `src/execute.ts`, made on a worker event at most once every 30 seconds
@@ -1410,20 +1430,25 @@ A probe recording its rank and lapsing when the rank is gone, as Adam first deci
 its own role's heartbeat files; and #228 (`probe-claim`) requires every Igor in a scope to judge
 a lapse alike from the log, since Igors that disagree on which probes have lapsed disagree on
 which probe decides. So the process working a probe item appends a keepalive row to the log
-every poll interval, and the probe lapses once 90 minutes, three of the maximum poll interval,
+once per shortest poll interval it has applied (decision 77), and the probe lapses once 90 minutes, three of the maximum poll interval,
 pass without one. The model does not cover probes; #228's model covers the race between competing probe bids.
 
 ### Derived timings are fixed multiples of the poll interval
 
 Five timings follow the role's poll interval and have no setting of their own: a rank is gone
-after three intervals, a heartbeat is written every half interval, and a process stands down
+after three intervals, a heartbeat is written every half of the shortest interval a process
+has applied (decision 77), and a process stands down
 after two of the shortest interval it has applied without one (Adam, 2026-10-18, round four); a probe's keepalive is
-appended every interval (decision 22, Adam, 2026-10-24); and a process checks for a stand-down
+appended once per that shortest interval (Adam decided the keepalive in decision 22 on 2026-10-24; the agents set this rate in
+decision 77 under his rule); and a process checks for a stand-down
 every half of the shortest interval it has applied (decision 76). The in-force `role-config` said every
 interval is configurable; this change's MODIFIED *Timing values are configurable with stated
 defaults* keeps the poll interval configurable, and its ADDED *Igor fixes its maximum poll interval and the timings derived from it* makes these five the exception. The model does
 not cover probes, so TLC checked safety at the other four: gone after three intervals, a
-heartbeat every half interval, a stand-down after two, and the stand-down check every half of
+heartbeat at most once per shorter interval, the shorter of the model's two poll intervals
+and its unit of time, which stands in for
+writes every half of the shortest applied interval as *What the model assumes* explains, a
+stand-down after two, and the stand-down check every half of
 the shortest interval, which `NoHaltOnShortest.cfg` shows is needed. Safety depends on those
 four. The
 stand-down after two intervals must come before the three intervals after which a sibling counts
@@ -1616,8 +1641,9 @@ no `design.md` held a reason, it moved here.
 ## Open Questions
 
 - **Measurements the requirements rest on:** requests per cycle per rank against the App's rate
-  limit, and the limit an App installation gets (task 4.19), which a heartbeat every half
-  interval raises; and a request that reads every heartbeat file with its contents at once (task
+  limit, and the limit an App installation gets (task 4.19), a count that a heartbeat every half
+  of the shortest applied interval raises over one every half of the current interval, once a
+  process lengthens its interval; and a request that reads every heartbeat file with its contents at once (task
   4.11). Task 2.19, which roles can edit the bot's comment, is for information only (decision
   40). Tasks 2.12, 2.15 and 2.18 are measured, and `design.md` records them.
 - **Taking over on Linear,** where removing the label and adding it again has no counterpart
@@ -1695,8 +1721,8 @@ no `design.md` held a reason, it moved here.
     and 70, and #140 edits the same paragraph; and #140's `directed-interaction` spec says
     acting on a mention claims nothing, which decision 62 changes for an answer that acts. #140
     is to bring its spec in line.
-  - *With #228:* this change gives the keepalive append a deadline of half a poll interval,
-    where #228's spec says no append but a probe row's has a deadline; #228 is to allow a
+  - *With #228:* this change gives the keepalive append a deadline of half the shortest poll interval applied,
+    where #228's spec gives a deadline only to a probe row's append; #228 is to allow a
     deadline on the keepalive append too.
     - **From the consistency read of 2026-11-01, made when spec-check, the repository's check of
   OpenSpec changes, was reinstalled.**
@@ -1761,17 +1787,31 @@ no `design.md` held a reason, it moved here.
     detection and without further condition, and this wait adds a further condition, so it is
     an exception to that definition too; #236, an open pull request,
     restates that definition; #236 should hear of the exception.
+- **From decision 77, 2026-11-02.**
+  - #208's decision 20 fetches on every second firing of this change's heartbeat timer, taking
+    that timer to fire every half poll interval, so that it fetches once per poll interval. Under decision
+    77 the timer fires every half of the shortest interval the process has applied, so a process
+    that went from 10 to 30 minutes would fetch every 10 minutes, three times as often as #208
+    intends. #208 should time its fetch by the current poll interval, not by counting firings;
+    this change does not edit #208, and the change is #208's to make.
+  - The heartbeat period is stated in `role-config`'s *Igor fixes its maximum poll interval and
+    the timings derived from it*, in `work-claiming`'s heartbeat and stand-down-check
+    requirements and in `stuck-conditions`' keepalive requirement. The consistency read after
+    decision 77 found places that still stated the old period, every half of the current interval, among
+    them the scenario *A process that moved to a longer interval stands down by the shorter*, task 4.4 and *Derived timings
+    are fixed multiples of the poll interval*. All are fixed. The read suggests one
+    requirement own the period and the others cite it by name. Which one should own it is the
+    author's to decide.
+  - The paragraph of #140's proposal that this branch edits, in
+    `openspec/changes/directed-interaction/proposal.md`, says each rank rewrites its heartbeat
+    file every half poll interval; under decision 77 it is every half of the shortest interval
+    the rank has applied. It is left as it stands here because editing it brings #140's own
+    specs under spec-check, and they carry five errors of #140's own: in its `directed-interaction` spec, three
+    requirements over 500 characters and no Purpose for the new spec; in its `work-triage`
+    delta, one requirement over 500 characters. Spec-check checks every change a commit
+    touches, so editing that proposal brings them in. Whoever next edits that
+    paragraph, here or in #140, brings it in line.
 - **From the consistency read of 2026-11-02 after decision 76.**
-  - *For a person to decide:* a process that started on 10 minutes and applied 30 writes its
-    heartbeat every 15 minutes but stands down 20 minutes after its last write, so a single
-    failed write, or one landing more than 5 minutes late, stands it down and stops its worker.
-    Writing the heartbeat every half of the shortest interval
-    applied, every 5 minutes here, would remove that at the cost of three times the writes on the
-    tripled interval. On 10 minutes, writing every 5, it takes about three failed or late
-    writes in a row. Approval does not wait on it.
-  - #208's decision 20 fetches on every second firing of this change's heartbeat timer. The
-    stand-down checks of decision 76 are apart from those firings, so #208's fetch rate is
-    unchanged.
   - *A run by hand runs as rank 0* says a rollback of the state branch no longer stops anyone,
     since no process reads its own file's id; under decisions 63 and 72 every process reads its
     own rank's file, so that section is stale.
@@ -2245,19 +2285,28 @@ The model also assumes:
   the change at a cycle start of its own, when it applies the lore head or keeps the commit it
   had. Nothing obliges a fetch to bring the head, so a process may run on the old roster for
   good, which the liveness properties allow.
-- **Time is counted in the shorter poll interval where the interval may change.** A process on
-  the doubled interval writes a heartbeat every half of its own interval, which is once per
-  shorter interval, and may let one shorter interval end between setting its label and
-  verifying. On the tripled interval, `LongLen = 3`, it writes every one and a half shorter
-  intervals, and may let two shorter intervals end before it verifies. The model lets it write
-  once per shorter interval, more often than it does. That loses no failure: a write the model
-  adds could only postpone a sibling's verdict that the process is gone, and any write may
-  instead be missed, which `MaxMisses` allows, so a process that writes less often than the
-  model lets it is one of the behaviours checked, within that bound. The model does not check
-  the real spacing of a healthy process's writes on the tripled interval, one and a half shorter
-  intervals; that is an assumption, resting on the spacing being well inside the three intervals
-  a sibling waits. `NoHaltOnShortest.cfg` shows that missed writes are enough to find the case
-  decision 76 fixes. It counts a sibling gone after three of
+- **Time is counted in the shorter poll interval where the interval may change.** A process on  the doubled interval may let one shorter interval end between setting its label and verifying,
+  and one on the tripled interval, `LongLen = 3`, two. A process writes a heartbeat every half of
+  the shortest interval it has applied (decision 77). The model lands at most one write per
+  shorter interval, so against a real process it writes:
+  - as often, at the model's resolution, where the process has applied the shorter interval:
+    its two writes in one shorter interval land as one;
+  - as often, where the process started on the doubled interval and never applied the shorter;
+  - more often, where it started on the tripled interval, which writes once every one and a
+    half shorter intervals.
+
+  Writing more often than the real process could hide a failure in which the real, sparser
+  writes let a sibling count the process gone sooner. The model can still skip writes: any
+  write may be missed, up to `MaxMisses`, so a model process can space its writes as the real
+  one does for as many writes as `MaxMisses` allows. Past that bound the model writes more
+  often than the real process. The model does not check
+  the real spacing of a healthy process's writes where it started on the tripled interval, one
+  and a half shorter intervals; that is an assumption: that such a process, writing every 15 minutes, is
+  never stood down or counted gone while healthy, resting on 15 minutes being well inside both
+  the 60 after which it stands down, two of its 30, and the 90 a sibling waits, three of the 30
+  its first heartbeat declares or of the maximum. Leaving that spacing out hides nothing
+  decision 76 rests on: `NoHaltOnShortest.cfg` reaches the case decision 76 fixes through
+  missed writes alone. In the model, a process counts a sibling gone after three of
   the longest of its own interval and those it saw the sibling declare since it started and since
   the last loss, or else in `CeilLen`, the maximum, and stands down after two of the shortest it has applied. The
   head may change twice, the second time back. A process forgets every declaration at a loss or

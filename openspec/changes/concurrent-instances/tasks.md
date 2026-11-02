@@ -236,7 +236,7 @@
       is gone
 - [ ] 4.4 Every serving process overwrites `heartbeats/<role>-<rank>.json` on the state branch,
       and each `igor run` overwrites `heartbeats/<role>-0-<run id>.json`, every half
-      poll interval, from the timer of 4.15, which keeps running while a worker runs. The file holds an id the
+      of the shortest poll interval it has applied (4.27, decision 77), from the timer of 4.15, which keeps running while a worker runs. The file holds an id the
       process chose at random when it started, a counter it increments on each write, and
       whether the process is available: free, with no claim in hand and not stood down, and with
       a seat it can spend by #143's *A role has a seat it can spend when the gate would choose one
@@ -272,10 +272,10 @@
       again); and that the abandonment bound never shortens a run: a run longer than
       three poll intervals keeps its rank counted
 - [ ] 4.9 While it works a `condition-backoff` probe item, the process that took the probe
-      appends a keepalive row to the execution log every poll interval, from its heartbeat
-      timer, naming its probe row, and stops the probe's worker and gives the claim back where
+      appends a keepalive row to the execution log once per shortest poll interval it has
+      applied, at every second firing of its heartbeat timer (decision 77), naming its probe row, and stops the probe's worker and gives the claim back where
       two keepalive appends in a row fail, an append counting as failed where it has not landed
-      within half a poll interval (decision 61); a
+      within half the shortest poll interval applied of when it was due (decisions 61 and 77); a
       probe lapses once 90 minutes, three of the maximum poll interval, pass since its latest
       keepalive row, or since its probe row where it has none, instead of after `SWEEP_AFTER_MS`
       (decision 22). #101's code is on `main`, so this change's build replaces its
@@ -306,15 +306,15 @@
       heartbeat stands down before a sibling counts it gone, and posts nothing on the item, nor
       tests, rereads or refuses where its verification read then fails; a taker posts at once
       after its release
-- [ ] 4.15 Igor's own loop runs a timer, apart from the cycle and the worker. Every half of its
-      current poll interval it writes the heartbeat (4.4); every half of the shortest poll
-      interval it has applied since it started, which 4.27 keeps, it checks whether the process has stood
-      down (4.13); where it has, the timer stops the running worker itself, without waiting for
-      a worker event (decision 76). A stop said by a person is still seen where `main` sees it, at
+- [ ] 4.15 Igor's own loop runs a timer, apart from the cycle and the worker. Every half of the
+      shortest poll interval it has applied since it started, which 4.27 keeps, it writes the
+      heartbeat (4.4) and checks whether the process has stood down (4.13); where it has, the timer stops the running worker itself, without waiting for
+      a worker event (decisions 76 and 77). A stop said by a person is still seen where `main` sees it, at
       the claim re-read `src/execute.ts` makes on a worker event. Tests: a stand-down while the
       worker emits no event stops the worker within half the shortest poll interval applied, counted
       from the stand-down; a
-      process that started on 10 minutes, applied 30 and then fails every heartbeat stops its
+      process that started on 10 minutes and applied 30 writes its heartbeat every 5 minutes;
+      one that started on 10 minutes, applied 30 and then fails every heartbeat stops its
       worker within 25 minutes of its last heartbeat
 - [ ] 4.16 A claim left by this process's predecessor or by a gone rank on an item with the Igor's
       own open pull request is caught up: the item is not re-worked, the pull request is brought
@@ -422,7 +422,8 @@
       a heartbeat whose counter changed since the last read. It forgets every sibling's declarations when it detects a loss or rollback of the state branch, which is any of three signs. First, a serving rank's file it had read is missing; a run's file does not count, since a run removes its own as it exits and a serving process removes a gone run's. Second, a counter, in a sibling's file or its own, is lower than the one last read under the same start id. Third, its own file holds an older copy under its predecessor's start id. A new start id in a sibling's file is a restart, not a loss. It counts a sibling
       gone after three of the longest of its own current interval and the intervals it keeps for
       that sibling, or after three of the maximum poll interval, 30 minutes, where it keeps none; it stands down after two of its
-      shortest applied interval; it writes its heartbeat every half of its own current interval.
+      shortest applied interval; it writes its heartbeat every half of its shortest applied interval (4.4, decision 77), and a
+      probe's keepalive once per that interval (4.9).
       The process's own restart starts all of it afresh. Tests: a process that saw a sibling declare 20 minutes
       counts it gone only after 60 minutes; one on 10 minutes that saw only 10, after 30; one on
       20 minutes that saw only 10, after 60; a process

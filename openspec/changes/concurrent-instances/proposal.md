@@ -64,7 +64,10 @@ the process and it recovers its own claim. Removing a process is a decision, and
 ranks that exist, declared like seats — is where it is recorded. A removed rank shuts down as
 when its supervisor stops the process, finishing or handing off its item, and its claims are freed by the abandonment
 bound only if it dies first, as are those of a rank left declared that no longer runs. Each
-process writes a heartbeat to its own file on the state branch every half poll interval, from a
+process writes a heartbeat to its own file on the state branch every half of the shortest poll
+interval it has applied since it started (each process applies the configuration in the lore repository at a cycle start, so a lore
+commit can change its interval while it runs; a process stands down after two of that shortest
+interval, so writing every half of it keeps one late write from standing it down), from a
 timer of its own that keeps running while a worker runs, and its first one before its first
 cycle: a counter it increments on each write, beside an id picked at each start. A process counts a sibling gone only after it has itself watched the sibling's counter
 fail to change for three poll intervals, 30 minutes at the default poll; any process

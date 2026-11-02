@@ -128,11 +128,12 @@ not as considered values.
 
 ### Requirement: Igor fixes its maximum poll interval and the timings derived from it
 
-Igor SHALL fix, with no setting, a *maximum poll interval* of 30 minutes, and five timings in
-multiples of the role's poll interval: under `work-claiming`, the heartbeat period, 0.5; the
-stand-down threshold, 2, and the stand-down check, 0.5, both of the shortest interval a process has
-applied; the *abandonment bound*, 3; and under `stuck-conditions`, the probe keepalive, 1. A poll
-interval above the maximum SHALL be refused, naming it and the maximum.
+Igor SHALL fix, with no setting, a *maximum poll interval* of 30 minutes, and five timings.
+Under `work-claiming`: the heartbeat period and the stand-down check, 0.5 times, and the
+stand-down threshold, 2 times, the shortest interval a process has applied; and the *abandonment
+bound*, 3 of the longest interval a watcher counts by. Under `stuck-conditions`: the probe
+keepalive, 1 of that shortest interval. A poll interval above the maximum SHALL be refused,
+naming it and the maximum.
 
 #### Scenario: The derived timings follow the poll interval
 

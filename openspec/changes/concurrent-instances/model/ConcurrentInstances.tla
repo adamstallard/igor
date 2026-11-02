@@ -123,11 +123,16 @@
 (* it started and since the last loss or rollback (`seenDecl`), or three   *)
 (* of the maximum poll interval (`CeilLen`) where it saw none. It stands   *)
 (* down after two of the shortest interval it has applied since it started *)
-(* (`minLen`). It writes a heartbeat every half of its own interval, and   *)
-(* one write lands per shorter interval: on the shorter interval two       *)
-(* writes count as one, and on the longer each write counts, though on   *)
-(* the tripled interval real writes are one and a half shorter intervals  *)
-(* apart (`WriteHeartbeat`, and design.md's What the model assumes).     *)
+(* (`minLen`). It writes a heartbeat every half of that shortest          *)
+(* interval, and the model lands at most one write per shorter interval:  *)
+(* where a process's own shortest applied interval is the model's        *)
+(* shorter interval, its two real writes in it count as one landed write,  *)
+(* and where it started on the longer interval each real write counts as  *)
+(* one. On the tripled interval real writes are one and a half shorter    *)
+(* intervals apart, so the model writes more often than a real process.   *)
+(* A missed write, up to `MaxMisses`, lets a model process space its      *)
+(* writes as the real one does; past that bound the real spacing is an    *)
+(* assumption (`WriteHeartbeat`, and design.md's What the model assumes). *)
 (*                                                                         *)
 (* A person may edit a claim message (`EditMsg`), and an edited message   *)
 (* counts for nothing, so an edit removes it from the messages that       *)
@@ -211,11 +216,12 @@ CONSTANTS
                        \* once the rank returns
     HaltOnShortest,    \* Igor's timer checks for a stand-down every half of
                        \* the shortest poll interval the process has applied
-                       \* since it started, which it tracks under
-                       \* DeclaredInterval. It checks every half of its
-                       \* current interval, at the firings that write its
-                       \* heartbeat, where this rule is FALSE, and also
-                       \* where DeclaredInterval is FALSE
+                       \* since it started, checking at the firings that
+                       \* write its heartbeat. The model tracks that
+                       \* shortest interval only under DeclaredInterval.
+                       \* The process checks every half of its current
+                       \* interval where this rule is FALSE, and also where
+                       \* DeclaredInterval is FALSE
     TimerHalts,        \* Igor's own timer checks for a stand-down and stops
                        \* the worker itself, so a stood-down worker stops
                        \* within the shorter interval it stood down in, or the
@@ -1017,10 +1023,12 @@ AppendMark(r) ==
 \* watcher's count for this process restarts, and every watcher has now
 \* seen it alive. Under ~CounterLiveness a watcher compares times instead,
 \* and a write from a process whose clock is behind lands without counting
-\* for anyone, though the process itself counts it as written. One write
-\* lands per shorter interval: for a process on the shorter interval,
-\* writing every half of it, that is two writes counted as one; for one on
-\* the longer interval, writing every half of its own, that is each write.
+\* for anyone, though the process itself counts it as written. At most one
+\* write lands per shorter interval, and a write may be missed. A process writes every half of the shortest
+\* interval it has applied: where that is the shorter interval, two writes
+\* count as one; where it started on the longer interval, each write counts
+\* as one, though on the tripled interval a real process writes only every
+\* one and a half shorter intervals (see the header).
 \*
 \* With one item, every process attempts the same one item whatever it
 \* goes first for, so a configuration with one item does not track
