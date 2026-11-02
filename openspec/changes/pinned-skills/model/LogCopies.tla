@@ -1,6 +1,6 @@
 ---------------------------- MODULE LogCopies ----------------------------
 (* The session log copies of one work item's executions, under decision   *)
-(* 38 in the proposal.md of the OpenSpec change pinned-skills. When an    *)
+(* 38 in the design.md of the OpenSpec change pinned-skills. When an      *)
 (* execution of the item ends, Igor deletes on its own host the copies of *)
 (* every execution that meets three conditions: it started before the    *)
 (* one that ended; it has ended, or its process has stopped; and it left  *)
@@ -140,19 +140,19 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
-\* Requirement: "The worker's session log outlives the reset"
+\* Requirement: "Igor deletes an item's earlier session log copies when an execution of it ends"
 \* (pinned-skills), its scenario "A running execution's log copies stay".
 \* No execution's copies are deleted while it runs.
 NoCopyDeletedWhileRunning ==
     \A e \in E : st[e] = "running" => del[e] = "none"
 
-\* Requirement: "The worker's session log outlives the reset"
+\* Requirement: "Igor deletes an item's earlier session log copies when an execution of it ends"
 \* (pinned-skills), its scenario "Igor deletes no flagged execution's log
 \* copies". Only #216's release deletes a flagged execution's copies.
 FlaggedCopiesWaitForRelease ==
     \A e \in E : (held[e] \/ pending[e]) => del[e] # "igor"
 
-\* Requirement: "The worker's session log outlives the reset"
+\* Requirement: "Igor deletes an item's earlier session log copies when an execution of it ends"
 \* (pinned-skills), its scenario "An unflagged execution's log copies last
 \* until the item's next execution ends". Igor never deletes the copies of
 \* the latest execution to start on a host.
@@ -162,7 +162,7 @@ LatestCopiesKept ==
            /\ ~\E d \in E : d > e /\ st[d] # "idle" /\ host[d] = host[e])
             => del[e] # "igor"
 
-\* Requirement: "The worker's session log outlives the reset"
+\* Requirement: "Igor deletes an item's earlier session log copies when an execution of it ends"
 \* (pinned-skills), its scenarios "An unflagged execution's log copies last
 \* until the item's next execution ends" and "A crashed execution's log
 \* copies go when the next execution ends". An unflagged execution that has

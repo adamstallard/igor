@@ -143,9 +143,8 @@
       worker user, the reset runs as that user, through #175's `sudo` spawn. #153 wires each of
       its model steps to call this reset first, as it calls 2.1's argument builder
 - [ ] 2.6 With a worker user, before every reset, kill every
-      process that user owns, by user or by the user's systemd slice, whichever the
-      implementer finds kills them all in the tests below (Adam left the means open). Not by
-      process group: each command a worker runs starts in a session of its own, as #175's
+      process that user owns, by user (decision 13). Not by the user's systemd slice, which a
+      process `sudo` starts is not in, and not by process group: each command a worker runs starts in a session of its own, as #175's
       measurement 6.2 found. #175 is built before this change, so its `sudo` spawn exists by
       then
 - [ ] 2.7 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude`, and an MCP

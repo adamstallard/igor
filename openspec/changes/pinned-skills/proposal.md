@@ -8,7 +8,7 @@ runs in its place.
 Issue [#152](https://github.com/adamstallard/igor/issues/152) decides the fix: Igor loads its
 skills from one pinned directory that it names on every call, holding a copy of the shared
 skills changed only on purpose. The issue named the directory with `--add-dir`; decision 1
-replaces it.
+replaces it with `--plugin-dir`. Decisions are numbered in `design.md`'s *Decisions*.
 
 ## What Changes
 
@@ -48,8 +48,11 @@ replaces it.
 
 ### Modified Capabilities
 
-- `task-execution`: the scenario *No state carries between tasks* names what a worker's home
-  keeps across tasks (decision 15).
+- `task-execution`: since the worker's home lasts across tasks, the scenario *No state carries
+  between tasks* points to an added requirement, *Nothing a worker writes reaches a later task but
+  three kinds of file*: files the reset leaves in the home, files the worker's user writes outside
+  it, and, in same-user mode, files a process that left the worker's group writes after a reset
+  (decision 15).
 
 The flags are added to calls owned by `task-execution` and `work-triage`, but the rules cover
 every call, so they live in one place, `pinned-skills`.

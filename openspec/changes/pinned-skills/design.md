@@ -336,8 +336,11 @@ So denying tools does not hide the skill list, and the check denies them (decisi
     as the service user (Adam, 2026-10-18, on #153), so nothing of prose's is written in the
     worker's home and the reset has nothing of it to keep.
 15. **The in-force scenario *No state carries between tasks* is reworded** (Adam, 2026-10-17).
-    Nothing a worker writes reaches a later task, except what lies outside decision 9's reset,
-    and the scenario names those exceptions. `specs/task-execution/spec.md` is a MODIFIED delta.
+    Nothing a worker writes reaches a later task, except three kinds of file: those in the
+    home that decision 9's reset leaves alone, those the worker's user writes outside the home, and,
+    in same-user mode, those a process that left the worker's group writes after a reset. `specs/task-execution/spec.md` modifies *Execution obtains a disposable
+    working tree through one seam*, whose scenario now points to the requirement it adds, *Nothing
+    a worker writes reaches a later task but three kinds of file*, which names the three.
 16. **Same-user mode is `igor run` alone** (Adam, 2026-10-17). #175 has no `igor serve --same-user`, so no served rank uses a same-user home.
     Nor does same-user mode run under the systemd unit (`deploy/igor.service`), whose
     `ProtectHome=read-only` would make a home under `~/.local/state` unwritable. Under #179,
@@ -503,7 +506,9 @@ So denying tools does not hide the skill list, and the check denies them (decisi
 34. **The execution record may name a log copy that #216 could not move** (Adam, 2026-10-21,
     #216's decision 102). The record names each copy where Igor wrote it. #216 moves a flagged
     execution's copies into `flagged-questions`, and a copy whose move it refused stays at the
-    path the record names.
+    path the record names. The record is on the state branch, the git branch in the lore
+    repository where Igor keeps its records, not in the state directory on Igor's host, where
+    the copies are written, so #216's move of a copy on the host does not rewrite it.
 35. **A run removes the home and plugin directory a crashed run left** (Adam, 2026-10-21,
     #179's decision 39). This concerns `igor run` alone: a worker user's home lasts across runs,
     and `/opt/igor/skills` is never removed. At its start, before its first cycle, an `igor run`
@@ -536,7 +541,10 @@ So denying tools does not hide the skill list, and the check denies them (decisi
     that list, which today names only spec-trace, whose checker #190 runs, and a change that runs
     another skill's script for every role adds that skill to it. It links none of the rest, so a skill that acts
     with the person's own credentials, such as one that posts to chat, loads into a worker only
-    where the role asks for it.
+    where the role asks for it. For that run the assembled directory is `skills_dir`, and every
+    rule naming `skills_dir` applies to it unchanged: none requires a skill to be at a particular
+    commit (decision 4's pin is on the server's clone; no rule naming `skills_dir` states one), so an unpinned
+    directory needs no exception from any of them.
 38. **An unflagged execution's session log copies last until the item's next execution ends**
     (Adam, 2026-10-24). A session log copy is the copy of a model step's Claude Code session log that
     decision 33 makes before the worker's home is reset. An
@@ -595,7 +603,9 @@ stands until he says otherwise.
     taking paths from it would let them choose which files Igor deletes. Under `igor run` a
     worker of the same user can write the state directory, so a planted link could redirect a
     delete; #216 already expects this deletion to refuse links (its decision 106).
-44. **The `igor run` check's two directories are removed after the call** (one good option),
+44. **The `igor run` check's two directories are named by the run's id and removed after the call**
+    (one good option: the run id tells a later run which gone run left them, and removing them
+    after the call leaves nothing of the check behind),
     and an `igor run` that finds them left by a crashed run removes them with that run's home
     and plugin directory, as #143 does for its probe directories.
 
@@ -801,7 +811,8 @@ run on a stored login, which leaves open where a worker user's login comes from 
 worker rewrite a login that later calls might use.
 
 **Decided by Adam, 2026-10-17: with a worker user, Igor kills every process that user owns before
-every reset**, by user or by the user's systemd slice, as the implementer chooses. A process that
+every reset**, by user, not by the user's systemd slice: #175 found a process `sudo` starts
+outside that slice. A process that
 leaves its process group survives a kill of the group, and running as the worker user it could
 rewrite the home after a reset. #175 measured on 2026-10-18 that every command a worker runs
 leaves its group, not a rare one: Claude Code starts each Bash command in a new session, and a
@@ -942,8 +953,9 @@ The model holds one item's executions, numbered in the order they start. Each ru
 makes its copies while it runs, and then ends, flagged or not, or stops because its Igor process
 stopped. #216 may release a flagged hold at any time, which deletes that execution's files. When
 an execution ends, Igor deletes on its host the copies decision 38 names. The model checks four
-invariants. Each proves one or two of the scenarios of *The worker's session log outlives the
-reset*, and the model names those scenarios above each invariant:
+invariants. Each proves one or two of the scenarios of *Igor deletes an item's earlier session
+log copies when an execution of it ends*, and the model names those scenarios above each
+invariant:
 
 - `NoCopyDeletedWhileRunning`: no execution's copies are deleted while it runs (*A running
   execution's log copies stay*).
@@ -1007,13 +1019,10 @@ whether they exist.
     session logs there.
   - No scenario tests the check under `igor run` spending the run's local seat, or the copy of
     #189's second worker run's log.
-  - Igor's startup check refusing a plugin directory whose `skills/` is empty (*Igor confirms its
-    skills load before its first model call*) is a choice no decision lists.
-  - From the second read that day: the scenario *Each igor run has a home of its own* puts triage
-    and the check in the run's home, which *Every model step in the worker's home starts from
-    Igor's template* keeps them out of, and nothing says which `HOME` triage gets under `igor
-    run`; that requirement and *The worker's session log outlives the reset* each list the steps
-    that run in the worker's home, and only the second names #189's second worker run; #175 restates this change's
+  - Igor's startup check refusing a plugin directory whose `skills/` is empty (*Igor refuses a skills directory that is empty or holds more than skills*) is a choice no
+    decision lists.
+  - From the second read that day: nothing says which `HOME` triage gets under `igor
+    run`; #175 restates this change's
     reset as one before every call, which deletes the session a resume reads (#175's to fix);
     issue #152's body still states the reset and the check as they were before decisions 28 and
     31; no rule says removing a run's home and plugin directory, or writing a log copy, follows no
@@ -1025,8 +1034,6 @@ whether they exist.
   - A dry run is `igor run --plan`, so decision 20's fallback covers it. Whether `--plan`
     assembles a plugin directory is unsaid; #179 has `--plan` change nothing, so assembling one
     would break that.
-  - Decision 13's kill, by user or by the user's systemd slice: #175 measured that on Debian a
-    process `sudo` starts is not in that slice, so the spec should drop the slice.
   - The execution record names a log copy's host path, which #216 may move, and which puts a
     person's home path on a state branch that may be public.
   
@@ -1037,11 +1044,8 @@ whether they exist.
     Claude Code keeps nothing under `HOME` outside the two reset paths; a step's session is one file.
   - *Skills come from one plugin directory the server names* refuses any lore file that names
     `skills_dir`, but today only the parsers of `igor.config.yaml`, role files and budget files
-    refuse unknown keys. The term *model step* is defined three ways: in *Every model call names
-    the plugin directory* as one `claude -p` with its resumes, in *Every model step in the
-    worker's home starts from Igor's template* as one session for a run, and in `design.md` as
-    excluding triage and the check. Also: *service user* and *flagged execution* are not
-    defined; rationale sits in requirement text; task 0.3 is ticked though the server's version
+    refuse unknown keys. *Service user* is not
+    defined; task 0.3 is ticked though the server's Claude Code version
     was never measured; spec choices on the log copy, the check's pass and `plugin.json`'s keys
     are not among the decisions; and *Why* describes issue #152 as it was.
   - Still to fix: task 1.10 of #175, built before this change, removes the usage read (`runUsage`), carrying
@@ -1087,20 +1091,26 @@ whether they exist.
   answered its three questions in decisions 28, 29 and 30. The rest are for this change's
   authors to fix, except the first, whose gap decision 21 accepts. #204's rule places a change that only cites
   another change's requirement after that change, which would put this change after #171, #179
-  and #82; #204's list puts it before them. The kill before a reset may go by the worker user's systemd slice here, which #175 says
-  a process started through `sudo` is not in. Decision 6 rests on no skill replacing an
+  and #82; #204's list puts it before them. Decision 6 rests on no skill replacing an
   `igor:<name>` skill, but the skill listing sent to the model was not read under
   `--plugin-dir`. Whether a skill's `SKILL.md` can declare hooks, which the layout check would
   not catch, is unmeasured. Two choices are in the spec but not among the decisions: a check
   whose call fails after its init event passes on that list, and the session log's copy refusing
-  a link or a hard-linked file. "Model step" and "Igor's state directory" are defined after
-  their first use, and four sentences of rationale sit in requirement text.
+  a link or a hard-linked file. In the spec, "model step" and "Igor's state directory" are defined
+  after their first use.
 - **How Igor on a host knows which executions' copies it holds, their start order, and whether
   each ended or its process stopped** (from the consistency read of 2026-11-01). The TLA+ model
   takes these as shared state and proves the rule, not a mechanism. Under #179 several ranks
   share one state directory, so one rank judges another's executions; the implementation, at gate two, must say what it
   reads for each, and decision 43 already rules out the execution record as the source of
   paths.
+- **From the consistency read of 2026-11-01 after compacting the requirements (issue #232, which shortens every requirement over 500
+  characters without changing what it says):**
+  - #216 names the execution ledger `executions/<yyyy-mm-dd>.ndjson`, where this change's record
+    of each log copy is in `executions.ndjson`, the name Igor's code on `main` uses; which layout is meant is for
+    #216 and this change to settle.
+  - Decision 44's removal after a crash is #179's to carry out, and #179's sweep does not list
+    the `igor run` startup check's two directories; no scenario tests their removal after a crash.
 - **Reported to #216, from the same read:**
   - #216's proposal says the execution record names a flagged copy's moved path, but under
     decision 34 the record keeps the path where Igor wrote the copy.
