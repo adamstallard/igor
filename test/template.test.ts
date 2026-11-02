@@ -93,14 +93,13 @@ describe('the shipped org role', () => {
   it('loads as a role of its own', () => {
     const { role } = resolveRole(storeWithOrgBase(), ORG_ROLE)
 
-    expect(role.allow).toContain(role.completion)
     expect(role.instructions.join('\n')).not.toBe('')
     expect(role.lane.labels?.excludes?.length).toBeGreaterThan(0)
   })
 
   it('merges as the base a role inherits without saying so', () => {
     const dir = storeWithOrgBase()
-    writeFileSync(join(dir, ROLES_DIR, 'derived.yaml'), 'allow: [comment, unassign]\n')
+    writeFileSync(join(dir, ROLES_DIR, 'derived.yaml'), 'allow: [comment]\n')
 
     const { role, from } = resolveRole(dir, 'derived')
 

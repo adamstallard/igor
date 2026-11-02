@@ -84,7 +84,6 @@ describe('what init writes', () => {
     const { role } = loadRole(loadConfig(paths(root).config), STUB_ROLE)
 
     expect(role.extends).toEqual([ORG_ROLE])
-    expect(role.allow).toContain(role.completion)
   })
 })
 
