@@ -136,19 +136,12 @@ the claim saw lifted. For a handed-over item the stop stands.
 
 ### Requirement: Stop is unconditional and open to anyone
 
-A stop directed at an Igor SHALL take effect immediately, release the claim, and require no
-authorization. Stop MUST NOT be gated by identity, permission, or configuration.
-
-A stop is directed at an Igor when it opens a comment with "stop" and names no Igor, or names that
-Igor: "stop @igor-backend" or "@igor-backend stop". A bare "stop" stops every Igor on the item. A
-stop that names other Igors SHALL NOT stop an Igor it does not name, and SHALL NOT take that
-Igor's holder entry off: "stop @igor-backend" is meant for the backend Igor, and stopping the
-frontend Igor too would take back a hand-over nobody asked to take back.
-
-A name after "stop" that is no Igor's counts as no name, so "Stop — @alice is taking over" stops
-every Igor on the item. On GitHub every Igor is a GitHub App, so a name is an Igor's where GitHub
-has a bot account `<name>[bot]`. A name the tracker cannot resolve counts as no name, because
-stopping too many Igors is the safer error.
+A stop directed at an Igor SHALL take effect immediately and release the claim, and MUST NOT be
+gated by identity, permission, authorization or configuration. A comment opening with "stop",
+or with names and then "stop", stops the Igors it names or, naming no one, every Igor on the item,
+and SHALL NOT stop, or take the holder entry off, any other. A name after "stop" that is no
+Igor's, or that the tracker cannot resolve, is ignored. On GitHub a name is an Igor's if
+`<name>[bot]` is a bot.
 
 #### Scenario: Anyone can stop an Igor
 
@@ -436,19 +429,12 @@ caller that must tell them apart cannot do it from a thrown error alone.
 
 ### Requirement: An organization's Igors claim on one tracker
 
-The Igors of one organization SHALL hold claims on a single tracker. Claims exist so that Igors
-do not work the same item, and an Igor cannot see a claim held on a tracker it does not read.
-Other surfaces MAY direct an Igor, by a mention or a chat message, or carry its work as a code
-host, but a claim SHALL NOT be taken on them. A configuration whose roles take claims on more
-than one tracker SHALL be refused, naming the trackers involved.
-
-Discord SHALL NOT be a claiming tracker. It has no holder field, so a claim there would be a
-bare message with nothing to verify. Discord directs work: a request there becomes an issue on
-the claiming tracker, and the issue's link is posted back in the channel.
-
-Claims coordinate Igors with each other, not with people. An Igor holds an item briefly, a
-person takes over an Igor that stalls, and a person duplicating work is acceptable. No rule in
-this capability is designed to prevent duplicate human work.
+The Igors of one organization SHALL hold claims on a single tracker. Other surfaces MAY direct
+an Igor, by a mention or a chat message, or carry its work as a code host, but a claim SHALL NOT
+be taken on them. A configuration whose roles take claims on more than one tracker SHALL be
+refused, naming the trackers involved. Discord SHALL NOT be a claiming tracker. Claims
+coordinate Igors with each other: no rule in this capability is designed to stop a person
+duplicating work.
 
 #### Scenario: Claims on one tracker
 
@@ -482,21 +468,11 @@ this capability is designed to prevent duplicate human work.
 
 ### Requirement: On GitHub, an Igor is a GitHub App and claims with its role's label
 
-An Igor's GitHub identity SHALL be a GitHub App. Machine-user Igors are not supported. An Igor
-SHALL claim a GitHub issue by adding the label `igor:<role>`, naming its role, such as
-`igor:reviewer`, and then posting the claim comment. An App's bot user cannot be an issue
-assignee, so the label is its holder field. The label carries no organization or other prefix
-beyond `igor:`.
-
-The `igor:` label is the Igor's field and the assignee is the person's, as Linear's delegate
-and assignee are. The rules that follow for items assigned to a person, for a person handing an
-item to an Igor, and for what follows a stop apply to the label exactly as they apply to
-Linear's delegate.
-
-Any label beginning `igor:` names an Igor. Another Igor's `igor:` label that the other Igor added
-itself, present after the settle interval, means the claim is lost, and standing down removes
-only this Igor's own label. A label a person added is not a competing claim (*A person
-reassigns an issue by removing the holding Igor's label first*).
+An Igor's GitHub identity SHALL be a GitHub App; machine-user Igors are not supported. An Igor
+SHALL claim a GitHub issue by adding the label `igor:<role>`, naming its role, then posting the
+claim comment. That label is its holder field, exactly `igor:<role>` with no organization or
+other prefix. The rules for items assigned to a person, for hand-overs and for stops apply to
+it as to Linear's delegate. Any label beginning `igor:` names an Igor.
 
 #### Scenario: App claims by label and comment
 
