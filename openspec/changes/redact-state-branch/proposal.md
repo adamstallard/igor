@@ -181,7 +181,7 @@
     rather than here, and the gap for `CLAUDE_CODE_MESSAGING_TOKEN` is in *Impact*.
   - In this change's spec, these SHALLs have no scenario: the rules for where a token's shape
     starts and ends, the registry never being written, an issue's body, the transcript, and
-    files sent as written. The order of the base62 alphabet is not stated.
+    files sent as written.
   - #216 (`lore-search`) restates this rule in its proposal as also matching token prefixes;
     it should cite this change's requirement instead.
 - **Found by the consistency read of 2026-11-01**, for whoever next edits this change; none is
@@ -211,8 +211,8 @@ such text as it came (#213).
 
 ## What Changes
 
-- A requirement defining credential redaction, and one applying it to every state-branch write
-  and every text the Igor posts.
+- Five requirements defining credential redaction, and a sixth applying it to every state-branch
+  write and every text an Igor posts to a tracker or code host.
 - `src/redact.ts` holds the rule and its registry. `resolveToken` (`src/budget.ts`),
   `readCredentials`, `appJwt` and `mint` (`src/app.ts`) and `workerEnv` (`src/execute.ts`)
   register each secret as they obtain it.
@@ -230,7 +230,7 @@ None.
 ### Modified Capabilities
 
 - `task-execution`: credential redaction is defined, and applied to every write to the state
-  branch and every text the Igor posts.
+  branch and every text an Igor posts to a tracker or code host.
 
 ## Impact
 

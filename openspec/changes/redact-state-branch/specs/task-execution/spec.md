@@ -2,60 +2,11 @@
 
 ### Requirement: Credential redaction replaces every credential the Igor knows
 
-*Credential redaction* is one rule, applied wherever this or another change says text is
-redacted. It matches secrets by value, from a registry, and real tokens by their exact shape,
-and it SHALL replace each match with `[redacted]`.
-
-Code that obtains a secret SHALL register it (`rememberSecret`) before any log, record or
-message can quote it. The registered secrets are:
-
-- the token of every seat the Igor has read, whatever its source and whatever its variable's
-  name. A seat is a model subscription the Igor spends. Its token is the credential the worker
-  runs on; the worker is the model subprocess doing an item's work. A seat's token stays registered
-  for the life of the process, after its seat is removed from the configuration too;
-- the GitHub App's private key, whole and each of its base64 lines;
-- the App's signed JWT and each installation token it mints, each until it expires;
-- every credential the Igor puts in a worker's environment, including a forwarded proxy URL's
-  user info, password and whole URL. A proxy URL's user name with no password, or with an
-  empty one (`user:`), is registered only with its host, never bare, in each of these forms:
-  `<user>@<host>`, the user name as written, percent-decoded and percent-encoded, each followed
-  by `@` and the host without its port; the user info, the user name with its `:` where the
-  password is empty, followed by `@` and that host, such as `user:@proxy`; and the whole URL;
-- the value of every variable in the Igor's environment whose name contains `TOKEN`, `KEY`,
-  `SECRET`, `PASSWORD` or `CREDENTIAL`, matched case-sensitively anywhere in the name;
-- every other secret the Igor obtains; a change that adds a way of obtaining one SHALL register
-  it.
-
-A value shorter than 8 characters is not registered. Each registered value is matched as
-written, JSON-escaped and URL-encoded, wherever it appears, longest first so that a value
-holding another is replaced whole. The registry is held
-in memory only, and is never written or logged.
-
-The tokens matched by shape are:
-
-- a GitHub token: `ghp_`, `gho_`, `ghu_`, `ghs_` or `ghr_`, then 30 letters or digits, then the
-  base62 CRC32 checksum of those 30 in 6 letters or digits, where the checksum is right;
-- a fine-grained GitHub token: `github_pat_` and 82 letters, digits or `_`;
-- an Anthropic key: `sk-ant-`, a type of 1 to 16 lowercase letters and a two-digit version, such
-  as `api03-` or `oat01-`, and
-  at least 40 letters, digits, `-` or `_`.
-
-A token counts only where no letter or digit comes straight before it, or where it comes
-straight after a JSON escape (`\n`, `\r`, `\t`) or a percent-encoded character (`%3A`). A GitHub
-token counts only where no letter or digit follows it, and a fine-grained token only where no
-letter, digit or `_` follows it.
-Nothing else is matched by pattern.
-
-#### Scenario: A seat token is redacted by its value
-
-- **WHEN** a seat's token comes from a variable named `SEAT_A`, and text quotes the token
-- **THEN** credential redaction replaces it with `[redacted]`
-
-#### Scenario: A removed seat's token is still redacted
-
-- **WHEN** a seat whose token was read is removed from the configuration, and text later
-  quotes that token
-- **THEN** credential redaction replaces it with `[redacted]`
+*Credential redaction*, the one rule applied wherever a change says text is redacted, SHALL replace
+with `[redacted]` every registered secret, matched as written, JSON-escaped and URL-encoded,
+wherever it appears, longest first, and every token of a listed shape. A value shorter than 8
+characters is not registered. The registry is held only in memory, never written or logged. The
+next four requirements state what is registered and which shapes match; the fifth applies the rule.
 
 #### Scenario: The longer of two registered secrets is replaced whole
 
@@ -72,11 +23,60 @@ Nothing else is matched by pattern.
 - **WHEN** text quotes a registered secret inside a JSON string or a URL's query
 - **THEN** credential redaction replaces the escaped or encoded secret with `[redacted]`
 
+#### Scenario: Text holding no secret is unchanged
+
+- **WHEN** credential redaction runs over this repository's commit messages, docs and specs,
+  and over state-branch records an Igor wrote, with nothing registered
+- **THEN** it changes none of them
+
+### Requirement: Every secret the Igor obtains is registered before it can be quoted
+
+Code that obtains a secret SHALL register it (`rememberSecret`) before it can be quoted, for the
+process's life unless an expiry is stated here: each seat token the Igor reads; the App's private
+key, whole and per base64 line; its signed JWT and each installation token it mints, until each
+expires; each credential put in a worker's environment; and the value of each Igor environment
+variable whose name contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`,
+case-sensitively, anywhere.
+
+#### Scenario: A seat token is redacted by its value
+
+- **WHEN** a seat's token comes from a variable named `SEAT_A`, a name holding no credential word,
+  and text quotes the token
+- **THEN** credential redaction replaces it with `[redacted]`
+
+#### Scenario: A removed seat's token is still redacted
+
+- **WHEN** a seat whose token was read is removed from the configuration, and text later
+  quotes that token
+- **THEN** credential redaction replaces it with `[redacted]`
+
 #### Scenario: A line of the App's private key is redacted
 
 - **WHEN** text quotes one base64 line of the App's private key, behind a diff's `-` or a
   `cat -n` line number
 - **THEN** credential redaction replaces that line, and keeps the prefix in front of it
+
+#### Scenario: A registered secret is no longer matched by value once it expires
+
+- **WHEN** a secret with no token shape, such as the App's JWT, was registered with an expiry, and
+  that time has passed
+- **THEN** credential redaction leaves text quoting it unchanged; a token with one of the shapes
+  that *Credential redaction also matches tokens by their exact shape* lists would still be
+  matched by its shape
+
+#### Scenario: A credential-named variable's value is redacted
+
+- **WHEN** a variable named `DEPLOY_KEY` in the Igor's environment holds `opensesame42`, and
+  text quotes that value
+- **THEN** credential redaction replaces it with `[redacted]`
+
+### Requirement: A proxy user name with no password is registered only with its host
+
+A proxy URL the Igor forwards to a worker's environment: its password, its user info where that
+password is not empty, and the whole URL SHALL be registered. A user name with no password, or with
+an empty password (`user:`), SHALL be registered only in these forms, never bare: `<user>@<host>`,
+with the name as written, percent-decoded and percent-encoded and the host without its port; where
+the password is empty, also `<user>:@<host>`; and the whole URL.
 
 #### Scenario: A proxy's password is redacted
 
@@ -93,7 +93,8 @@ Nothing else is matched by pattern.
 
 - **WHEN** `HTTPS_PROXY` is `http://JaneDoeContractor2024@proxy:3128`, with no password, and
   text holds the item id `github:JaneDoeContractor2024/igor#3`
-- **THEN** credential redaction leaves the id unchanged
+- **THEN** credential redaction leaves the id unchanged, since a name alone can appear where it
+  is no secret
 
 #### Scenario: A proxy's user name with an empty password is redacted with its host
 
@@ -102,17 +103,16 @@ Nothing else is matched by pattern.
 - **THEN** credential redaction replaces the first with `[redacted]` and leaves the second
   unchanged, since no host follows the name there
 
-#### Scenario: A registered secret is no longer matched by value once it expires
+### Requirement: Credential redaction also matches tokens by their exact shape
 
-- **WHEN** a secret with no token shape was registered with an expiry, and that time has passed
-- **THEN** credential redaction leaves text quoting it unchanged; a token with one of the shapes
-  above would still be matched by its shape
+Credential redaction SHALL match by pattern only these shapes:
 
-#### Scenario: A credential-named variable's value is redacted
-
-- **WHEN** a variable named `DEPLOY_KEY` in the Igor's environment holds `opensesame42`, and
-  text quotes that value
-- **THEN** credential redaction replaces it with `[redacted]`
+- a GitHub token: `ghp_`, `gho_`, `ghu_`, `ghs_` or `ghr_`, 30 letters or digits, then the
+  CRC32 of those 30 in base62 (`0`-`9`, `A`-`Z`, `a`-`z`), left-padded to 6 with `0`;
+- a fine-grained GitHub token: `github_pat_` and 82 letters, digits or `_`, a length unchecked
+  on a real token;
+- an Anthropic key: `sk-ant-`, a type of 1 to 16 lowercase letters, a two-digit version, `-`,
+  and at least 40 letters, digits, `-` or `_`.
 
 #### Scenario: A GitHub token with a right checksum is redacted
 
@@ -129,30 +129,28 @@ Nothing else is matched by pattern.
 - **WHEN** text holds `ghp_` and 36 letters and digits whose last 6 are not their checksum
 - **THEN** credential redaction leaves it unchanged
 
+### Requirement: A token shape counts only where it stands apart from the text around it
+
+A token of a shape that *Credential redaction also matches tokens by their exact shape* lists SHALL
+count only where no letter or digit comes straight before it, or where it comes straight after a
+JSON escape (`\n`, `\r`, `\t`) or a percent-encoded character such as `%3A`. A GitHub token SHALL
+count only where no letter or digit follows it, and a fine-grained token only where no letter,
+digit or `_` follows it.
+
 #### Scenario: A word holding a token prefix is left alone
 
 - **WHEN** text holds the item id `github:acme/highs_and_lows#7`
-- **THEN** credential redaction leaves it unchanged
-
-#### Scenario: Text holding no secret is unchanged
-
-- **WHEN** credential redaction runs over this repository's commit messages, docs and specs,
-  and over state-branch records an Igor wrote, with nothing registered
-- **THEN** it changes none of them
+- **THEN** credential redaction leaves it unchanged; `ghs_and_lows#7` is too short to be a token,
+  so this shows only that a prefix alone is not matched
 
 ### Requirement: Every write to the state branch, and every text the Igor posts, is redacted
 
-Everything the Igor writes to the state branch, each document it writes whole, each record it
-appends and each commit message, SHALL pass through credential redaction first. This covers
-each string in the record, its object keys included.
-
-Every text the Igor posts to a tracker or a code host SHALL pass through credential redaction
-before it is sent: a comment on an item, an issue's title and body, a pull request's title and
-body, and the message of every commit it makes there, merge commits included. The files of a
-commit on any branch but the state branch are sent as written.
-
-The transcript, which holds the worker's whole closing summary, is redacted by this rule like
-every other record, and hides nothing the rule does not name.
+Credential redaction SHALL run, before writing or sending, over all the Igor writes to the state
+branch, whole documents, appended records, each string and object key in them, and commit messages;
+and over every text it posts to a tracker or code host: every comment, title, body and commit
+message, merges included. Files committed to any branch but the state branch, and chat posts, are
+sent as written. A run's transcript record, with the worker's closing summary, is redacted like any
+other.
 
 #### Scenario: A token in a run's failure does not reach the branch
 
