@@ -8,12 +8,12 @@ logs, and how Igor confirms its skills load before it works.
 
 ### Requirement: Skills come from one plugin directory the server names
 
-`skills_dir`, the one plugin directory Igor's model steps SHALL load skills from, SHALL be
-`/opt/igor/skills` unless `IGOR_SKILLS_DIR` in Igor's starting environment names another; a
-relative one SHALL refuse the start, no other setting SHALL name it, and a lore file naming it
-SHALL be refused as an unknown key. It holds `.claude-plugin/plugin.json` naming the plugin
-`igor`, and its skills under `skills/` (*Each skill loads as `igor:<name>` from its own
-directory*).
+Igor's model steps SHALL load their skills from one Claude Code plugin directory, `skills_dir`:
+`/opt/igor/skills`, or the path `IGOR_SKILLS_DIR` names in its starting environment, which SHALL be
+absolute or refuse the start. Nothing else sets it. It holds `.claude-plugin/plugin.json` naming the
+plugin `igor`, and each skill in `skills/<name>/`. Igor SHALL call each skill `igor:<name>`, and
+give its scripts paths in its `skills/<name>/`. Without `skills_dir`, `igor serve` SHALL refuse to
+start.
 
 #### Scenario: serve refuses a missing skills directory
 
@@ -39,14 +39,8 @@ directory*).
 
 #### Scenario: A lore file cannot name the directory
 
-- **WHEN** `igor.config.yaml` sets `skills_dir: /tmp/x`
-- **THEN** loading the configuration fails, as it does for any unknown key
-
-### Requirement: Each skill loads as `igor:<name>` from its own directory
-
-Each skill `<name>` SHALL be in `<skills_dir>/skills/<name>/` and SHALL load as `igor:<name>`,
-the name a step SHALL use. Every path Igor names for the skill's scripts SHALL lie in that
-directory.
+- **WHEN** `igor.config.yaml`, or any other lore file, sets `skills_dir: /tmp/x`
+- **THEN** loading it fails, as it does for any unknown key
 
 #### Scenario: A step names a skill by its plugin name
 
@@ -55,64 +49,54 @@ directory.
 - **AND** every path of a prose script Igor runs for that step is under
   `<skills_dir>/skills/prose/`
 
-### Requirement: Without a skills directory, `igor run` links the installed skills its role uses
+### Requirement: Without the server's directory, igor run loads the person's skills
 
-Without `skills_dir`, `igor run` SHALL assemble one in Igor's state directory, named by run id,
-whose `skills/` holds a symbolic link to the resolved path of each `~/.claude/skills` entry, in
-the `HOME` Igor starts with, that holds a `SKILL.md` and that the role's `skills` list names or
-the list Igor's code SHALL keep of the skills it runs for every role names, and no other. Where
-no entry matches, *An `igor run` with none of its role's skills installed loads no skills*
-applies.
+Without `skills_dir`, where `~/.claude/skills` in the starting `HOME` holds an entry that has a
+`SKILL.md` and that the role's `skills` list (#153) names or whose script Igor's code runs for every
+role, `igor run` SHALL use as `skills_dir` a plugin directory it assembles in the state directory,
+named with the run's id, and SHALL remove it when it ends. Its `skills/` links each such entry, by
+symbolic link to the resolved path, and no other. Where it holds no such entry, it SHALL load no
+skills.
 
 #### Scenario: run uses the skills the person installed
 
 - **WHEN** `igor run` starts on a machine where `skills_dir` does not exist, the person's
   `~/.claude/skills` holds `prose`, `bug-hunter`, `spec-trace` and `slack-post`, each a link into
   a clone, and the role's `skills` list names `prose` and `bug-hunter`
-- **THEN** each call that carries `--plugin-dir` names a directory the run assembled, whose
-  `skills/` links to `prose`, `bug-hunter` and `spec-trace`, which #190 runs for every role, and
-  not to `slack-post`, and they load as `igor:prose`, `igor:bug-hunter` and `igor:spec-trace`
+- **THEN** each call that carries `--plugin-dir` names a directory the run assembled, whose name
+  holds the run's id, such as `<state directory>/plugin/<role>-<run>`, which holds a
+  `.claude-plugin/plugin.json` naming the plugin `igor`, as any `skills_dir` does, and whose
+  `skills/` links to `prose`, `bug-hunter` and `spec-trace`, which #190 runs for every role, and not
+  to `slack-post`, and they load as `igor:prose`, `igor:bug-hunter` and `igor:spec-trace`
 - **AND** the run says as it starts that it loaded the skills in `~/.claude/skills`
 - **AND** the startup check runs against that directory
 - **AND** the directory is gone once the run ends
 
-### Requirement: An `igor run` says it loaded the person's skills and removes what it assembled
-
-An `igor run` that assembles its plugin directory SHALL treat it as `skills_dir` under every rule
-of this capability that names `skills_dir`, SHALL say as it starts that it loaded the person's
-skills, naming `~/.claude/skills`, and SHALL remove the assembled directory when it ends.
-
-#### Scenario: A run that assembled its skills says so and cleans up
-
-- **WHEN** `igor run` starts without `skills_dir`, assembles its plugin directory from the
-  person's `~/.claude/skills`, and later ends
-- **THEN** it says as it starts that it loaded the skills in `~/.claude/skills`
-- **AND** the directory it assembled is gone
-
-### Requirement: An `igor run` with none of its role's skills installed loads no skills
-
-Where `skills_dir` does not exist and `~/.claude/skills` holds no entry the role's `skills` list
-names or Igor's own code runs, as when `~/.claude/skills` is missing, `igor run` SHALL load no skills:
-no call SHALL carry `--plugin-dir`, it SHALL make neither the startup check nor the refusals made
-before its call (*Igor refuses a skills directory that is empty or holds more than skills*), and
-it SHALL say at start the skills were not loaded, naming `skills_dir` and `~/.claude/skills`.
-
 #### Scenario: run loads no skills where neither is installed
 
-- **WHEN** `igor run` starts on a machine where neither `skills_dir` nor a skill the role uses is
-  installed: `skills_dir` does not exist, and the person's `~/.claude/skills` holds no skill, or
-  holds `slack-post` only and the role lists only `prose`
-- **THEN** it says as it starts that the skills were not loaded, naming both paths
+- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist, and the person's
+  `~/.claude/skills` is missing or holds no skill, or holds `slack-post` only and the role lists
+  only `prose`
+- **THEN** it says as it starts that the skills were not loaded, naming `skills_dir` and
+  `~/.claude/skills`
 - **AND** no call it makes carries `--plugin-dir`, and it makes no startup check
+- **AND** where the role lists `prose`, #153 then refuses to start the run, as it refuses any
+  role that lists a skill not loaded
+
+#### Scenario: A skill Igor's code runs for every role is on a list in its code
+
+- **WHEN** a later change to Igor's code makes it run another skill's script for every role
+- **THEN** that change also adds the skill to the list of such skills held in Igor's code, which
+  until then names only `spec-trace`
+- **AND** `igor run` then links that skill as it links `spec-trace`
 
 ### Requirement: Every model call names the plugin directory
 
-Every `claude -p` Igor spawns SHALL carry `--plugin-dir <skills_dir>`, except the usage read
-(`runUsage`), which SHALL NOT, and the calls of an `igor run` that loads no skills. No call SHALL
-pass `--bare`. The worker invokes an `igor:<name>` skill through the Skill tool when its task calls
-for it. Wherever `skills_dir` exists, all its skills load for every role, whatever the role's
-`skills` list (#153); under `igor run` without it, that list and the skills Igor's code runs
-decide what loads.
+Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`, except the usage
+read (`runUsage`) and the calls of an `igor run` that loads no skills, and none SHALL pass
+`--bare`. A *model step* is one part of Igor's work done by a model: one `claude -p`, alone or
+with the `claude -p --resume` calls that continue its session. Under `igor serve` the flag loads
+every skill under `skills_dir` for every role, whatever the role's `skills` list (#153) says.
 
 #### Scenario: The worker names the directory
 
@@ -127,8 +111,19 @@ decide what loads.
 #### Scenario: Every other model call names the directory
 
 - **WHEN** Igor spawns a `claude -p` that is neither the worker, triage nor the usage read, such
-  as #143's seat probe or the startup check, and `skills_dir` exists
+  as #143's seat probe, the startup check, or a model step #153 runs, and `skills_dir` exists
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
+
+#### Scenario: A resumed call continues its step
+
+- **WHEN** #153's step that writes a post resumes, with `claude -p --resume`, the session in which
+  it wrote its reader goals
+- **THEN** the first call and the resumed call are one model step
+
+#### Scenario: The worker invokes its skills itself
+
+- **WHEN** a worker's task calls for an `igor:<name>` skill
+- **THEN** the worker invokes it itself, through the Skill tool
 
 #### Scenario: The usage read names no plugin directory
 
@@ -160,13 +155,53 @@ to keep them out.
 - **AND** that hook does not run
 - **AND** the worker is not given that `CLAUDE.md`
 
+### Requirement: The worker's home is its user's, or its run's
+
+With a worker user (#175), the worker's home SHALL be that user's own, lasting across runs. With
+none, in same-user mode, which only `igor run` uses, each run SHALL have its own home for its tasks,
+named by the run id each `igor run` picks under #179's *The sweep removes trees by rank, never by
+age*, in Igor's state directory as #216's *A handoff states what was done, what remains, and who
+could continue* defines it. Igor SHALL set the worker's `HOME` to it and remove it when the run
+ends.
+
+#### Scenario: A worker user's home is its own
+
+- **WHEN** Igor runs a worker as the worker user of role `generalist`, rank 1
+- **THEN** each `claude -p` it starts for that worker's task has `HOME` set to that user's own
+  home
+- **AND** that home is reset before each model step of the task
+
+#### Scenario: Each igor run has a home of its own
+
+- **WHEN** two `igor run`s of the role `generalist` run at once
+- **THEN** each `claude -p` that either run starts in the worker's home has `HOME` set to its own
+  run's home, such as `<state directory>/home/<role>-<run>`, which the other run never uses,
+  where the state directory is where Igor keeps its files on each host
+- **AND** that home is reset as a worker user's is
+- **AND** each run's home is gone once that run ends
+
+#### Scenario: A crashed run's home and plugin directory are removed
+
+- **WHEN** an `igor run` of `generalist` crashes, leaving its home and the plugin directory it
+  assembled, and a later `igor run` of `generalist` starts
+- **THEN** the later run removes both at its start, with the crashed run's trees, under #179's
+  *The sweep removes trees by rank, never by age*
+
+#### Scenario: A plan removes nothing
+
+- **WHEN** a person runs `igor run generalist --plan`, and Igor's state directory holds the home
+  and the plugin directory, both of which a run keeps there, of an earlier run of `generalist`
+  that crashed
+- **THEN** the plan removes neither, as #179's sweep rule has it: `igor run --plan` removes
+  nothing
+
 ### Requirement: Every model step in the worker's home starts from Igor's template
 
-Before each model step in the worker's home, never between a step's calls, Igor SHALL replace
-`~/.claude` and `~/.claude.json` with a fresh copy of a template in its installation, keeping
-nothing, a stored login included, and reset nothing else there. A model step is one `claude -p`
-session; those in the home are each worker run and #153's later steps, never triage or the
-startup check.
+Before every model step Igor starts in the worker's home (the worker, and the steps #153 runs after
+it), Igor SHALL replace `~/.claude` and `~/.claude.json` with a fresh copy of a template in Igor's
+installation, keeping nothing, a stored login included, and SHALL NOT reset anything else in the
+home, or reset it between one step's calls. The template SHALL hold a `settings.json` of `{}`, no
+skills or `CLAUDE.md`, and a `~/.claude.json` of `{"hasCompletedOnboarding": true}`.
 
 #### Scenario: A later call does not load what an earlier one wrote
 
@@ -185,15 +220,28 @@ startup check.
 - **AND** Igor then starts a model step in the worker's home, such as #153's prose pass
 - **THEN** the step's `~/.claude` holds only what the template holds
 
+#### Scenario: Triage and the startup check do not run in the worker's home
+
+- **WHEN** Igor runs triage or the startup check
+- **THEN** neither runs in the worker's home
+
 #### Scenario: A stored login does not survive the reset
 
 - **WHEN** the worker's home holds `~/.claude/.credentials.json` and Igor resets `~/.claude`
 - **THEN** that file is gone
 - **AND** the next call in that home authenticates with its seat's token, from its environment
 
+#### Scenario: Under igor run, a stored login outside the home is neither hidden nor refused
+
+- **WHEN** `igor run` starts a call, such as one in the worker's home with `IGOR_RUN_TOKEN` in its
+  environment, and the developer's own login is stored where setting `HOME` does not move it,
+  such as in the macOS Keychain
+- **THEN** Igor starts the call without refusing it and without hiding that login from it
+
 #### Scenario: The rest of the home persists
 
-- **WHEN** a task leaves `~/.gitconfig` and a file under `~/.cache` in the worker's home
+- **WHEN** a task leaves `~/.gitconfig` and a file a repository's tests cache under `~/.cache` in
+  the worker's home
 - **AND** Igor starts the next task in that home
 - **THEN** each of those files is still there
 
@@ -208,72 +256,13 @@ startup check.
 
 - **WHEN** a worker running as a worker user tries to write into the template Igor resets the
   home from
-- **THEN** the write is refused
-- **AND** #175's start check confirms that the user cannot write it
+- **THEN** the write is refused, as #175's start check confirms
 
-#### Scenario: The template holds empty settings and a finished onboarding
+### Requirement: A worker user's processes are killed before each reset
 
-- **WHEN** Igor resets the worker's home
-- **THEN** `~/.claude/settings.json` holds `{}`, and `~/.claude` holds no skill and no
-  `CLAUDE.md`
-- **AND** `~/.claude.json` holds `{"hasCompletedOnboarding": true}`
-
-### Requirement: Under `igor run`, a login the reset cannot reach is left alone
-
-Under `igor run`, Igor SHALL neither hide nor refuse a login kept where setting `HOME` does not
-move it, as in the macOS Keychain.
-
-#### Scenario: Under igor run, a stored login outside the home is neither hidden nor refused
-
-- **WHEN** `igor run` starts a call in the worker's home with `IGOR_RUN_TOKEN` in its
-  environment, and the developer's own login is stored outside the home, such as in the macOS
-  Keychain
-- **THEN** Igor starts the call without refusing it and without hiding that login from it
-
-### Requirement: The worker's home is its worker user's own, or one per `igor run`
-
-With a worker user (#175), the worker's home SHALL be that user's own, lasting across runs.
-Without one, in same-user mode (only `igor run`, the worker running as Igor's user), each run
-SHALL have its own home in Igor's state directory, used as its worker's `HOME` across its tasks
-and named by the run id #179 defines in *A run by hand removes its own trees as it releases
-them*. The run SHALL remove it at its end; after a crash, #179's *A run removes what a run whose
-process is gone left* does.
-
-#### Scenario: A worker user's home is its own
-
-- **WHEN** Igor runs a worker as the worker user of role `generalist`, rank 1
-- **THEN** each `claude -p` it starts for that worker's task has `HOME` set to that user's own
-  home
-- **AND** that home is reset before each model step of the task
-
-#### Scenario: Each igor run has a home of its own
-
-- **WHEN** two `igor run`s of the role `generalist` run at once
-- **THEN** each `claude -p` that either run starts in the worker's home has `HOME` set to its own run's
-  home under Igor's state directory, which the other run never uses
-- **AND** that home is reset as a worker user's is
-- **AND** each run's home is gone once that run ends
-
-#### Scenario: A plan removes nothing
-
-- **WHEN** a person runs `igor run generalist --plan`, and Igor's state directory holds the home
-  and the plugin directory, both of which a run keeps there, of an earlier run of `generalist`
-  that crashed
-- **THEN** the plan removes neither
-
-#### Scenario: The next run removes a crashed run's home and plugin directory
-
-- **WHEN** an `igor run` of `generalist` crashes, leaving its home and the plugin directory it
-  assembled, and another `igor run` of `generalist` starts
-- **THEN** the new run removes both at its start, with the crashed run's trees, as #179's
-  (`concurrent-instances`) *A run removes what a run whose process is gone left* has it
-
-### Requirement: Igor kills every process the worker user owns before each reset
-
-With a worker user, Igor SHALL kill every process that user owns before every reset, by user; a
-kill of the worker's process group alone, or of the user's systemd slice, does not meet this.
-#175's *A kill, a release and a sweep reach what the worker owns* makes the same kill before a
-tree is released.
+With a worker user, before every reset of its home, Igor SHALL kill every process that user owns, by
+user or by the user's systemd slice, whichever kills them all. A kill of the worker's process group
+alone does not meet this, since each command a worker runs starts in a session of its own.
 
 #### Scenario: A process that escaped its group is killed before the next reset
 
@@ -284,19 +273,21 @@ tree is released.
 
 ### Requirement: The worker's session log outlives the reset
 
-Igor SHALL copy the session log of each model step in the worker's home (the worker, #153's
-later steps, #189's second worker run) into Igor's state directory when the step exits, before
-the next reset, readable by Igor's user alone. It SHALL redact the log as it copies it, by #217's
-*Credential redaction replaces every credential the Igor knows* (*the Igor*: a running Igor
-process), so the copy holds no credential Igor registered that the worker printed.
+When a model step in the worker's home exits, Igor SHALL copy its session log, in
+`~/.claude/projects/`, to the state directory before the next reset, redacted and readable only by
+Igor's user. With a worker user, it SHALL copy only a regular file with one hard link, reading it as
+that user without following a link, as #175 requires Igor to read any file the worker wrote. The
+run's record SHALL name each copy beside its step's session id, and say a log failing this was not
+copied.
 
 #### Scenario: The record points at a log the reset did not delete
 
-- **WHEN** a worker exits, leaving its session log under `~/.claude/projects/`, and Igor then
-  resets its home for a later call
+- **WHEN** a worker exits and Igor then resets its home for a later call
 - **THEN** a copy of the worker's session log is in Igor's state directory, readable by Igor's
   user alone
-- **AND** the run's record names that copy, which the reset left in place
+- **AND** the run's record, `executions.ndjson`, names that copy, which the reset left in place
+- **AND** that record is in the execution log on the state branch, the git branch in the lore
+  repository where Igor keeps its records, not in the state directory on Igor's host
 
 #### Scenario: Every step's session log is copied
 
@@ -305,38 +296,49 @@ process), so the copy holds no credential Igor registered that the worker printe
 - **THEN** the state directory holds a copy of each of the three steps' session logs
 - **AND** the run's record names each copy beside its step's session id
 
+#### Scenario: A second worker run's session log is copied
+
+- **WHEN** #189 runs the worker a second time after a failed check
+- **THEN** that run's session log is copied as the first run's is
+
 #### Scenario: A token the worker printed is redacted in the copy
 
 - **WHEN** a worker runs `env`, which prints its seat's token into the session log, and exits
-- **THEN** the copy in Igor's state directory holds `[redacted]` where the log held the token
+- **THEN** the copy in Igor's state directory holds `[redacted]` where the log held the token,
+  since Igor redacts each copy with credential redaction, as #217 defines it in *Credential
+  redaction replaces every credential the Igor knows*, where *the Igor* is a running Igor process
 
-### Requirement: The execution record names each session log copy where Igor wrote it
+#### Scenario: A session log the worker replaced with a link is not copied
 
-The run's record in `executions.ndjson`, on the state branch, SHALL name each session log copy at
-the path where Igor wrote it, beside its step's session id. That path may no longer hold the copy:
-#216 may have moved it, or Igor deleted it.
+- **WHEN** a worker running as a worker user replaces its session log with a link, or a hard
+  link, to a file only Igor can read
+- **THEN** Igor copies nothing through the link, as #175's *The Igor reads no file on the
+  worker's behalf through a link* has it read any file the worker wrote
+- **AND** the run's record says the log was not copied
 
-#### Scenario: The record keeps naming each copy where Igor wrote it
+#### Scenario: A flagged execution's moved copy stays named
 
-- **WHEN** #216 moves a flagged execution's log copies into its `flagged-questions` directory
-  and refuses to move one, or Igor deletes an execution's copies once a later execution of the
-  item ends
-- **THEN** the run's record may name a path that no longer holds its copy
-- **AND** the copy whose move #216 refused is still at the path the record names
+- **WHEN** #216 moves a flagged execution's copies into its `flagged-questions` directory, and
+  refuses to move one of them
+- **THEN** the record still names each copy, moved or not, at the path where Igor wrote it, so
+  for a copy #216 moved that path no longer holds the copy
+- **AND** that path still holds the copy #216 did not move
 
 ### Requirement: Igor deletes an item's earlier session log copies when an execution of it ends
 
-When an execution of a work item ends, flagged or not, Igor SHALL delete the session log copies
-of each execution of the item that started before it, has ended or whose process has stopped,
-and left no flagged hold. An execution that leaves a flagged hold, which #216 puts on its item,
-SHALL count as ended only once that hold is in place, and its copies SHALL be deleted only when
-#216's `work-triage` has Igor delete its files, which it does on any release of its hold.
+When an execution of an item ends, Igor SHALL delete the log copies of each execution of it started
+earlier that has ended or whose process stopped, and either way left no flagged hold. A *flagged*
+execution, one whose item #216 puts a flagged hold on, SHALL count as ended only once the hold is in
+place, and its copies SHALL go only when #216's `work-triage` has them deleted. Igor SHALL find
+copies by listing its state directory, not the record, and delete only regular files, following no
+link.
 
 #### Scenario: An unflagged execution's log copies last until the item's next execution ends
 
 - **WHEN** an execution of an item ends unflagged, and a later execution of the same item ends,
   flagged or not
 - **THEN** Igor deletes the first execution's log copies, and keeps the later one's
+- **AND** the record may then name a copy Igor has deleted
 
 #### Scenario: A run #216 flags that asks no question counts as unflagged
 
@@ -363,78 +365,55 @@ SHALL count as ended only once that hold is in place, and its copies SHALL be de
   item on the same host ends before #216 has put the flagged hold
 - **THEN** the flagged execution does not yet count as ended, so the later end keeps its copies
 
-#### Scenario: Igor deletes no flagged execution's log copies
-
-- **WHEN** a flagged execution of an item ends, and a later execution of the same item ends
-- **THEN** the flagged execution's copies remain until #216 deletes that run's files
-
-### Requirement: Igor deletes only the session log copies it finds in its own state directory
-
-Igor SHALL find the session log copies it deletes by listing its own state directory, never from
-the execution record, and SHALL delete only regular files, following no link. Copies in another
-host's state directory stay until an execution of the item ends on that host, or for good where
-it never runs there again. Igor's state directory, where it keeps its files on a host, is the one
-#216's `graceful-handoff` defines in *A handoff states what was done, what remains, and who could
-continue*.
-
 #### Scenario: A link among the log copies is not followed
 
 - **WHEN** an execution of an item ends, and in Igor's state directory an earlier execution's
   log copy has been replaced by a link to a file elsewhere
-- **THEN** Igor leaves the link in place and deletes nothing it points to, since it deletes only regular files
+- **THEN** Igor leaves the link in place and deletes nothing it points to, since it deletes only
+  regular files
 
-#### Scenario: Another host's log copies stay
+#### Scenario: Igor deletes no flagged execution's log copies
 
-- **WHEN** executions of an item ended unflagged on two hosts, and a later execution of the item
-  ends on one of them
-- **THEN** that host deletes its own earlier copies
-- **AND** the other host's copies stay until an execution of the item ends there
+- **WHEN** a flagged execution of an item ends, and a later execution of the same item ends
+- **THEN** the flagged execution's copies remain until #216 deletes the flagged execution's
+  files, which it does on any release of its hold, by `igor release` or by an edit to the item
+  from someone with write access
 
-### Requirement: Igor reads a worker user's session log as that user, through no link
+#### Scenario: Another host's copies stay until the item ends there
 
-With a worker user, Igor SHALL read each session log it copies as that user, without following a
-link and only where it is a regular file whose hard-link count is 1, as #175's (`worker-user`)
-*The Igor reads no file on the worker's behalf through a link* has the Igor read any file the
-worker wrote. A log that fails this is not copied, and the run's record says so.
-
-#### Scenario: A session log the worker replaced with a link is not copied
-
-- **WHEN** a worker running as a worker user replaces its session log with a link to a file only
-  Igor can read
-- **THEN** Igor copies nothing through the link
-- **AND** the run's record says the log was not copied
+- **WHEN** an execution of an item ends on one host, and earlier executions of the item left
+  copies in another host's state directory
+- **THEN** those copies stay until an execution of the item ends on that host, and stay for good
+  where the item never runs there again
 
 ### Requirement: Igor confirms its skills load before its first model call
 
-Unless it loads no skills, Igor SHALL run the startup check, to its end, before any other model
-call, recording its spend against the seat it spends: `claude -p --model haiku --tools ""
---plugin-dir <skills_dir> --setting-sources user --strict-mcp-config --output-format stream-json
---verbose`. Unless its `system/init` event arrives and its `skills` list holds `igor:<name>` for
-every entry under `<skills_dir>/skills/`, Igor SHALL refuse to start with status 78, under either
-command.
+Unless an `igor run` loads no skills, Igor's first model call SHALL be a startup check: `claude -p
+--model haiku --tools "" --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
+--output-format stream-json --verbose`, under `igor serve` a seat's first probe where *The startup
+check spends a seat it may probe, or else the gate's* says. Igor SHALL refuse to start, exiting
+78, unless its `system/init` event lists `igor:<name>` for each entry in `<skills_dir>/skills/`.
+
+#### Scenario: Every installed skill loads
+
+- **WHEN** the `system/init` event lists `igor:<name>` for every skill installed under
+  `skills_dir`
+- **THEN** Igor starts
+- **AND** it reports each skill with the commit its files come from, or as not checked where
+  *Igor reports the commit each skill loads from* says so
+
+#### Scenario: A skill that does not load stops the start
+
+- **WHEN** a skill is installed under `skills_dir` but `igor:<name>` is missing from the
+  event's `skills` list
+- **THEN** Igor refuses to start, naming the skill
+- **AND** the process exits with status 78
 
 #### Scenario: No init event stops the start
 
 - **WHEN** the call exits without a `system/init` event
 - **THEN** Igor refuses to start, saying it could not confirm its skills load
-
-#### Scenario: The check runs on haiku, with one seat's token
-
-- **WHEN** Igor runs the check
-- **THEN** its arguments include `--model haiku` and `--tools ""`, so the call has no tools
-- **AND** it runs from an empty directory, with `HOME` set to another empty directory
-- **AND** the call's environment holds one seat's token, and no other seat's token and no API
-  key
-- **AND** its `HOME` holds no stored login
-- **AND** the spend is recorded against that seat
-
-#### Scenario: The check's environment and prompt hold nothing else
-
-- **WHEN** Igor runs the check
-- **THEN** its environment holds only `PATH`, the network settings the host is configured with,
-  `HOME` and one seat's token
-- **AND** its prompt is one word, such as `ok`, on stdin, as #175's (`worker-user`) *A prompt
-  reaches claude on stdin, never in its arguments* requires
+- **AND** the process exits with status 78
 
 #### Scenario: A call that fails after the init event is still judged on its list
 
@@ -443,111 +422,26 @@ command.
 - **THEN** the check passes on that list
 - **AND** the failure is handled as that failure would be on any other call on that seat
 
-#### Scenario: Every installed skill loads
+#### Scenario: The check runs on haiku, with one seat's token
 
-- **WHEN** the `system/init` event lists `igor:<name>` for every skill installed under
-  `skills_dir`
-- **THEN** Igor starts
-- **AND** it reports each skill with the commit its files come from
+- **WHEN** Igor runs the check
+- **THEN** its arguments include `--model haiku` and `--tools ""`, so the call has no tools
+- **AND** it runs from an empty directory, with `HOME` set to another empty directory
+- **AND** the call's environment holds only `PATH`, the network settings the host is configured
+  with, that `HOME` and one seat's token, so no other seat's token and no API key
+- **AND** its `HOME` holds no stored login
+- **AND** its prompt is one word, such as `ok`, on stdin, as #175's *A prompt reaches claude on
+  stdin, never in its arguments* requires
+- **AND** the call runs to its end
+- **AND** the spend is recorded against that seat, as any call's is
 
-#### Scenario: A skill that does not load stops the start
+### Requirement: The startup check spends a seat it may probe, or else the gate's
 
-- **WHEN** a skill is installed under `skills_dir` but `igor:<name>` is missing from the
-  event's `skills` list
-- **THEN** Igor refuses to start, naming the skill
-- **AND** the process exits with status 78, which #82's (`stopped-scope-visible`) *A process that
-  refuses to start exits with status 78* requires under `igor serve`
-
-### Requirement: Igor reports the commit each skill's files come from
-
-For each skill, Igor SHALL report the commit of the git clone its entry under
-`<skills_dir>/skills/` resolves to. For a clone root owns, Igor SHALL read it by trusting that
-clone, with git's file-system monitor off, for that one command, and SHALL NOT change the
-service user's git configuration. Igor reads its own user's clone as is, and trusts no other
-owner's. Igor SHALL report a commit it cannot read (no clone, or an untrusted one) as
-not checked, and the check passes on the list alone.
-
-#### Scenario: A root-owned clone's commit is read
-
-- **WHEN** every installed skill loads, and the clone a skill's entry resolves to is owned by
-  root while Igor runs as its service user
-- **THEN** Igor reports that skill with the clone's commit
-- **AND** the service user's `~/.gitconfig` is unchanged
-
-#### Scenario: A clone another user owns is not trusted
-
-- **WHEN** every installed skill loads, and the clone a skill's entry resolves to is owned by a
-  user who is neither root nor the user Igor runs as
-- **THEN** Igor starts
-- **AND** it reports that skill's commit as not checked, having run no git command in that clone
-
-#### Scenario: An unreadable commit is reported as not checked
-
-- **WHEN** every installed skill loads, but the commit of one skill's files cannot be read
-- **THEN** Igor starts
-- **AND** it reports that skill's commit as not checked
-
-### Requirement: Igor refuses a skills directory that is empty or holds more than skills
-
-Before the startup check's call, Igor SHALL refuse to start, naming the path, and exit with
-status 78 when `<skills_dir>/skills/` is missing or holds no entry, when `skills_dir` holds any
-entry besides `.claude-plugin/` and `skills/`, or when `.claude-plugin/` holds anything besides
-a `plugin.json` whose only keys are `name`, `version` and `description`.
-
-#### Scenario: An empty skills directory stops the start
-
-- **WHEN** `<skills_dir>/skills/` is missing or holds no entry
-- **THEN** Igor refuses to start, naming that path, and makes no call
-- **AND** the process exits with status 78
-
-#### Scenario: A plugin directory that holds more than skills stops the start
-
-- **WHEN** `skills_dir` holds a `hooks/` directory, or `plugin.json` holds a `hooks` key
-- **THEN** Igor refuses to start, naming what it found, and makes no call
-- **AND** the process exits with status 78
-
-### Requirement: A startup check whose probe #143 refuses fails the start
-
-Where the startup check is a seat's first probe and #143 refuses to start it because one of its
-two directories, its working directory and its `HOME`, fails #143's check of a probe directory
-(its owner, its write bits, a `.claude` or `CLAUDE.md` in it) or cannot be created, Igor SHALL
-refuse to start, naming the directory and what is wrong with it, and exit with status 78.
-
-#### Scenario: A probe #143 refuses stops the start
-
-- **WHEN** the startup check is a seat's first seat probe under `igor serve`, and #143 refuses to
-  start it because one of its two directories, its working directory and its `HOME`, fails #143's check
-- **THEN** Igor refuses to start, naming that directory and what is wrong with it
-- **AND** the process exits with status 78
-
-### Requirement: Under `igor run`, the startup check spends the run's seat in directories it then removes
-
-Under `igor run`, which makes no probe (#171), the startup check SHALL spend the run's implicit
-local seat, made from `IGOR_RUN_TOKEN`, through the gate. Its working directory and `HOME` SHALL
-be new directories under Igor's state directory, named by the run's id, not the system's
-temporary directory. Igor SHALL remove both once the call ends, and an `igor run` that finds them
-left by an earlier run whose process is gone SHALL remove them with that run's home and plugin
-directory.
-
-#### Scenario: The `igor run` check leaves no directories behind
-
-- **WHEN** an `igor run` startup check's call ends
-- **THEN** its working directory and its `HOME` under Igor's state directory are gone
-
-#### Scenario: Under igor run, the check's directories are under the state directory
-
-- **WHEN** `igor run` makes its startup check
-- **THEN** the check's working directory and `HOME` are new directories under Igor's state
-  directory, not under the system's temporary directory
-
-### Requirement: Under `igor serve`, the startup check is the first probe of a seat that may be probed
-
-Under `igor serve`, where a seat is due a probe by #143's *A seat nothing has read is probed on
-the Igor server with its own token* and not held off at start, the startup check SHALL be
-the first seat probe Igor makes. It spends that seat, the gate choosing none, with the check's
-arguments, in the directories #143's *A seat probe runs where only the Igor can write* places and
-checks, under every limit and exclusion of a probe; Igor SHALL record its `rate_limit_event` as
-the seat's reading.
+Under `igor serve` the startup check's call SHALL be the first probe of a seat due one under #143's
+*A seat nothing has read is probed on the Igor server with its own token* and not held off by #143's
+hourly limit or back-off, or else spend the seat the budget gate chooses. Under `igor run` it SHALL
+spend the run's local seat, running in two new directories under Igor's state directory, removed
+after the call. With no seat to spend, Igor SHALL start, and check once a probe or the gate allows.
 
 #### Scenario: Under igor serve, the check is a reserved seat's first probe
 
@@ -557,14 +451,23 @@ the seat's reading.
 - **AND** its `rate_limit_event` is recorded as the seat's first reading, from which the gate
   then decides whether to draw on the seat
 
-### Requirement: A startup check with no seat to probe spends the seat the gate chooses
+#### Scenario: The check's probe is recorded and limited as any probe is
 
-Under `igor serve` with no seat to probe at start, because each has an unexpired reading or
-#143's hourly limit or back-off holds it off, the startup check SHALL spend the seat the gate
-chooses, never waiting for a held-off seat. Under either command, with no seat to probe or spend,
-as when the provider refuses every seat, Igor SHALL start, make no call (#171's *A spend with no
-seat behind it is not made*), and run the check before its first model call, once a probe or the
-gate allows.
+- **WHEN** the startup check's call under `igor serve` is a seat's probe
+- **THEN** Igor records its `rate_limit_event` as that seat's reading
+- **AND** every limit and exclusion of a probe applies to it, such as #143's hourly limit and its
+  skip of a refused seat
+- **AND** its working directory and `HOME` are the two directories #143's *A seat probe runs where
+  only the Igor can write* places and checks
+
+#### Scenario: A probe #143 refuses stops the start
+
+- **WHEN** the startup check is a seat's first seat probe under `igor serve`, and #143's *A seat
+  probe runs where only the Igor can write* refuses to start it because one of its two
+  directories, its working directory and its `HOME`, fails #143's check or cannot be created
+- **THEN** Igor refuses to start, naming that directory and what is wrong with it, rather than
+  wait for a later seat probe
+- **AND** the process exits with status 78
 
 #### Scenario: Under igor serve, a seat with a reading is spent through the gate
 
@@ -580,21 +483,105 @@ gate allows.
 
 #### Scenario: Under igor serve, a seat in back-off is not waited for
 
-- **WHEN** `igor serve` starts, one seat is in #143's back-off of up to five hours after a probe that received no
-  `rate_limit_event`, and
-  another seat has an unexpired reading
+- **WHEN** `igor serve` starts, one seat is in #143's back-off of up to five hours after a probe
+  that received no `rate_limit_event`, and another seat has an unexpired reading
 - **THEN** the check spends the seat the gate chooses, without waiting out the back-off
 
 #### Scenario: A single held-off seat with no reading waits
 
-- **WHEN** `igor serve` starts with one seat, which keeps a reserve, so the gate draws on it only
-  once it has a reading, has no reading, and is in #143's back-off
-- **THEN** the gate has no seat to spend, and no check runs until that seat may be probed
+- **WHEN** `igor serve` starts with one seat, and that seat keeps a reserve, has no reading, and
+  is in #143's back-off
+- **THEN** the gate has no seat to spend, since it draws on a seat that keeps a reserve only once
+  the seat has a reading
+- **AND** no check runs until that seat may be probed
 
 #### Scenario: No seat to spend, no check yet
 
 - **WHEN** Igor starts, and no seat can be probed and the gate names none, as when every seat
-  is refused
-- **THEN** Igor starts, makes no model call, and runs the check before its first model call once
-  a probe or the gate allows one
+  is refused by the provider
+- **THEN** Igor starts, makes no model call, as #171's *A spend with no seat behind it is not
+  made* requires, and runs the check before its first model call once a probe or the gate allows
+  one
 - **AND** if that check fails, the process exits with status 78 then
+
+#### Scenario: Under igor run, the check spends the run's local seat
+
+- **WHEN** `igor run`, which makes no seat probe (#171), makes its startup check
+- **THEN** the check spends, through the gate, the run's implicit local seat, the one seat
+  `igor run` makes from the token in `IGOR_RUN_TOKEN` (#171)
+
+#### Scenario: Under igor run, the check's directories are under the state directory
+
+- **WHEN** `igor run` makes its startup check
+- **THEN** the check's call runs with two new directories under Igor's state directory as its
+  working directory and its `HOME`, not under the system's temporary directory, which other users
+  of the host can write
+
+#### Scenario: The `igor run` check leaves no directories behind
+
+- **WHEN** an `igor run` startup check's call ends
+- **THEN** its working directory and its `HOME` under Igor's state directory are gone
+
+#### Scenario: A crashed run's check directories are removed
+
+- **WHEN** an `igor run` finds the startup check's two directories left by an earlier run whose
+  process is gone
+- **THEN** it removes them with that run's home and plugin directory
+
+### Requirement: Igor refuses a skills directory that is empty or holds more than skills
+
+Where Igor makes a startup check, before its call, Igor SHALL refuse to start, naming the path and
+exiting with status 78, when `<skills_dir>/skills/` is missing or holds no entry, when
+`skills_dir` holds any entry besides `.claude-plugin/` and `skills/`, when `.claude-plugin/` holds
+anything besides `plugin.json`, or when `plugin.json` holds any key besides `name`, `version` and
+`description`.
+
+#### Scenario: An empty skills directory stops the start
+
+- **WHEN** `<skills_dir>/skills/` is missing or holds no entry
+- **THEN** Igor refuses to start, naming that path, and makes no call
+- **AND** the process exits with status 78
+
+#### Scenario: A plugin directory that holds more than skills stops the start
+
+- **WHEN** `skills_dir` holds a `hooks/` directory, or `plugin.json` holds a `hooks` key
+- **THEN** Igor refuses to start, naming what it found, and makes no call
+- **AND** the process exits with status 78
+
+### Requirement: Igor reports the commit each skill loads from
+
+Igor SHALL report, for each skill, the commit of the git clone its entry under
+`<skills_dir>/skills/` resolves to. For a clone root owns, Igor SHALL trust that clone
+(`safe.directory`), with git's file-system monitor off, for the one command reading the commit,
+without changing the service user's git configuration. Igor SHALL trust no clone owned by a user
+other than root or itself. Where the commit cannot be read so, Igor SHALL report it as not checked,
+and the check passes on the list alone.
+
+#### Scenario: Each skill is reported with its commit
+
+- **WHEN** every installed skill loads, and each skill's entry resolves into a git clone Igor
+  trusts
+- **THEN** Igor reports each skill with the commit its files come from
+
+#### Scenario: A root-owned clone's commit is read
+
+- **WHEN** every installed skill loads, and the clone a skill's entry resolves to is owned by
+  root while Igor runs as its service user
+- **THEN** Igor reports that skill with the clone's commit
+- **AND** the command that reads it names the clone in git's `safe.directory`, without which git
+  refuses to work in a clone another user owns
+- **AND** the service user's `~/.gitconfig` is unchanged
+
+#### Scenario: A clone another user owns is not trusted
+
+- **WHEN** every installed skill loads, and the clone a skill's entry resolves to is owned by a
+  user who is neither root nor the user Igor runs as
+- **THEN** Igor starts
+- **AND** it reports that skill's commit as not checked, having run no git command in that clone
+
+#### Scenario: An unreadable commit is reported as not checked
+
+- **WHEN** every installed skill loads, but the commit of one skill's files cannot be read, or
+  its entry is not in a git clone
+- **THEN** Igor starts
+- **AND** it reports that skill's commit as not checked

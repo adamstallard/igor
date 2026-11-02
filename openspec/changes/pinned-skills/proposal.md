@@ -48,11 +48,11 @@ replaces it with `--plugin-dir`. Decisions are numbered in `design.md`'s *Decisi
 
 ### Modified Capabilities
 
-- `task-execution`: since the worker's home lasts across tasks, the scenario *No state carries
-  between tasks* points to an added requirement, *Nothing a worker writes reaches a later task but
-  three kinds of file*: files the reset leaves in the home, files the worker's user writes outside
-  it, and, in same-user mode, files a process that left the worker's group writes after a reset
-  (decision 15).
+- `task-execution`: the requirement *Execution obtains a disposable working tree through one
+  seam* and its scenario *No state carries between tasks* name the three kinds of file a worker
+  writes that can reach a later task: what the reset leaves in its home, what the user it runs as
+  writes outside the home, and, in same-user mode, what a process that left its process group
+  writes in the home after a reset (decision 15).
 
 The flags are added to calls owned by `task-execution` and `work-triage`, but the rules cover
 every call, so they live in one place, `pinned-skills`.

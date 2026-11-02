@@ -336,11 +336,10 @@ So denying tools does not hide the skill list, and the check denies them (decisi
     as the service user (Adam, 2026-10-18, on #153), so nothing of prose's is written in the
     worker's home and the reset has nothing of it to keep.
 15. **The in-force scenario *No state carries between tasks* is reworded** (Adam, 2026-10-17).
-    Nothing a worker writes reaches a later task, except three kinds of file: those in the
-    home that decision 9's reset leaves alone, those the worker's user writes outside the home, and,
-    in same-user mode, those a process that left the worker's group writes after a reset. `specs/task-execution/spec.md` modifies *Execution obtains a disposable
-    working tree through one seam*, whose scenario now points to the requirement it adds, *Nothing
-    a worker writes reaches a later task but three kinds of file*, which names the three.
+    Nothing a worker writes reaches a later task, except three kinds of file, which the scenario
+    names: what decision 9's reset leaves in the home, what the user the worker runs as writes
+    outside the home, and, in same-user mode, what a process that left the worker's process
+    group writes in the home after a reset. `specs/task-execution/spec.md` is a MODIFIED delta.
 16. **Same-user mode is `igor run` alone** (Adam, 2026-10-17). #175 has no `igor serve --same-user`, so no served rank uses a same-user home.
     Nor does same-user mode run under the systemd unit (`deploy/igor.service`), whose
     `ProtectHome=read-only` would make a home under `~/.local/state` unwritable. Under #179,
@@ -603,9 +602,7 @@ stands until he says otherwise.
     taking paths from it would let them choose which files Igor deletes. Under `igor run` a
     worker of the same user can write the state directory, so a planted link could redirect a
     delete; #216 already expects this deletion to refuse links (its decision 106).
-44. **The `igor run` check's two directories are named by the run's id and removed after the call**
-    (one good option: the run id tells a later run which gone run left them, and removing them
-    after the call leaves nothing of the check behind),
+44. **The `igor run` check's two directories are removed after the call** (one good option),
     and an `igor run` that finds them left by a crashed run removes them with that run's home
     and plugin directory, as #143 does for its probe directories.
 
@@ -811,8 +808,8 @@ run on a stored login, which leaves open where a worker user's login comes from 
 worker rewrite a login that later calls might use.
 
 **Decided by Adam, 2026-10-17: with a worker user, Igor kills every process that user owns before
-every reset**, by user, not by the user's systemd slice: #175 found a process `sudo` starts
-outside that slice. A process that
+every reset**, by user or by the user's systemd slice, whichever kills them all. Decision 13
+records #175's measurement that a kill by slice misses a process `sudo` starts. A process that
 leaves its process group survives a kill of the group, and running as the worker user it could
 rewrite the home after a reset. #175 measured on 2026-10-18 that every command a worker runs
 leaves its group, not a rare one: Claude Code starts each Bash command in a new session, and a
@@ -1017,8 +1014,6 @@ whether they exist.
     tree and outbox only, not the worker's home this change cites it for. #175 records the gap;
     either #175 widens the rule to the home, or this change states its own rule for reading
     session logs there.
-  - No scenario tests the check under `igor run` spending the run's local seat, or the copy of
-    #189's second worker run's log.
   - Igor's startup check refusing a plugin directory whose `skills/` is empty (*Igor refuses a skills directory that is empty or holds more than skills*) is a choice no
     decision lists.
   - From the second read that day: nothing says which `HOME` triage gets under `igor
@@ -1034,6 +1029,11 @@ whether they exist.
   - A dry run is `igor run --plan`, so decision 20's fallback covers it. Whether `--plan`
     assembles a plugin directory is unsaid; #179 has `--plan` change nothing, so assembling one
     would break that.
+  - The kill before a reset (decision 13): the spec and task 2.6 allow a kill by user or by the
+    user's systemd slice, whichever kills them all. On #175's measurement that on Debian a
+    process `sudo` starts is not in that slice, only the kill by user meets the rule, so the
+    slice could be dropped. That is for this change's authors to decide. The second
+    consistency read of 2026-10-19 reported the same point.
   - The execution record names a log copy's host path, which #216 may move, and which puts a
     person's home path on a state branch that may be public.
   
@@ -1044,10 +1044,12 @@ whether they exist.
     Claude Code keeps nothing under `HOME` outside the two reset paths; a step's session is one file.
   - *Skills come from one plugin directory the server names* refuses any lore file that names
     `skills_dir`, but today only the parsers of `igor.config.yaml`, role files and budget files
-    refuse unknown keys. *Service user* is not
-    defined; task 0.3 is ticked though the server's Claude Code version
-    was never measured; spec choices on the log copy, the check's pass and `plugin.json`'s keys
-    are not among the decisions; and *Why* describes issue #152 as it was.
+    refuse unknown keys. The term *model step* is defined two ways: in *Every model call names the
+    plugin directory* as one `claude -p` with its resumes, and in this file's section *The worker's
+    home, and its reset before every model step* as the worker or one of #153's later steps, which
+    leaves out triage and the startup check. *Service user* is not defined. Task 0.3's version gap
+    is the 2026-10-19 item below. Spec choices on the log copy, the check's pass and `plugin.json`'s
+    keys are not among the decisions; and *Why* describes issue #152 as it was.
   - Still to fix: task 1.10 of #175, built before this change, removes the usage read (`runUsage`), carrying
     out #143's decision 37, so this change's two citations for the removal, of #175 and of
     #143's decision 37, are both right. `runUsage` is then gone before this
@@ -1083,21 +1085,23 @@ whether they exist.
   `.claude-plugin/`, a `plugin.json` key other than the `hooks` key a scenario already covers,
   and any refusal under `igor run`. A skill's `SKILL.md` can
   declare `allowed-tools`, which the check does not read; no pinned skill declares one today.
-  Task 0.3 is ticked but did not run on the version the server runs, which is not known. And
+  Task 0.3 is ticked but did not run on the version the server runs, which is not known; the
+  2026-10-21 read reported this again, and it is still open. And
   decision 19 does not list the keys `plugin.json` may hold, `name`, `version` and
   `description`, though the spec fixes them, so a reviewer approving the decisions does not see
   that choice.
-- **Findings of a second consistency read the same day, left for the next pass.** Adam
-  answered its three questions in decisions 28, 29 and 30. The rest are for this change's
-  authors to fix, except the first, whose gap decision 21 accepts. #204's rule places a change that only cites
-  another change's requirement after that change, which would put this change after #171, #179
-  and #82; #204's list puts it before them. Decision 6 rests on no skill replacing an
-  `igor:<name>` skill, but the skill listing sent to the model was not read under
-  `--plugin-dir`. Whether a skill's `SKILL.md` can declare hooks, which the layout check would
-  not catch, is unmeasured. Two choices are in the spec but not among the decisions: a check
-  whose call fails after its init event passes on that list, and the session log's copy refusing
-  a link or a hard-linked file. In the spec, "model step" and "Igor's state directory" are defined
-  after their first use.
+- **Findings of a second consistency read the same day, left for the next pass.** Adam answered its
+  three questions in decisions 28, 29 and 30. The rest are for this change's authors to fix, except
+  the first, whose gap decision 21 accepts. #204's rule places a change that only cites another
+  change's requirement after that change, which would put this change after #171, #179 and #82;
+  #204's list puts it before them. The kill before a reset by the user's systemd slice is the same
+  point as the 2026-10-21 item on decision 13's kill, and is recorded there. Decision 6 rests on no
+  skill replacing an `igor:<name>` skill, but the skill listing sent to the model was not read under
+  `--plugin-dir`. Whether a skill's `SKILL.md` can declare hooks, which the layout check would not
+  catch, is unmeasured. Two choices are in the spec but not among the decisions: a check whose call
+  fails after its init event passes on that list, and the session log's copy refusing a link or a
+  hard-linked file. In the spec, "model step" and "Igor's state directory" are defined after their
+  first use.
 - **How Igor on a host knows which executions' copies it holds, their start order, and whether
   each ended or its process stopped** (from the consistency read of 2026-11-01). The TLA+ model
   takes these as shared state and proves the rule, not a mechanism. Under #179 several ranks
@@ -1106,11 +1110,10 @@ whether they exist.
   paths.
 - **From the consistency read of 2026-11-01 after compacting the requirements (issue #232, which shortens every requirement over 500
   characters without changing what it says):**
-  - #216 names the execution ledger `executions/<yyyy-mm-dd>.ndjson`, where this change's record
-    of each log copy is in `executions.ndjson`, the name Igor's code on `main` uses; which layout is meant is for
-    #216 and this change to settle.
-  - Decision 44's removal after a crash is #179's to carry out, and #179's sweep does not list
-    the `igor run` startup check's two directories; no scenario tests their removal after a crash.
+  - The spec's scenario *A crashed run's check directories are removed* states this change's
+    rule: an `igor run` removes the startup check's two directories a crashed run left
+    (decision 44). #179's sweep, which carries out the removal of a gone run's leftovers, does
+    not yet list these two directories, so #179 has to add them.
 - **Reported to #216, from the same read:**
   - #216's proposal says the execution record names a flagged copy's moved path, but under
     decision 34 the record keeps the path where Igor wrote the copy.
