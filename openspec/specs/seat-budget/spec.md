@@ -1,7 +1,12 @@
 # seat-budget Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Let Igors spend from paid model subscriptions, called seats, that people also use, while leaving
+each seat's owner a reserve. Each seat is named in configuration with that owner and reserve.
+This spec covers which seats a role may spend from and how much; how a seat's capacity is learned
+from its usage reports and limit errors; how each spend is recorded against a role and a seat;
+when a used-up seat's window resets so it can be spent again; and what budget reporting shows for
+each seat.
 ## Requirements
 ### Requirement: Seats are named configuration entities with an owner and a reserve
 

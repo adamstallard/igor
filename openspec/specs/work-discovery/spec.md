@@ -1,7 +1,13 @@
 # work-discovery Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Find candidate work for an Igor by polling, so that nobody needs to push work to it and it needs
+no inbound connection. An Igor runs its role's tracker queries on an interval, passing each to
+the tracker unmodified. This spec covers that polling cycle, the per-source watermarks that keep
+old items from being reconsidered every cycle, the limit on a first run's backlog, and where the
+watermarks are kept. The watermarks are a cache: the tracker stays the source of truth for what
+is claimed, so losing them costs repeated triage, never a duplicate claim. Choosing which
+candidates to take is `work-triage`.
 ## Requirements
 ### Requirement: Nothing may require inbound reachability
 
