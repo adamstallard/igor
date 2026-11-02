@@ -60,15 +60,11 @@ consistent.
 
 ### Requirement: Claim verification also reports a stop
 
-A tracker adapter's claim verification SHALL return one of **held**, **lost**, or **stopped**,
-so that a stop directed at an Igor has a defined path in. Stop was pulled forward from the
-conversational layer, and an obligation to honour it is unimplementable without an input.
-
-Detection reuses the re-read the Igor already performs, rather than adding an operation. It
-follows that **"immediately" means on detection and without further condition** — not
-instantaneously. Long-running execution SHALL therefore re-check at checkpoints rather than
-only once per cycle, since a cycle interval is far longer than someone watching an Igor go
-wrong will tolerate.
+A tracker adapter's claim verification SHALL return one of **held**, **lost**, or **stopped**.
+A stop is detected by the claim re-read the Igor already performs. Where a requirement says a
+stop takes effect **"immediately"**, that means on detection and without further condition, not
+instantaneously. Long-running execution SHALL also re-read the claim at checkpoints while it
+runs, not only once per cycle, so that a stop is seen during it.
 
 #### Scenario: Verification reports a held claim
 
@@ -269,21 +265,12 @@ waiting for an item to probe it.
 
 ### Requirement: An adapter declares how a claim is expressed
 
-A tracker adapter SHALL declare its native **holder field**, a field naming who has the item.
-This declaration determines how a claim is *expressed*, not how it is resolved.
-
-Which field that is belongs to the adapter, not to the loop. Linear's is `delegate`, because an
-app identity there may hold the latter and not the former. GitHub's is the `igor:<role>` label,
-because an Igor on GitHub is a GitHub App, whose bot user cannot be an assignee. Naming
-"assignee" above the adapter would make one surface's vocabulary into everyone's.
-
-An adapter declaring a holder field SHALL also declare whether it holds a **single value** or a
-**list**, and whether it is distinct from the item's assignee. GitHub's `igor:` labels are a
-list, and are distinct from the assignee. Linear's
-delegate is a single value, and is distinct from the assignee. Where the two are distinct, the
-holder field names the Igor and the assignee names the person accountable. The loop reads these
-declarations to resolve claims and to decide which items it may claim, and never the field's
-name.
+A tracker adapter SHALL declare its native **holder field**, naming who has the item. That
+declaration sets how a claim is *expressed*, not how competing claims are resolved. The adapter
+SHALL also declare whether the field holds a **single value** or a **list**, and whether it is
+distinct from the assignee. When the two are distinct, the holder field names the Igor and the
+assignee the person accountable. The loop resolves claims and picks items from these
+declarations alone.
 
 #### Scenario: Native holder field declared
 
@@ -299,7 +286,8 @@ name.
 
 #### Scenario: Single-valued and list holder fields resolve differently
 
-- **WHEN** one adapter declares a single-valued holder field and another a list
+- **WHEN** one adapter declares a single-valued holder field, as Linear's adapter declares
+  `delegate`, and another a list, as GitHub's adapter declares its `igor:<role>` labels
 - **THEN** on the first, the later write holds the item
 - **AND** on the second, any other holder present after the settle interval means the claim is lost
 

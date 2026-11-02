@@ -457,15 +457,6 @@ Observations SHALL be appended to a log of their own, separate from the executio
 NOT be modified or deleted once written. An observation stops bearing on the present when its
 reset time passes; it is not removed when it does.
 
-Executions and observations are the two halves of one division — executions are the numerator,
-observations the denominator — so a consumer joins them rather than filtering one stream. Keeping
-them apart also keeps the observation log small enough to read whole for a question that scans
-every row.
-
-Append-only is what makes the log safe to write from several Igors and useful afterwards. There
-is no read-modify-write, so no row is lost to another being written; and a row that no longer
-answers "is this seat spent" still answers "what was this seat's capacity", permanently.
-
 #### Scenario: An observation is never overwritten
 
 - **WHEN** a second observation is recorded for the same seat and window
@@ -560,10 +551,6 @@ at not hitting them.
 A seat with an observation at 100% for a window whose reset time has not yet passed SHALL be
 treated as having no headroom in that window, independently of any capacity estimate. Once that
 reset time passes the observation SHALL stop having that effect.
-
-The same rows answer both questions asked of a seat. "Is this seat spent right now" is a scan
-for an unexpired row at 100%; "what is this seat's capacity" is a division over the same rows.
-A second store for the first question would be a second thing to keep true.
 
 #### Scenario: A spent seat is passed over
 
@@ -685,27 +672,8 @@ credential pays, and the fallback is what it runs on.
 Where a seat is blocked in both its session and its weekly window, and both returns can be
 placed on a clock, the hour stated for that seat SHALL be the later of the two — whichever
 window it belongs to, and however the figure was arrived at. A reading taken from the seat and a
-figure derived from observations of it SHALL answer this question the same way.
-
-The seat is back when the last thing holding it clears. Naming the earlier hour promises a
-return the seat does not keep, and the size of the error does not matter: an hour that passes
-with the Igor still held is the same false promise whether it was early by five hours or by five
-days.
-
-The rule is stated for the seat, not for a path. Two paths answer this question, one for a seat
-whose usage the provider reports and one for a seat bounded by what was observed and recorded,
-and both answer it about the same seat in the same handoff. A rule written into only one of them
-can drift from the other, and nothing about a seat's credential bears on when its windows
-reopen.
-
-**Do not replace the comparison with a preference for the week.** The week is usually the later
-of the two, so preferring it is right most of the time, but inside the last session of a week
-instance the session returns later, and a preference for the week names an hour up to five hours
-early there.
-
-This governs which of a seat's own hours is stated. It does not change how seats are ordered
-against each other: the seats that serve a role are back when the first of them is back, so the
-earliest hour across those seats is still what a handoff states.
+figure derived from observations of it SHALL state the same hour. This does not change how a
+role's seats are compared: across them, a handoff still states the earliest of their hours.
 
 #### Scenario: The later hour is stated for a seat that could be read
 

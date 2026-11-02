@@ -56,7 +56,9 @@ not replace the ordering path, only double it.
 notifications, so first-claim-wins favours it structurally. The design does not try to make
 that race fair; it makes the override cheap. Stop is unconditional, open to anyone, and ships
 in this change rather than with the conversational layer, because this is the change that
-creates the asymmetry.
+creates the asymmetry. A long-running execution re-reads its claim for a stop at checkpoints
+while the worker runs, not only once per cycle, because a cycle interval is far longer than
+someone watching an Igor go wrong will tolerate.
 
 **State is a cache on an orphan branch** (§5.0.2). The tracker is the source of truth for
 what is claimed, so losing state costs tokens rather than correctness. It lives on a branch
