@@ -53,9 +53,9 @@ to reply to.
   is role config and lore. This has to be explicit, because ingesting arbitrary text from
   shared surfaces is the entire premise.
 - **Being mentioned is how an Igor learns it was addressed.** Discovery is a query and
-  comments are re-read only on items already held, so a mention on anything else is invisible.
+  comments are read only on items it returns, so a mention on any other item is invisible.
   A `mentions:` source fixes that with no new mechanism: it flows through the same watermark,
-  screening and triage as every other candidate, which is what "enters at triage" has to mean.
+  screening and triage as every other candidate.
 - **A mention narrows the action space rather than widening it, and claims nothing.** An Igor
   asked to look at an item investigates and answers; it does not claim the item, take the work,
   or publish. That resolves what would otherwise be a collision with the universal skip for an
@@ -122,9 +122,9 @@ to reply to.
 
   This is uneven across surfaces and worst on the one in use. Discord and Slack moderate
   participants directly; GitHub offers locking a conversation, which does not restrain a
-  collaborator, and blocking an account, which is nuclear — and an Igor holds write access, so
-  it sits on the wrong side of the only lock that bites. **What bounds a loop on a surface
-  with no usable moderation is open.**
+  collaborator, and blocking an account, which is nuclear — and an Igor's App can write to the
+  repository, so locking a conversation does not restrain it either. **What bounds a loop on a
+  surface with no usable moderation is open.**
 - **Igors may talk to each other.** A frontend Igor asking a backend Igor what an endpoint
   returns is worth more than the human relay it replaces, and the rules that govern talking to
   a person govern it unchanged: write access on the artifact, budget, and stop.
@@ -143,11 +143,6 @@ to reply to.
   abstract — it is what distinguishes a request from an injection after the fact, and "who told
   it to" is the first question anybody asks about an Igor that did something odd.
 
-Explicitly out of scope:
-
-- **Acting on anything irreversible.** The action-space cap from `core-igor-loop` still
-  holds and is what bounds the damage of a successful injection.
-
 - **A person with authority can have an Igor file an issue.** Asked on a pull request to track
   something, an Igor opens an issue carrying what was asked, where, and by whom — and does not
   claim or work it. Without this, work suggested on a pull request lives only in a comment
@@ -159,6 +154,11 @@ Explicitly out of scope:
   mentions it. Matched against what it recorded when it asked, never read back out of the
   description, so a reply can choose among options the Igor already proposed but cannot add one.
   Mentioning a different Igor routes the answer to that role.
+
+Explicitly out of scope:
+
+- **Acting on anything irreversible.** The action-space cap from `core-igor-loop`, the set of
+  actions a role allows, still holds and is what bounds the damage of a successful injection.
 
 ## Capabilities
 
@@ -178,7 +178,7 @@ Explicitly out of scope:
 ## Impact
 
 - Expands what an Igor writes to shared surfaces from claims and status to replies, so the
-  caps are what stop it becoming noise.
+  budget bounds what they cost. What bounds the noise on GitHub is open (`design.md`, Open).
 - Introduces the only path by which an outsider can influence an Igor, which is why the
   authority rule is framed as "gains them nothing they could not already do" rather than as
   detection.

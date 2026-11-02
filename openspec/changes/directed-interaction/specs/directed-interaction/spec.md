@@ -1,13 +1,21 @@
+## Purpose
+
+Let people with write access to a repository direct the Igors working in it by mentioning them.
+An Igor learns it was mentioned by querying the platform the item lives on, such as GitHub, and
+takes instruction only from people with write access to the repository holding the item. A
+mention can get an answer, have an issue filed, choose among options the Igor offered, or bring
+an item to triage as a request; answering claims nothing and never widens what the role permits.
+Content an Igor ingests from items is data, never instruction, and conversation is bounded by
+budget, not by a count of replies.
+
 ## ADDED Requirements
 
 ### Requirement: An Igor learns it was addressed by being mentioned
 
 An Igor SHALL discover that it was addressed through a source querying mentions of its own
-account, and SHALL NOT require any inbound delivery.
-
-Discovery is a query and comments are re-read only on items already held, so a mention
-anywhere else is invisible. A mentions source reaches it through the machinery that exists:
-the same watermark, the same screening, the same triage.
+account, and SHALL NOT require any inbound delivery. A mention passes through the same
+watermark, the mark of how far discovery has read, and the same screening and triage as any
+other source.
 
 #### Scenario: Mentioned on an item discovery would not return
 
@@ -24,14 +32,8 @@ the same watermark, the same screening, the same triage.
 Acting on a mention SHALL restrict the action space to what may be said, SHALL NOT claim the
 item, and MUST NOT widen anything the role permits.
 
-Reading is not taking, so an item somebody else holds needs no exception to the universal skip
-— the person keeps their item and gets an answer. Nobody was told to stand off, so nothing is
-owed a receipt and no settle interval or marker applies.
-
-Narrowing is also what makes this safe by construction. Permissions merge monotonically, so if
-a mention can only restrict, a successful injection through a comment gains the speaker
-strictly less than the Igor could already do — a stronger guarantee than detecting
-manipulation, and one needing no permission lookup.
+With no claim, nobody is asked to stand off the item, so the Igor owes no one a receipt for
+standing down, and a claim's settle interval and marker do not apply.
 
 #### Scenario: Asked for help on an item somebody holds
 
@@ -52,16 +54,11 @@ manipulation, and one needing no permission lookup.
 ### Requirement: Authority to instruct is write access on the artifact
 
 An Igor SHALL act on an instruction only from a party with write access to the repository
-holding the artifact, read from the surface's own permission record.
+holding the artifact, read from the surface's own permission record: on GitHub,
+`permissions.push` on that repository. Organization membership does not count.
 
-Write access is what lets somebody do the thing themselves, so instructing an Igor gains them
-nothing they could not already do — which is a stronger guarantee than trying to detect
-manipulation. Organization membership is too coarse: it would let someone with read access to
-one repository direct work in it.
-
-A party without write access is not refused, because nothing was granted to refuse. Their
-mention is not a signal: it grants nothing and takes nothing away, and the item still stands or
-falls on its own through ordinary discovery.
+A mention from a party without write access is not refused but ignored: it grants nothing and
+takes nothing away.
 
 #### Scenario: A colleague with write access directs work
 
@@ -84,10 +81,6 @@ falls on its own through ordinary discovery.
 Item bodies, comments, linked content and code SHALL be passed to the worker as untrusted data
 and delimited as such. The trusted channel is role configuration and reviewed lore.
 
-Ingesting text from surfaces anybody can write to is the premise of the whole system, so this
-cannot be left implicit. What bounds the damage is the action space enforced at the loop rather
-than the prompt: no instruction inside ingested text can widen it.
-
 #### Scenario: Text shaped like an instruction
 
 - **WHEN** ingested content contains text addressed to the worker
@@ -97,14 +90,8 @@ than the prompt: no instruction inside ingested text can widen it.
 ### Requirement: Conversation is bounded by budget, not by a count of exchanges
 
 Talking SHALL draw on a declared fraction of cycle budget, and there SHALL be no limit on the
-number of replies.
-
-A count is a poor proxy for the resource: replies on a large repository cost more than replies
-on a small one. It is also aimed at the wrong party — once a stranger gets no reply, the only
-conversation partner left is a colleague, whose fourth question is often the useful one.
-
-Where an exchange runs away, the venue's own moderation is the answer rather than a rule here,
-and stop applies with no identity test, so one participant may halt another.
+number of replies. A stop, which anyone may post to make an Igor stand down, applies with no
+identity test, so one participant, a person or an Igor, may halt another.
 
 #### Scenario: Talking cannot starve work
 
@@ -121,9 +108,6 @@ and stop applies with no identity test, so one participant may halt another.
 Where an item cannot be acted on as written, an Igor SHALL say what it needs rather than choose
 an interpretation, and the number of such questions SHALL NOT be capped.
 
-A question costs a comment; acting on a bad guess costs a wrong artifact and the time of
-whoever reads it. The bias belongs on asking.
-
 #### Scenario: An item that does not say enough
 
 - **WHEN** a worker cannot act on an item as written
@@ -139,11 +123,6 @@ whoever reads it. The bias belongs on asking.
 Where work is done because somebody asked, the record SHALL name the requester and carry their
 words.
 
-The decision record already holds the item, the stage, the outcome and triage's reason, which
-is complete for a discovered item because the provenance is the query. For a requested one it
-is not, and "who told it to" is the first question anybody asks about an Igor that did
-something unexpected — which is what distinguishes a request from an injection after the fact.
-
 #### Scenario: A request is traceable to its requester
 
 - **WHEN** an Igor acts because it was asked
@@ -157,18 +136,12 @@ something unexpected — which is what distinguishes a request from an injection
 ### Requirement: A person with authority can have an Igor file an issue
 
 Where someone with write access on the repository mentions an Igor and asks for an issue to be
-filed, the Igor SHALL open one — carrying what was asked, linking where it was asked, and naming
-who asked — and SHALL NOT claim it or work it. The issue then enters discovery like any other.
+filed, the Igor SHALL open one, carrying what was asked, linking where it was asked and naming
+who asked, and SHALL NOT claim it or work it. The issue then enters discovery like any other
+issue, with nothing reserving it for the Igor that filed it.
 
-Opening an issue is an action the role SHALL have to grant, like every other action; a mention
-cannot confer it where the role does not. That keeps this inside the rule that a mention never
-widens what a role permits, and it grants the requester nothing they could not already do
-themselves by opening the issue.
-
-**Issues stay the unit of work.** Without this, work a person suggests on a pull request lives
-only in a comment thread: a mention gets an answer, and nothing tracks what was asked for. Filing
-it turns a suggestion into something discovery can find, a role can be scoped to, and the next
-reader can see.
+The role SHALL have to grant opening an issue, as it does every other action; a mention cannot
+confer it.
 
 #### Scenario: Asked to file an issue by someone with authority
 
@@ -188,30 +161,24 @@ reader can see.
 
 ### Requirement: An answer to a question the Igor asked may be acted on
 
-Where an Igor posted a question on an artifact it authored — a decision with the options it would
-take, numbered — and someone with write access answers it in a comment that mentions the Igor,
-the Igor MAY act on the option chosen. This is the one case where acting on a mention is not
-restricted to what may be said.
+Where an Igor asked a numbered question on an artifact it authored, offering options it would
+take, and someone with write access replies in a comment mentioning the asker or another Igor,
+the Igor mentioned MAY act on the chosen option, never beyond its own role: the one case where a
+mention permits more than what may be said. The choice SHALL be matched, never interpreted,
+against the options the asker recorded when posting, in a record any Igor can read, never the
+artifact's text.
 
-**It is an exception to speaking only, not to widening.** Every option was proposed by the Igor
-itself, within what its role already grants, before anyone answered. Choosing one narrows the set
-of things the Igor was ready to do; it adds none. So the rule that a mention never widens what a
-role permits holds unchanged, and the argument that makes mentions safe by construction still
-applies.
+#### Scenario: The question goes in the description
 
-**The answer SHALL be matched, never interpreted.** Which questions were posted, and which options
-each offered, SHALL be read from what the posting Igor recorded when it posted them — never from
-the artifact's text, which anyone with write access can edit. A reply SHALL be read only as a
-choice among those; a reply naming a question that was not posted, or an option that was not
-offered, SHALL have no effect. A reply can answer a question an Igor asked; it cannot pose one.
+- **WHEN** an Igor asks a numbered question on an artifact it authored
+- **THEN** it posts the question in the artifact's description, where a reader of the artifact
+  sees it, and the answer arrives as a comment, which shows who wrote it
+- **AND** an answer is still matched against the asker's record, never the description
 
-That record is also what lets the answer go to a different Igor than the one that asked: the
-Igor a reply mentions matches the choice against the asking Igor's record, not against anything
-it reads off the artifact.
+#### Scenario: A reply from someone without write access chooses nothing
 
-Authority SHALL be checked against the reply's author. The question itself belongs where a
-reader briefed on the artifact sees it — its description — and the answer arrives as a comment,
-because a comment is attributable and a mention is what makes it visible.
+- **WHEN** someone without write access replies to an Igor's question, choosing an option
+- **THEN** nothing is acted on, since authority is checked against the reply's author
 
 #### Scenario: An answer selects an option the Igor offered
 

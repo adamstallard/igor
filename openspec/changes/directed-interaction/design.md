@@ -64,13 +64,20 @@ A count is also aimed at the wrong party. Once a stranger gets no reply, the onl
 partner left is a colleague with write access — whose fourth question is often the useful one,
 because the first three established what the Igor actually understood.
 
+### A request is screened like a discovered candidate
+
+Only the entry point is new. A request that skipped the universal skips, which drop closed and
+held items and items with work in flight, or skipped the lane or triage, would let a person have
+an Igor do what its lane forbids just by asking for it. The rule that authority to instruct never
+exceeds authority over the artifact would then have a way round it.
+
 ### Two things a mention can ask for beyond an answer
 
 **Filing an issue** stays inside the narrowing rule because it is a role action like any other.
 There is no such action today — `ACTIONS` in `src/role.ts` is `comment`, `review-comment`,
-`draft-pr`, `pr`, `label`, `assign`, `unassign`, `close`, `merge`, `send` — so it needs one, and a
-role that does not grant it declines. The requester could open the issue themselves, which is
-what makes filing it on their behalf grant nothing.
+`draft-pr`, `pr`, `label`, `merge`, `send` — so it needs one, and an Igor whose role does not
+grant it declines. The requester could open the issue themselves, which is what makes filing it
+on their behalf grant nothing.
 
 **Acting on an answer is an exception to *speaking only*, and not to *widening*.** The narrowing
 requirement has two clauses: a mention restricts the action space to what may be said, and it
@@ -154,5 +161,72 @@ mentions of the Igor's own account, and on GitHub that account is now an App's b
 search for `mentions:dependabot[bot]` and `mentions:github-actions[bot]` returned 0 results on
 2026-10-04, against 3.9 million for `mentions:dependabot`. Searching by the bot's login finds
 nothing, and whether a person's `@<app-slug>` reaches the App by search or notification is not
-measured. Both additions above depend on it. *Recommend:* measure it with a real Igor App before
-gate two (task 8.9), and adjust the first requirement to what is found.
+measured. Every requirement that starts from a mention depends on it. *Recommend:* before
+building the mentions source, measure with a real Igor App whether a person's `@<app-slug>`
+reaches it (task 8.9), and adjust *An Igor learns it was addressed by being mentioned* to what is
+found.
+
+**Problems found on 2026-11-02 by spec-check's consistency read**, which checks this change
+against every spec and open change. Each is left for this change's author, because resolving any
+of them would change what the change builds.
+
+- **A held item never reaches the worker.** A mention enters triage, and triage skips an item
+  another party holds before any worker runs, so the scenario *Asked for help on an item
+  somebody holds* cannot happen as written. Either a mention bypasses that skip, or the scenario
+  goes.
+- **Speaking only, or doing work.** *A mention narrows what an Igor may do* limits every mention
+  to what may be said, while *A colleague with write access directs work* has a mention get work
+  done. Nothing says which mentions are requests and which are questions.
+- **Routing against authorship.** In *Mentioning a different Igor routes the answer*, the
+  mentioned Igor acts on a pull request it did not author, which *An answer on an artifact the
+  Igor did not author* limits to an answer.
+- **A stranger's mention can still bring an item to triage.** The mentions query returns it, and
+  nothing puts the authority check before the source hands the item on, so an item outside the
+  role's query could be worked only because a stranger mentioned it.
+- **Igor-to-Igor talk.** The decision above rules out one Igor questioning another through a
+  mention, yet the proposal's *Igors may talk to each other*, and this design's *Roads not
+  taken*, argue for allowing it.
+- **A claim before an answer that acts.** #179 records Adam's decision of 2026-10-28 that an
+  answer opening an issue or acting on a chosen option goes through a claim first. This change
+  says a mention claims nothing and a filed issue is not claimed.
+- **A per-requester cap.** #162 plans a cap on requests per requester per period; *Budget is the
+  only limit* rules out any limit but budget.
+- **Declining an out-of-lane request with a route, and answering people's questions about
+  lore.** The proposal states both, but no
+  requirement or task builds them, and `docs/architecture.md` lists them under #162.
+- **Push delivery.** The scenario *No inbound endpoint* says an Igor learns of a mention never
+  by being delivered to, which forbids what `work-discovery` allows: a push over a connection the
+  Igor already holds, such as a Discord bot's.
+- **Capabilities changed without a delta spec.** Opening an issue needs `role-config`'s closed
+  `allow` set to grow; the open change `lore-from-corrections` also modifies that requirement,
+  so the two changes would have to agree on its text. The conversation fraction needs a
+  role-file key, and a role file refuses any key outside its set. The requester field, the
+  permission read, the mention search and issue creation need `surface-adapter`.
+- **Restated rules.** *Everything ingested is data* restates `task-execution`'s rule on ingested
+  content, *Conversation is bounded by budget*'s sentence on stop restates `work-claiming`'s,
+  and *The question waits for its answer* restates `work-triage`'s deferral, which #216 changes
+  so that a reply does not lift a flagged hold. Each could cite the rule instead.
+- **Filing an issue twice.** `work-claiming` checks for an existing issue before creating one
+  from a chat message; filing from a mention has no such check, and the mention matches again
+  every cycle.
+- **Answering a mention twice.** The Igor's reply updates the item, so the item passes the
+  watermark again at the next cycle. The mention still matches the query, and nothing records
+  that it was answered, so the Igor would answer it again. A stop written as a mention
+  would also be read as a request.
+- **Untested rules.** No scenario covers organization membership not counting, delimiting
+  ingested content, or a filed issue entering discovery.
+- **Undefined terms.** *Cycle budget* and where its fraction is declared; where the question
+  record lives so another Igor can read it; which repository a filed issue goes to; which record
+  holds the requester; and the form of a numbered question.
+- **Private content and copied mentions.** A requester's words from a private repository could
+  reach the state branch, the git branch where Igor keeps its records, where that branch is
+  public or a filed issue, an `@` copied into a filed issue notifies the person named, and no
+  requirement says what happens when the permission read fails, where `docs/architecture.md`
+  says to fail closed.
+- **A claim no measurement covers.** *Authority is `permissions.push`* says every custom
+  repository role resolves to the permission booleans; the measurement read the endpoint's
+  fields, and no custom role was tested.
+- **A premise the code contradicts.** Task 1.2a assumes `dropStopped`, the loop step that drops
+  stopped items, fetches comments for every candidate left after screening. It fetches only
+  comments within the stop window, and stops once it has kept enough candidates, so a mention
+  outside those would need a fetch of its own.
