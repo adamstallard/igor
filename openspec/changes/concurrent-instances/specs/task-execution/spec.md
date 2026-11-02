@@ -117,15 +117,11 @@ of eight lowercase letters and digits, the first a letter, when it starts. The i
 runs of one role at once never share a tree and a run tells its own trees by the first eight
 characters of their id. A run SHALL remove each of its own trees as it releases it when the
 task ends, under its own user, since `igor run` has no worker user. At its start, before its
-first cycle, it SHALL also remove the rank-0 trees of its role whose run's process is gone (Adam,
-2026-10-21), each with its outbox, `<tree>-git` and `<tree>-prompt`, and the home and the plugin
-directory #174 gives that run. A run tells that
+first cycle, it SHALL also find, by their lock files, every other run of its role whose process is gone, so that a run that crashed with no tree outstanding is found too. For each, it SHALL remove that run's rank-0 trees (Adam, 2026-10-21), each with its outbox, `<tree>-git` and `<tree>-prompt`, and the home and the plugin directory #174 gives that run. A run tells that
 another run's process is gone by a lock: each run holds an exclusive lock on a file in the trees'
 directory named `<role>-0-<run id>.lock` for as long as it runs, which the system releases when
 its process ends, and a run whose lock another run can take is gone. A run SHALL remove no tree
-of a run whose lock it cannot take, and removes a gone run's lock file last. Where the run's own
-user cannot remove what another person's run left, it leaves it and logs the paths. `igor run --plan`
-SHALL remove no tree.
+of a run whose lock it cannot take, and removes a gone run's lock file last. Where the run's own user cannot remove what another person's run left, it leaves it, logs the paths and keeps that run's lock file, so a later run finds them again. `igor run --plan` SHALL remove nothing.
 
 A serving process SHALL remove each tree and its outbox as the worker user of the rank that made it, as
 #175 has a release remove them, and each `<tree>-git` and `<tree>-prompt` as the service user,
@@ -197,3 +193,9 @@ which owns them under #175.
 - **WHEN** two ranks of one role run on one host under the systemd unit
 - **THEN** both keep their trees in the directory #175 shares between them, so a sweep finds a
   retired rank's trees
+
+#### Scenario: A gone run's lock file goes last
+
+- **WHEN** an `igor run` removes what a gone run left
+- **THEN** it removes that run's lock file only after its trees, home and plugin directory
+

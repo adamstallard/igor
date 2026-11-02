@@ -113,7 +113,10 @@ value someone guesses differently each time. The exceptions, none of which is co
   there;
 - `work-claiming`'s window of one maximum poll interval after a process starts, in which it
   counts its role as run by several processes, and its three maximum poll intervals after which
-  the condition for a second process on a rank clears.
+  the condition for a second process on a rank clears;
+- `work-claiming`'s half settle interval within which a process whose claim message failed to
+  post may remove the label and post #173's refusal, the post giving its claim back;
+- `work-claiming`'s one poll interval within which a claim is verified.
 
  The defaults are: a **settle interval** of 10 seconds before a claim
 is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
@@ -180,6 +183,12 @@ interval each counts in.
 - **THEN** the role's file under `roles/` is refused, naming the key, as for any key that file
   does not read
 
+#### Scenario: A `--poll` above the maximum is refused
+
+- **WHEN** `igor serve` is given `--poll 45m`
+- **THEN** it refuses to start, naming the 30-minute maximum
+- **AND** the process exits with status 78
+
 ## ADDED Requirements
 
 ### Requirement: The roster declares the ranks each role may run
@@ -195,7 +204,7 @@ roster:
 
 A role the roster does not name SHALL run rank 1 only, as though the roster declared `[1]` for it. The configuration SHALL be refused, naming
 the entry, when the roster names a role with no role file, lists a rank that is not a whole
-number from 1, or lists one rank twice. An `igor serve` process whose rank the roster does not declare for its
+number from 1, lists one rank twice, or lists no rank. An `igor serve` process whose rank the roster does not declare for its
 role SHALL refuse to start, naming the ranks the roster declares.
 
 #### Scenario: A declared rank starts
@@ -217,6 +226,11 @@ role SHALL refuse to start, naming the ranks the roster declares.
 
 - **WHEN** the roster lists rank `0`, lists one rank twice, or names a role with no role file
 - **THEN** the configuration is refused, naming the entry
+
+#### Scenario: A role with an empty rank list is refused
+
+- **WHEN** the roster names a role with `[]`
+- **THEN** the configuration is refused, naming that role's entry
 
 ### Requirement: A process is named by its role and rank
 
@@ -338,3 +352,9 @@ the same key in the environment `igor serve` started with.
 
 - **WHEN** `/etc/igor/backend.env` holds the line `TOKEN='ab$cd'`
 - **THEN** `igor serve backend-1` reads the value `ab$cd`, with nothing expanded
+
+#### Scenario: Comments and blank lines are skipped
+
+- **WHEN** the environment file holds a blank line and a line starting with `#` among its values
+- **THEN** `igor serve` starts, reading only the `KEY=value` lines
+

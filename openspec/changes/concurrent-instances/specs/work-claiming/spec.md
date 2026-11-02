@@ -633,7 +633,7 @@ message, and reading the message again never posts the link twice.
 Where several processes run a role, only the first available rank in a chat message's order of
 ranks, which *Contention is resolved before a claim, not after it* computes from the message's
 id, SHALL create an issue from the message, each rank judging availability by its own heartbeat
-read. With no rank available, the message SHALL wait for the next cycle. Every rank still reads
+read. With no rank available, the rank first in the message's order SHALL answer it in the chat with the time the role's seats next reset, as a mention with no rank available is answered, and the message SHALL wait for a later cycle. The reply needs no seat, so that rank sends it though it is not available; where it is gone, the next rank in the order that is not gone sends it. Every rank still reads
 the channel. A heartbeat read that is stale can let two ranks each judge themselves first and
 open two issues; that rare duplicate is accepted.
 
@@ -657,6 +657,13 @@ open two issues; that rare duplicate is accepted.
 - **AND** if rank 2 is counted gone without answering, rank 1 reads the message again and
   creates the issue
 
+#### Scenario: A chat message with no rank available gets the reset time
+
+- **WHEN** a chat message asks for work and no rank of the role is available
+- **THEN** the rank first in the message's order answers in the chat with the time the role's
+  seats next reset
+- **AND** the message becomes an issue at a later cycle, once a rank is available
+
 ### Requirement: A claim names the process that took it
 
 A claim message SHALL carry the rank of the process that posted it, whether or not the role runs
@@ -675,8 +682,7 @@ letter case, at the line's first character. Before the role's bot account posts 
 other than a claim message, the Igor SHALL indent by one space each line of it that begins with
 `Igor-` in any letter case, whether a worker or
 a model composed the line or the Igor interpolated it from a path, a login or a title, so that
-no comment but a claim message carries a line read as a trailer. It SHALL do so before the text
-is read cold and signed where `signed-publishing` (#153) does both.
+no comment but a claim message carries a line read as a trailer. It SHALL do so on the final text, after every step that may change it, and before `signed-publishing` (#153) signs it.
 
 An edit or a deletion of the holder's claim message while it works the item makes the item read
 as unclaimed, and a sibling may then claim and work it too. That risk is accepted. It is unmeasured
@@ -763,6 +769,12 @@ specifies.
 
 - **WHEN** a process is started as `igor serve front-end-2`
 - **THEN** it runs as rank 2 of the `front-end` role
+
+#### Scenario: A line the Igor interpolated is indented too
+
+- **WHEN** the role's bot account posts a comment, not a claim message, into which the Igor
+  interpolated a title whose text puts `Igor-Rank: 2` at the start of a line
+- **THEN** that line is posted as ` Igor-Rank: 2`, indented by one space
 
 ### Requirement: A run by hand runs as rank 0
 
@@ -902,11 +914,7 @@ which works it.
 Where several processes run one role and a person hands an item to the role, its ranks SHALL
 decide which works it by the contest of *Contention is resolved before a claim, not after it*, as
 for an item their search found: the item's owner, or the next available rank after it, goes
-first. Only an available rank SHALL contend, available as *A retired rank does not hold its
-items forever* defines it: one with no claim in hand, that
-is, not between setting the holder field and finishing the run or giving the claim back, and
-that has not stood down for missed heartbeats, and that has a seat it can spend. A rank whose
-worker is running is not available. A rank that posts SHALL verify its claim
+first. Only an available rank SHALL contend, available as *A retired rank does not hold its items forever* defines it; with no rank available, the handed-over item waits for a later cycle. A rank whose worker is running is not available. A rank that posts SHALL verify its claim
 after the settle interval, as for an item its search found, and the earliest claim message that
 counts holds the item.
 
@@ -1026,8 +1034,7 @@ started, its *start id*, a counter it increments on each write, the name of its 
 operating-system process number, whether the process is available, the poll interval the process applies, and the *state-directory id* of the state directory the process
 uses, as `graceful-handoff`'s *A handoff states what was done, what remains, and who could
 continue* (#216, `lore-search`) defines it, or no id where the process reads none in its state directory (Adam,
-2026-10-24). No claim rule reads the state-directory id. Its first
-heartbeat SHALL land before its first cycle. A heartbeat file SHALL hold no time that any process
+2026-10-24). No claim rule reads the state-directory id. The host name and process number SHALL be written even where the state branch is public: they are not secrets, and the operator needs them to find a second writer on a rank. Its first heartbeat SHALL land before its first cycle. A heartbeat file SHALL hold no time that any process
 compares.
 
 At each firing, before it writes, a process SHALL read its own rank's file, and SHALL treat the
@@ -1039,11 +1046,9 @@ and keep its claim in silence as a stand-down does, and write itself as not avai
 SHALL open a condition with the cure key
 `instance:<role>-<rank>:duplicate`, on the instance scope `worker-user` (#175) adds to
 `stuck-conditions`, naming each writer's host and operating-system process number, the host once
-where both run on one host. The condition SHALL clear, as a read-cleared condition does, with no
-probe item, at the first firing after three of the maximum poll interval in which no other start
+where both run on one host. The condition SHALL clear, with no probe item, at the first firing after three of the maximum poll interval in which no other start
 id has advanced in the file, which in practice needs a person to stop one writer; the process
-SHALL then take items again. The process SHALL append a condition row to the execution log where
-it opens and where it clears the condition.
+SHALL then take items again. The process SHALL append a condition row to the execution log where it opens and where it clears the condition. The stop is this requirement's rule, not the condition's: the condition only records it. Because it opens at its first observation and clears after a span of time without a probe item, it is a kind of its own, beside the read-cleared and refused-credential conditions.
 
 A process is available when it is free, holding no claim, not stood down, not stopped by the
 condition for a second process on its rank, its heartbeat
@@ -1415,10 +1420,8 @@ counts; where that read finds another process's message counting, it drops out s
 loud too, with #173's refusal, the post a refused run makes when it gives the claim back to be
 tried again next cycle. Where its own claim message failed to post, it SHALL post that refusal only while less than half
 a settle interval has passed since it started to set the label, the same bound the label's
-removal takes in the exception for a claim message that failed to post, so that no refusal lands after a sibling's claim, where it would read as giving that
-claim back, and later it posts nothing. A refusal after a failed verification, or after a reread, posts out loud
-whenever it comes. Under the exception for a claim message that failed to post, below, it also removes the label; otherwise it leaves
-the label (Adam, 2026-10-24, following #173's decision 41). Where that read of the claim messages fails too, it removes
+removal takes in the exception for a claim message that failed to post, and past that it posts nothing, so that no refusal lands after a sibling's claim, where it would read as giving that claim back. That late case ends in silence, as a stand-down does: the item keeps the label with no claim message counting, any rank may claim it at a later cycle, and that claim speaks (decision 65). A refusal after a failed verification, or after a reread, posts out loud
+whenever it comes. Where no claim message counts, the process also removes the label under the exception for a claim message that failed to post, below, and otherwise leaves it. Adam decided this posting and leaving of the label on 2026-10-24. Where that read of the claim messages fails too, it removes
 nothing and posts nothing, and SHALL read them again at its next cycle's start, or before it exits
 for `igor run`, as #173 has it. A process with a reread pending makes it before its cycle
 chooses any candidate. Otherwise, finding its own rank's message holding the item, it would
@@ -1526,6 +1529,11 @@ claimed it yet or its holder is gone, the process that reaches the item answers 
 
 - **WHEN** a person hands an issue over and says stop before any rank's claim message is on it
 - **THEN** the first rank to reach the item removes the label and posts the stop receipt
+
+#### Scenario: A pending reread comes before the next choice
+
+- **WHEN** a process has a reread of an item's claim messages pending from the last cycle
+- **THEN** it makes that reread at the start of its next cycle, before it chooses any candidate
 
 ### Requirement: A rank removed from the roster exits cleanly
 

@@ -108,8 +108,7 @@ to reply to.
   - Where no rank is available, the owner answers with the time the role's seats next reset,
     a fixed reply that spends no seat (decided by the agents coordinating this work on
     2026-10-28, under the rule Adam set for which questions they may settle;
-    `docs/architecture.md` promises this). If the owner is gone too, no rank answers until one
-    is available again, and the held-back marks keep the request until then.
+    `docs/architecture.md` promises this). If the owner is gone, the next rank in the order that is not gone sends that reply (decided by the agents on 2026-11-01).
   - An answer that opens an issue or acts on an option the person chose goes through a claim
     first, as any item does, since two ranks acting would act twice (Adam, 2026-10-28). A plain
     reply stays unclaimed.

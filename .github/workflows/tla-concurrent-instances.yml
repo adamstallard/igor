@@ -3,19 +3,21 @@
 # - "TLC <config>": the change as specified. Each configuration the matrix
 #   below lists must pass, so a failure is a regression in the spec or the
 #   model. A configuration added to model/ runs only once it is listed.
-# - "TLC negative configurations": each rule the model showed the change
-#   needs is a constant in the model, and each file in model/negative/ turns
-#   one of those rules off. TLC must find a violation there; a file that
+# - "TLC negative configurations": each rule of the change is a TRUE or
+#   FALSE constant in the model, and each file in model/negative/ sets one
+#   of them FALSE. TLC must find a violation there; a file that
 #   passes means the model does not show that rule is needed.
 # - ConcurrentInstancesPollSkewFull.cfg is not listed: it is too large for
-#   a job, so it runs locally, and design.md records how far it got and,
-#   once it ends, whether it passed. The split PollSkew configurations below
-#   cover smaller combinations of its faults in CI: one crash rather than
-#   two, each split fixing the one rank that may miss heartbeats or crash,
-#   and a crash and a lost branch together only with one missed heartbeat.
+#   a job, so it runs locally; design.md records that it finished on
+#   2026-10-28 with no error found. The split PollSkew configurations below
+#   cover smaller combinations of its faults in CI. The full configuration
+#   allows two crashes; each split configuration allows one, and names the
+#   one rank that may miss heartbeats or crash. The split configurations
+#   that combine a crash with a lost branch allow only one missed heartbeat.
 # - No job runs model/findings/. Each file there finds a violation the rules
-#   do not prevent, recorded for the repository's owner to decide on; it
-#   keeps finding it until the spec's rules change.
+#   do not prevent, recorded for the repository's owner to decide on. Each
+#   is expected to keep finding its violation until the spec's rules change,
+#   but nothing checks that it still does.
 #
 # To move to another tla2tools.jar release, change TLA_TOOLS_VERSION and
 # TLA_TOOLS_SHA256 together: the checksum step rejects any other file.

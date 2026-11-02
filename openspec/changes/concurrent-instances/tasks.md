@@ -27,8 +27,7 @@
 
       The unit's header comment, which may be reworded, names the instance with its rank:
       `igor@<role>-<rank>`, and installs one as `sudo systemctl enable --now igor@maintenance-1`.
-      The unit's restart lines are #82's (`stopped-scope-visible`): `Restart=on-failure` and
-      `RestartPreventExitStatus=78`, with `RestartSec=30s` and no `SuccessExitStatus=`. A rank the roster no longer
+      The unit's restart lines are #82's (`stopped-scope-visible`): `Restart=on-failure` and `RestartPreventExitStatus=78`, with `RestartSec=30s` and no `SuccessExitStatus=`, replacing `main`'s `Restart=always`, and the unit comment that describes `/etc/igor/%i.env` is rewritten to say that `igor serve` reads that file itself. A rank the roster no longer
       declares exits 0 (4.25), which that policy does not restart; this change adds no line for it
 
       `ProtectProc=invisible`, which PR #175 (`worker-user`) adds to the same unit, stays in it;
@@ -45,7 +44,7 @@
       reads a credential, and sets each key it holds in its own environment, in place of the
       same key it started with. It refuses to start on any line that is not blank, a `#`
       comment, or `KEY=value` with a single-quoted or plain value, as `role-config` defines
-      them, printing nothing of the line but its number (proposal, decision 59). The message is
+      them, printing nothing of the line but its number (design.md, decision 59). The message is
       the first below, as written, for a line that starts with `KEY=`, an unclosed quote's
       included, or the second, as written, for a line with no `KEY=` at its start:
 
@@ -206,10 +205,8 @@
       item to the next available rank, which posts at once; two ranks that both post resolve by
       the earliest claim message
 - [ ] 3.6 Only the first available rank in a chat message's order, by 3.1's hash of the
-      message's id, creates an issue from it; with no rank available, the message waits for the
-      next cycle (proposal, decision 58). Tests: of two available ranks reading one message, only
-      its owner creates the issue; with the owner's heartbeat showing it unavailable, the next
-      rank creates it
+      message's id, creates an issue from it; with no rank available, the rank first in its order, or where it is gone the next rank not gone, answers in the chat with the time the role's seats next reset, and the message waits for a later cycle (design.md, decisions 58 and 73). Tests: of two available ranks reading one message, only
+      its owner creates the issue; with the owner's heartbeat showing it unavailable, the next rank creates it; with no rank available, the owner replies with the reset time and creates nothing; with the owner gone too, the next rank replies
 - [ ] 3.7 A rank that passes over a chat message, or a mention, because another rank is first in
       its order leaves the channel's read marker before that chat message, or its discovery mark
       before that mention, until it has an answer, which is one of: a reply from the role's bot
@@ -317,8 +314,7 @@
       does, keeps writing heartbeats meanwhile, and then exits as 4.25 says. Where the
       configuration read at a cycle fails a check a starting process makes, the process goes on
       under the last configuration that passed and raises #208's `lore:config:<role>`, naming
-      the failing file and check; it never exits for it. Whether it is of the read-cleared kind
-      #171 (`seat-files`) defines is open (proposal, *Still open*). The condition opens, clears
+      the failing file and check; it never exits for it. Build it as #171's (`seat-files`) read-cleared kind with #208's limits on clearing, which #171 is asked to allow (design.md, decision 66); if #171 refuses, the condition's kind goes back to Adam before building. The condition opens, clears
       and does not reopen exactly as #208's `lore-pull` requirements say, its limits on clearing by a head that no
       longer holds the refused commit included; this task restates none of them. A roster that
       drops the process's own rank is no failed check: that read passes and retires the rank.
@@ -336,7 +332,9 @@
       gets, which is not the 5,000 an hour measured on a personal account, and record in
       `design.md` how many ranks one App's limit allows at the default poll. Measured so far
       (2026-10-19): a tree read and a Contents PUT cost one `core` request each; the rest waits
-      on a running multi-rank Igor and an App's key
+      on a running multi-rank Igor and an App's key. Also count the writes one rank makes in an hour
+      (heartbeats, keepalives, log appends, claim comments) against GitHub's secondary limits of
+      80 writes a minute and 500 an hour, and whether a Contents PUT counts against them
 - [ ] 4.20 PR #175 (`worker-user`) adds a git directory, `<tree>-git`, beside each tree. 4.5
       sweeps it already, assuming that name; check the name against #175 as merged. Trees and
       their git directories live in `<state dir>/trees` (1.8). #175 keeps `PrivateTmp=true`
@@ -379,8 +377,7 @@
       execution log; it clears with no probe item once three of the maximum poll interval pass
       with no other start id advancing (decisions 63 and 72). The process reads its own file at
       every heartbeat firing. Measure how often a lost or rolled-back state branch happens, to
-      size decision 72's known gap, a rollback followed by a restore, which the proposal's
-      *Still open* names. Tests:
+      size decision 72's known gap, a rollback followed by a restore, which design.md's *Open Questions* names. Tests:
       two processes serving one rank both stop, and the condition names both; a rolled-back
       branch restoring an older copy, under the process's own id or its predecessor's, raises
       no condition and is read as a loss; the condition clears after the foreign writer stops
@@ -398,12 +395,7 @@
       4.21 (Adam, 2026-10-21); 4.22's stop on an item no claim message holds is the second
 - [ ] 4.27 Each process keeps, from its start, the shortest poll interval it has applied, and,
       per sibling, the longest interval it has seen that sibling's heartbeat declare in a write:
-      a heartbeat whose counter changed since the last read. It forgets every sibling's
-      declarations when it detects a loss or rollback of the state branch: a serving rank's file it
-      had read is missing, not a run's, which a run removes as it exits or a serving process
-      removes once it counts the run gone, or a sibling file's counter
-      is lower than the one last read under the same start id; a new start id is a restart, not a
-      loss. It counts a sibling
+      a heartbeat whose counter changed since the last read. It forgets every sibling's declarations when it detects a loss or rollback of the state branch, which is any of three signs. First, a serving rank's file it had read is missing; a run's file does not count, since a run removes its own as it exits and a serving process removes a gone run's. Second, a counter, in a sibling's file or its own, is lower than the one last read under the same start id. Third, its own file holds an older copy under its predecessor's start id. A new start id in a sibling's file is a restart, not a loss. It counts a sibling
       gone after three of the longest of its own current interval and the intervals it keeps for
       that sibling, or after three of the maximum poll interval, 30 minutes, where it keeps none; it stands down after two of its
       shortest applied interval; it writes its heartbeat every half of its own current interval.
@@ -411,14 +403,16 @@
       counts it gone only after 60 minutes; one on 10 minutes that saw only 10, after 30; one on
       20 minutes that saw only 10, after 60; a process
       that has just started, or has just found a sibling's file missing, counts in the maximum
-      until that sibling's next heartbeat lands, and so counts it gone only after 90 minutes; a process that started on 10
-      minutes and applied 20 stands down after 20 minutes (Adam, 2026-10-21 and 2026-10-24)
+      until that sibling's next heartbeat lands, and so counts it gone only after 90 minutes; a process that finds its own file's counter lower, or its predecessor's start id back in its own file, forgets every sibling's declarations; a process that started on 10 minutes and applied 20 stands down after 20 minutes (Adam, 2026-10-21 and 2026-10-24)
 - [ ] 4.28 Loading the configuration refuses a poll interval above the maximum of 30 minutes,
       naming the value and the maximum, and so does `igor serve --poll` given a value above it;
       a process refusing to start for either exits with status 78.
       The maximum is a constant in Igor, not a setting. Test: a role setting 45 minutes is
       refused with both values named
 
+- [ ] 4.29 Measure that the lock each `igor run` holds on `<role>-0-<run id>.lock` is released
+      when its process dies, however it dies, and that another run, of another user too, can then
+      take it; Node has no built-in `flock`, so name the library or call used. If a lock can be taken while its process still runs, a live run's trees could be deleted, so the sweep must not be built on it
 ## 5. State
 
 - [ ] 5.1 Every state file more than one process writes becomes a log replayed on read, or is
@@ -439,8 +433,7 @@
       early holds its mark back, a stand-down among them through this change's `MODIFIED` block on that
       requirement. Build the hold-back for a stand-down as that rule holds it back for an
       exhausted budget. #101 is merged and archived; the block matches its in-force text apart
-      from the stand-down and the rewording of #101's watermark sentence that the proposal's *Still
-      open* lists
+      from the stand-down and the rewording of #101's watermark sentence that design.md's *Open Questions* lists
 - [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark,
       except an item #173 has set down, until #173's *What lifts a set-down* lifts it (decision
       64)

@@ -167,9 +167,7 @@ than the look-back a source with no watermark gets.
 A cycle SHALL append its mark only after it has attempted every candidate it will attempt, and a
 cycle whose process crashes first appends none. A cycle that stops early, a cycle whose process stood down
 included, holds its mark back as *Watermarks reduce reconsideration without governing it*
-(`condition-backoff`, #101) says, a stand-down among the reasons it lists. A rank that passes
-over a request, a mention of the Igor, because another rank is first in its order SHALL hold its
-mark back before that request until the request has an answer: a reply to it from the role's bot
+(`condition-backoff`, #101) says, a stand-down among the reasons this change's `MODIFIED` block of that requirement adds. A request here is a mention of the Igor; chat messages have their own rule, the Discord read marker's. The order of ranks the mark depends on starts from the rank the mention's comment id hashes to, as *Contention is resolved before a claim, not after it* computes an item's. A rank that passes over a request, a mention of the Igor, because another available rank is first in its order SHALL keep its mark, the update time its next search starts from, from passing that request, so the request and every item updated after it are read again at the next cycle, until the request has an answer: a reply to it from the role's bot
 account, or, for a request whose answer acts, the claim that answer takes, which counts as the
 answer once it is made, before the action is done. If the rank first in the request's order is
 counted gone or unavailable before it answers, the next rank in that order finds itself first at
