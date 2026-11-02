@@ -49,14 +49,36 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
     'gi',
   )
   // Every mention of the name is tried, so one in passing earlier in the comment does not hide a
-  // later "@name stop". A mention on a quoted line (`> `) is somebody else's words, not this one.
+  // later "@name stop". A mention after a line's opening `>` quotes somebody else's words, so it
+  // is skipped rather than read as a request.
+  // Each line's `>` is looked for once, at the first mention on that line, and reused for the
+  // other mentions on it. Searching back to the line's start from every mention instead rescans
+  // a long line once per mention, which makes a comment of thousands of mentions on one line
+  // take seconds.
+  let nextBreak = text.indexOf('\n')
+  let quoteMark = quoteMarkAt(text, 0)
   for (const found of text.matchAll(mention)) {
-    const lineStart = text.lastIndexOf('\n', found.index) + 1
-    if (/^\s*>/.test(text.slice(lineStart, found.index))) continue
+    if (nextBreak !== -1 && nextBreak <= found.index) {
+      const lineStart = text.lastIndexOf('\n', found.index) + 1
+      nextBreak = text.indexOf('\n', lineStart)
+      quoteMark = quoteMarkAt(text, lineStart)
+    }
+    if (quoteMark !== -1 && quoteMark < found.index) continue
     if (verb.test(text.slice(found.index + found[0].length).trim())) return true
   }
   return false
 }
+
+/**
+ * Where the `>` quoting the line at `lineStart` sits, or -1 if the line is not quoted. Only
+ * whitespace other than a line break may come before the `>`. `QUOTE_MARK` must stay sticky, so
+ * it matches at `lineStart` and nowhere later.
+ */
+function quoteMarkAt(text: string, lineStart: number): number {
+  QUOTE_MARK.lastIndex = lineStart
+  return QUOTE_MARK.test(text) ? QUOTE_MARK.lastIndex - 1 : -1
+}
+const QUOTE_MARK = /[^\S\n]*>/y
 
 /**
  * Which mentioned names count as Igors, as the tracker resolved them, keyed by the name as

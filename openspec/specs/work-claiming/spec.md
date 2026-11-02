@@ -1,7 +1,14 @@
 # work-claiming Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Keep an Igor from working an item someone else holds, and let any person take an item back from
+an Igor at once. An Igor claims on the tracker before it starts, by setting the holder field
+people read, and stands down if, after a settle interval, the tracker shows another holder has
+won the item. This spec also covers stop, which anyone can issue and which releases the claim
+immediately; what makes an item eligible again after a stop; releasing the claim, with a comment
+on the item, when a run fails or finishes (what a handoff says is `graceful-handoff`); and a
+person directing an item to an Igor by naming it in the holder field. On GitHub the holder field
+is the `igor:<role>` label.
 ## Requirements
 ### Requirement: An Igor claims before it starts
 
