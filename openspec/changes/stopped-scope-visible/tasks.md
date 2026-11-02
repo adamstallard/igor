@@ -1,10 +1,10 @@
 ## 0. Sequencing
 
-- [ ] 0.1 `condition-backoff` implemented far enough that conditions are rebuilt from the
-      execution log, keyed by cure key, with scope, count and next-probe time — every task below
-      reads them
-- [ ] 0.2 Archive after `condition-backoff` archives, so `stuck-conditions` has a base spec rather
-      than two open changes writing the whole of one capability
+- [x] 0.1 `condition-backoff` is implemented: it rebuilds conditions from the execution log, keyed
+      by cure key, with scope, count and next-probe time. The tasks below that report a condition
+      read those fields.
+- [x] 0.2 `condition-backoff` has archived, so this change's `stuck-conditions` delta adds to an
+      in-force spec
 - [ ] 0.3 Archive before #208 (`lore-pull`), as issue #204 orders. #208's `stuck-conditions`
       delta removes the requirement's lore clause when #208 archives. If this change is still
       open when #208 is built, #208's task 6.1 also rewrites this task, decision 6 and the

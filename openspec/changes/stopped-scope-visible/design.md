@@ -200,21 +200,22 @@ Two consequences for the stopped line:
 
 `condition-backoff` put this outside its own scope in writing: *"Reporting an open condition
 anywhere but the cycle record. Which surface a stuck fleet should be visible on is a question
-about operators, not about the loop."* That was a scope decision, not an oversight, and extending
-that change's delta would quietly reverse it while the change is part-implemented — and hold its
-archive behind a second body of work with a different reader, different code (`src/serve.ts`,
-`src/cli.ts`, `src/budget.ts`, `docs/deployment.md`) and a different way of being wrong.
+about operators, not about the loop."* That was a scope decision, not an oversight. Extending `condition-backoff` would have reversed that
+decision, and would have held `condition-backoff`'s archive behind a second body of work with a
+different reader, the operator watching a fleet, and different code (`src/serve.ts`, `src/cli.ts`,
+`src/budget.ts`, `docs/deployment.md`).
 
-The dependency runs one way and is total: every requirement here reads the conditions
-`condition-backoff` rebuilds from the execution log, and none of them alters a requirement it states. Both deltas here only add
-requirements, the one on `stuck-conditions` included — a capability that has no base spec in
-`openspec/specs/` until `condition-backoff` archives. That is also the sequencing constraint:
-`condition-backoff` archives first, or this change's requirements land as the whole of a
-capability whose other half is still an open change. Archived before `condition-backoff`, in a
-throwaway copy of `openspec/`, this change lands its requirements as the whole capability
-without complaining: it creates
-`openspec/specs/stuck-conditions/spec.md` holding this change's requirements alone, over a Purpose
-line naming this change as what created the capability.
+The requirements here that report a condition read the conditions `condition-backoff` (#101)
+rebuilds from the execution log. As written, this change modifies no requirement: its `seat-budget`
+delta adds requirements to an in-force capability, and its `stuck-conditions` delta adds them to
+the capability #101 put in force when it archived. One of #101's scenarios, *A stopped seat reads
+as stopped on its credential*, contradicts this change: it calls a seat stopped where a refused
+credential is the seat's only condition, and this change shows such a seat on the
+refused-credential line instead. #171, which archives before this change, replaces the requirement
+holding that scenario with its own copy, so changing the scenario means modifying #171's copy. The
+proposal's *Still open* leaves the choice to whoever next revises this change: modify #171's copy
+here, which would make this change modify a requirement, or ask #171 to change its copy, which it
+recommends.
 
 ## Where a role-scoped stop goes, and why not in a budget report
 

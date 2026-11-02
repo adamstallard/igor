@@ -2,24 +2,23 @@
 
 ### Requirement: An open condition never ends a running service
 
-`igor serve` SHALL NOT exit because of a condition, whatever its scope: the Igor's own
-credential, the role it serves, or every seat that role could spend from. While conditions are
-open it SHALL go on polling, SHALL take no new item in a stopped scope, as `condition-backoff`
-requires, and SHALL state in each cycle's report which scopes are stopped, on which cure keys,
-and what would cure each. Each condition SHALL clear while the process runs, in every way the
-requirement defining its kind says it clears: `condition-backoff`'s probe; for a refused GitHub
-App credential, a token minted again, as `surface-adapter` says; and, for a read-cleared
-condition, a later read that passes, as #171's *A read-cleared condition opens on a failing read
-and clears on a passing one* says.
+`igor serve` SHALL NOT exit because of a condition, whatever its scope. While conditions are open
+it SHALL go on polling, take no new item in a stopped scope, and state in each cycle's report (the
+summary of the cycle that `igor serve` prints) which scopes are stopped, on which
+`condition-backoff` cure keys, and what would cure each. Each condition SHALL clear while the
+process runs, in every way the requirement defining that kind of condition says it clears, such as
+by `condition-backoff`'s probe, by a token minted again for a refused GitHub App credential, or by
+a later passing read for a read-cleared condition, the kind #171's *A read-cleared condition opens
+on a failing read and clears on a passing one* adds to `stuck-conditions`.
 
-A fix the process does not reread SHALL take effect when the process next starts. That covers
-every fix in the environment its supervisor gives it: the unit's environment file, or the
-compose file's `environment:`. A fix in the lore repository SHALL take effect once a person has
-updated the server's lore checkout to hold it: at the next cycle for a file the process rereads
-at each cycle, such as `igor.config.yaml` under #179, and at the next start for a file it reads
-only at start. The lore sentence holds until #208 (`lore-pull`) replaces it. Refusing to start
-on a bad setup is not affected by this requirement, as *A process that refuses to start exits
-with status 78* specifies.
+A fix the process does not reread SHALL take effect at the process's next start, including every
+fix in the environment its supervisor gives it: the unit's environment file, or the compose file's
+`environment:`. A fix in the lore repository SHALL take effect once a person has updated the
+server's lore checkout to hold it: at the next cycle for a file the process rereads at each cycle,
+such as `igor.config.yaml` under `work-claiming`'s *A process reads the roster and its
+configuration at each cycle start*, and at the next start for a file it reads only at start.
+Refusing to start on a bad setup falls under *A process that refuses to start exits with status
+78*, not this requirement.
 
 #### Scenario: A condition on the Igor's own credential leaves the service running
 

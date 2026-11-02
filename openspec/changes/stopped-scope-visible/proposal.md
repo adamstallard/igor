@@ -144,10 +144,16 @@ which he approved on 2026-10-19.
   `system/init` event arrives, the model run's first event, which lists the skills that loaded, whenever its check runs. Decision 13 makes a provider that did
   not answer exit 1, not 78. *Recommendation:* #174 refuses only where the model answered and
   the skills did not load.
-- **#101's wording of a refused credential, for #101.** #101's scenario *A stopped seat reads as
-  stopped on its credential* calls the refused-credential line a stopped seat, while this change
-  shows such a seat on that line and not as stopped. *Recommendation:* #101 renames its
-  scenario; nothing here changes.
+- **A #101 scenario contradicts this change, for whoever next revises this change.** The in-force
+  `stuck-conditions` scenario *A stopped seat reads as stopped on its credential*, which #101
+  (`condition-backoff`) added, calls a seat stopped where a refused credential is its only
+  condition. Under this change's own *A seat a condition has stopped reads as stopped*, such a seat shows on the
+  refused-credential line instead, not as stopped. #101 has archived. #171, which archives
+  before this change, replaces that requirement with its own `MODIFIED` copy, which keeps the
+  scenario, so the scenario changes only through a later `MODIFIED` block of the requirement as
+  #171 leaves it. Whoever next revises this change either adds a later `MODIFIED` block here, which would make this change modify a requirement as well as add requirements, or asks #171 to change the
+  scenario in its copy, and chooses between the two. *Recommended:* ask #171, whose copy is the
+  requirement's text in force by the time this change archives.
 - **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
   author's to fix, and none is built:
   - A seat lent by pull request (#171) whose token the operator running `igor budget` cannot
@@ -181,6 +187,44 @@ which he approved on 2026-10-19.
     `/var/lib/igor/trees`, not `/tmp`, so `design.md`'s reason for keeping the count off a volume
     names a mount that will be gone.
   - Issue #80's body still shows `on-failure:3` as this change's open recommendation.
+- **Findings of the 2026-11-02 consistency read left for the next pass.** Each is for whoever
+  next revises this change unless it names someone else, and none is fixed yet:
+  - #216 (`lore-search`) archives after this change, and its `surface-adapter` delta keeps the
+    in-force line that calls GitHub refusing the App's credentials a refused start. This change
+    exits 1 where GitHub refuses the App's credential at start, and has no `surface-adapter`
+    delta, as the 2026-10-19 item above says; this item adds that #216 would keep the conflict, which this change cannot fix: #216's copy
+    of that `surface-adapter` requirement archives later and would replace any such delta. Whoever next revises this change reports it to #216.
+  - *Every open condition is readable without naming a role* gives each condition's line in
+    the listing a probe time where a probe clears the condition, and otherwise says what clears
+    it, which the requirement provides for a read-cleared condition and a refused App credential. #175's condition with cure key `instance:<role>-<rank>:sudoers` and #179's condition for a second process on a rank, each
+    defined in its change's `stuck-conditions` delta, fit neither: each clears when the start check that opened it
+    passes at a later start, which is neither a probe nor a read, and the sudoers condition keeps a count, which
+    the listing shows only beside a probe time. Decision 1 and task 1.1 also leave out #175's
+    scope `instance:<role>-<rank>`, a fourth beside the App credential, a role and a seat.
+  - #171's read-cleared condition `seat:<id>:file`, for a malformed seat file, stops nothing by
+    itself, as #171 says: the malformed file takes the seat out of the configuration instead.
+    *A seat a condition has stopped reads as stopped* exempts from being shown as stopped,
+    besides a seat whose one condition is a refused credential, only a seat whose one condition
+    is `seat:<id>:decrypt`. So a seat whose one condition is `seat:<id>:file`, which #171 still
+    has `igor budget` show, would be shown as stopped.
+  - *Every open condition is readable without naming a role* says a read-cleared condition
+    keeps no count. #171 lets each rule that opens
+    such a condition set how many failing reads in a row open it, and #208's `lore:read` opens
+    after three, so that condition does count.
+  - *A process that refuses to start exits with status 78* sets no first wait and no longest
+    wait, though decisions 14 and 15 and tasks 1.3 and 1.4 rely on 30 seconds and 30 minutes.
+    It also says the compose file marks the process as running under compose, but does not name
+    the mark, the environment
+    variable `IGOR_REFUSAL_WAIT=1` that turns the wait on.
+  - `deploy/docker-compose.yml` on `main` has no `environment:` key: the service reads `.env`
+    through `env_file:`. Task 1.7 (the compose file's task), `design.md` and *An open condition never ends a running
+    service* name `environment:` where a compose operator edits `.env`.
+  - The listing's rule that a condition several Igors met appears once repeats the in-force
+    `stuck-conditions` rule that one cure met by several Igors is one condition. One of the two
+    should point at the other, so that they cannot drift apart.
+  - Issue #204 records Adam's permission for #175 and #174 to cite this change's requirements before
+    this change archives, but not for #179, which decision 18 says he gave. For Adam: add #179
+    to #204's body.
 
 ## Why
 
@@ -239,9 +283,12 @@ nobody had read either.
 
 ### Modified Capabilities
 
-Both deltas add requirements. `stuck-conditions` has no base spec until `condition-backoff`
-archives, which is why this change archives after it. This change modifies none of that
-change's requirements; one of #101's scenario names contradicts this change, as *Still open* says.
+This change's two deltas, listed below, only add requirements, to capabilities already in force.
+`stuck-conditions` is in force from `condition-backoff` (#101), which archived first. This change
+modifies none of #101's requirements. One of #101's scenarios, in `stuck-conditions`, contradicts
+this change; *Still open* leaves it to whoever next revises this change whether to modify #171's
+copy of that scenario's requirement here or to ask #171 to change it, and recommends asking #171,
+since #171 replaces that requirement with its own copy before this change archives.
 
 - `stuck-conditions`: `igor serve` keeps running whatever conditions are open, a process that
   refuses to start exits with status 78, and every open condition is readable without naming a
