@@ -71,6 +71,8 @@ Their values are the starting point for task 6.2: a threshold of 3, because one 
 blip, two can be coincidence, and three items is a tolerable cost against holding a working seat
 out; and a cooldown of 15 minutes doubling to 6 hours, because a revoked credential can stay revoked
 for days, where a fixed hour spends twenty-four items a day and doubling spends about six in total.
+The ceiling bounds the wait once a condition's cause has been repaired, say overnight: the next
+probe comes within six hours, not later than an operator would wait before retrying by hand.
 
 **Decided (Adam, 2026-10-11): no stored record.** #65 derived its count from
 `executions.ndjson` and rejected a separate store, because a summary beside a log can disagree

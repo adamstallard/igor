@@ -60,17 +60,6 @@ A condition SHALL be acted on by how often it has recurred and MUST NOT be grade
 No configuration may declare a condition fatal, degraded, or otherwise ranked, and validation
 SHALL reject one that tries.
 
-Grading is a judgement nothing here is in a position to make. Whether an unverified pull request
-is worse than no pull request depends on the repository, the reviewer and the week; the same
-refused `npm ci` is a nuisance on a documentation change and a wasted review on a
-behaviour-changing one. An Igor cannot know which, a person writing a config knob is guessing at
-it in advance, and a wrong grade is worse than none — fatal where it should not be stops a fleet
-that was working, and degraded where it should not be is the unbounded repetition this exists to
-end.
-
-Count is the one thing an Igor can know for certain about its own condition, and it does not
-require anybody to have predicted the consequence correctly.
-
 #### Scenario: Two conditions with different consequences back off the same way
 
 - **WHEN** one condition yields unverified pull requests and another yields nothing at all
@@ -314,15 +303,6 @@ and had not, and the seat would go straight back to failing items.
 The recurrence threshold and the cooldown SHALL be configurable, and their defaults SHALL be
 marked provisional until run history exists to fit them against. The cooldown SHALL grow with each
 recurrence, up to a stated ceiling.
-
-The cooldown grows because a condition can last for days: a fixed wait spends a probe item every
-cooldown for as long as it lasts, while a doubling one spends a few in total. The ceiling keeps a
-condition that was fixed overnight from waiting longer than an operator would.
-
-Nothing here has been measured. Only two items Igor has worked have a recorded cost, $1.19 and
-$11.18, 10× apart, so what a wasted repetition costs is not known to within an order of magnitude, and a
-threshold is a statement about exactly that. A number chosen now would carry a number's
-authority over a guess.
 
 #### Scenario: Defaults are marked as unfitted
 

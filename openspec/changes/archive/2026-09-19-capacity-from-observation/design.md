@@ -1,5 +1,14 @@
 # Design notes
 
+## Whether a seat is spent is read from the observation rows
+
+An observation records how full one of a seat's windows was and when that window resets. Whether
+the seat is spent right now is a scan of those rows for one at 100% whose reset has not passed.
+Its capacity is a division over the same rows: the spend recorded in an observation's window
+instance up to the reading, divided by the fraction of the window the reading says was used.
+No separate store records whether a seat is spent, because it would be one more record to keep
+in agreement with the rows.
+
 ## The numerator stops at the reading, not at the reset
 
 The requirement says the numerator is "the spend recorded for that seat within the instance the
