@@ -1,0 +1,148 @@
+## ADDED Requirements
+
+### Requirement: Every model step's tool calls are recorded beside the transcript
+
+Every run that started the worker SHALL write an action log to the state branch at
+`transcripts/<tracker>/<repo>/<native>.<at>.actions.json`, whatever the run's outcome, a killed
+worker included. Two runs write none: a run whose steps made no tool call (below), and a run
+whose log the requirement *A public store holds no action log of a private repository*
+withholds. The row of a run that writes no log SHALL name none. `<tracker>`, `<repo>` and `<native>` are those of the item's transcript path.
+`<at>` is the millisecond time on the run's `executions.ndjson` row (its ledger row), with every
+run of characters outside `[A-Za-z0-9_-]` replaced by `-`. Where a log already exists at that
+path, `-2`, `-3` and so on SHALL be added to `<at>` until the path is free, so no run's log
+overwrites another's. The run's row SHALL name that path.
+
+The log covers every model step Igor runs in that run: the worker (its subagents included), and
+the two steps `signed-publishing` (#153) adds after it for a role whose `skills` list names
+them, the bug-hunter step where it lists `bug-hunter` and the prose pass where it lists `prose`.
+Each entry SHALL name the step that made it, `worker`, `bug-hunter` or `prose`, and every rule
+below applies to each step's calls alike. A run whose steps made no tool call at all SHALL write
+no log, and its row SHALL name none.
+
+The log SHALL list the tool calls in the order they were made, the subagents' calls included and
+marked with the call that started them. Each entry SHALL hold:
+
+- the step that made it;
+- the tool's name;
+- its input: the command for a shell call (`Bash`), the path for a file tool (`Read`, `Write`,
+  `Edit`, `NotebookEdit`), the pattern for a search (`Grep`, `Glob`), and for any other tool its
+  input as given;
+- whether the result was an error, and for a shell call its exit code, read as *A shell call's exit
+  code is read from its result's text* says;
+- for a shell call or an error result, the last 2,000 characters of the output as the stream
+  gives it: standard output and standard error together, and the `Exit code <n>` prefix kept.
+
+The log SHALL NOT hold what a file tool read or wrote, nor the text of an edit. A shell call's
+output is kept as output, whatever the command printed.
+
+A failure to write the log SHALL be reported and SHALL NOT stop the run's later writes to the
+state branch.
+
+#### Scenario: A failed run keeps its log
+
+- **WHEN** a worker runs `npm test`, it fails, and the run ends with no artifact
+- **THEN** the action log holds the call, its error, and the end of its output
+- **AND** the run's ledger row names the log
+
+#### Scenario: A later run of the same item keeps the earlier log
+
+- **WHEN** two runs of the same item each start the worker, such as the specification run and
+  the later implementation run of the two-gate workflow (#150)
+- **THEN** the state branch holds two action logs, one per run
+- **AND** each run's ledger row names its own log
+
+#### Scenario: The bug-hunter step's calls are logged and labelled
+
+- **WHEN** a role's `skills` list names `bug-hunter`, and #153's bug-hunter step runs `npm test`
+  after the worker finishes
+- **THEN** the action log holds that call, labelled `bug-hunter`, after the worker's calls
+
+#### Scenario: Edited contents are not logged
+
+- **WHEN** the worker reads a file and then edits it
+- **THEN** the log holds both calls with the file's path
+- **AND** neither the file's contents nor the edit's text
+
+#### Scenario: A failed log write does not stop the later writes
+
+- **WHEN** writing the action log fails
+- **THEN** the failure is reported
+- **AND** the run's capacity observation is still written
+
+### Requirement: A shell call's exit code is read from its result's text
+
+A shell call's exit code SHALL be recorded as one of three:
+
+- `0`, where the result is not an error;
+- the number `<n>`, where the result is an error and its text begins `Exit code <n>`;
+- no code, where the result is an error and its text does not begin that way. The entry then
+  holds its error status and output, and no code.
+
+A call that never returned a result, as when the worker is killed during it, SHALL be recorded
+with no result: no error status, no code and no output.
+
+The code is parsed from a text prefix, not read from a field. A change to that text's format
+SHALL leave an error result with its error status and no code, never with a wrong code.
+
+#### Scenario: A failing command's code is parsed from its text
+
+- **WHEN** a shell call's result is an error whose text begins `Exit code 128`
+- **THEN** the entry records exit code 128
+
+#### Scenario: A successful command records 0
+
+- **WHEN** a shell call's result is not an error
+- **THEN** the entry records exit code 0
+
+#### Scenario: An error in an unknown format records no code
+
+- **WHEN** a shell call's result is an error whose text does not begin `Exit code`
+- **THEN** the entry records the error and no exit code
+
+### Requirement: The action log is redacted as each call is collected
+
+The action log SHALL apply credential redaction to each string as the call is collected,
+before any later step, such as `review-evidence` (#190), reads it, so that no copy of a call,
+in memory or in the log, holds a credential. The rule is the requirement *Credential redaction
+replaces every credential the Igor knows* in the change `redact-state-branch` (#217), which
+says what the rule matches. This requirement adds nothing to it.
+
+#### Scenario: The seat token is redacted
+
+- **WHEN** the worker runs `env`, whose output the log keeps
+- **THEN** the calls the run collects in memory, which `review-evidence` (#190) reads, hold
+  `[redacted]` where the seat token was
+- **AND** so does the log written to the state branch
+
+### Requirement: A public store holds no action log of a private repository
+
+The action log SHALL keep every entry as *Every model step's tool calls are recorded beside the
+transcript* describes, whatever the store's visibility. Whether a run's log is written to the
+state branch at all SHALL follow `visibility-guard`'s *Nothing from a private repository is
+written to a public state branch*. That requirement counts the log of a run's tool calls as
+content, and where it finds the worked repository private and the store public just before
+the write, it writes the run's ledger row with its structured fields only, such as cost and
+outcome, and no text of the run. Such a run writes no action log to the state branch.
+
+#### Scenario: A public repository's log in a public store is kept whole
+
+- **WHEN** a worker on a public repository runs commands, and the store is public
+- **THEN** the log keeps each call's command and output, redacted and capped
+
+#### Scenario: A store made public during a run gets no log
+
+- **WHEN** a run on a private repository is under way, and the store is made public before the
+  run's records are written
+- **THEN** no action log of the run is written to the state branch
+
+### Requirement: The action log is bounded
+
+An entry's input SHALL be cut to 1,000 characters. The written log SHALL be at most 512 KiB.
+Where it would be larger, output SHALL be dropped from the earliest entries first, then the
+earliest entries themselves, and the log SHALL state how many entries were dropped.
+
+#### Scenario: A long run keeps its end
+
+- **WHEN** a run's log would exceed 512 KiB
+- **THEN** the latest calls are kept whole
+- **AND** the log states how many of the earliest were dropped
