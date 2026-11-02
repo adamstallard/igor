@@ -378,6 +378,29 @@ whole change before any hunt. The *state branch* is where Igor records each item
     given that #174 resets the step's `~/.claude` before each step and not between its first
     turn and its resumed call (decision 48).
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
+- **Signed text is redacted before it is signed.** #217 (`redact-state-branch`) reports this
+  from its decision 15, which the agents coordinating this work settled on 2026-11-01 under the
+  rule Adam set for which questions they may settle without him. #217 redacts every text the
+  Igor posts to a tracker or a code host, commit messages included, and exempts no signed text:
+  an exemption would let a secret through in exactly the texts the Igor signs. Redacting a
+  text after prose signed it would change it, and the posted text would then fail to verify
+  against its footer or `Prose:` trailer. So this change is to add its own step, which passes
+  each text it signs through #217's `redact` before prose signs it. The step covers every
+  surface this change signs for, Discord included, though #217 itself redacts no Discord post.
+  No requirement, scenario or task here says so yet, and a consistency read of 2026-11-01 found
+  three things the step must settle:
+  - Where it sits. If prose's second call accepts a text that changed after the call printed
+    its cold-read brief, the step can sit between prose's two calls; if not, it must come
+    before the brief.
+  - Which title the commit subject is compared with. An issue title can hold a value in #217's
+    registry of secrets, or a token's shape. If the redacted subject is compared with the
+    unredacted title, the subject check fails on both of the item's attempts, and the item
+    fails with nothing published.
+  - What happens when #217's posting functions redact the signed text again. They change
+    nothing, unless #217's registry gained, between signing and posting, a value the text
+    quotes, such as the token of a seat (a model subscription) the Igor read for the first
+    time in between. The post would then differ from what was signed and fail to verify.
+    Nobody has measured how often that happens.
 - **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
   author's to fix unless it names another change, and none is built:
   - For a role listing only `bug-hunter`, no staging step is defined before the minting call
@@ -446,9 +469,6 @@ whole change before any hunt. The *state branch* is where Igor records each item
 
 - **New from a second consistency read on 2026-10-21,** for whoever next edits this change. The
   read found no fault in decision 49; none of these is fixed here:
-  - #217 redacts every posted text and commit message after this change verifies and signs it,
-    which breaks the signature of a text that holds a secret, and this change does not mention
-    #217.
   - #137 archives first, so links and submodules are staged and published, and the "until #137
     is built" branches here describe a state that cannot exist at merge.
   - A `resolve` merge commit is written by a model step, against decision 30's reason for
@@ -464,6 +484,14 @@ whole change before any hunt. The *state branch* is where Igor records each item
   - The rule for when #189's second worker run makes its second commit is stated here and in
     #189.
   - The items reported to #174 and #175 below are out of date.
+  - From the 2026-11-01 consistency read: this change's MODIFIED text of `role-config`'s *A
+    role declares its sources, lane, behaviour, permissions, and reviewers*, carried since
+    decision 49, says `commands` "is the only thing that lets one run anything at all". It
+    drops #216's qualifier "but for one command below", so it contradicts the `igor
+    lore-search` exception two sentences later. The same text restates #216's rule that the
+    Igor's process, not the worker, runs the search that `igor lore-search` asks for, and
+    leaves out the `questions` branch that #216's rule searches; #216's own copy of the
+    requirement cites #216's *An Igor runs its worker's lore searches* instead of restating it.
   - Nothing requires prose's reads of the tree to follow no link.
   - The closing-keyword definition does not say whether case is ignored, or cover `Fixes:`,
     `owner/repo#9` or an issue URL.
