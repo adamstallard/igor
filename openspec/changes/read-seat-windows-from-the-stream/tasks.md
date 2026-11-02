@@ -151,10 +151,10 @@
       ```
 
 - [ ] 5.4 The shipped line saying a seat `is authenticated … but its credential carries no
-      subscription, and a window is only ever reported against one` (`src/budget.ts:289-291`) is
-      false for a seat with stream readings. Where such a seat has an unexpired stream
-      row, omit the line; where it has none, keep the line but reword it to what is true. **May be
-      reworded:**
+      subscription, and a window is only ever reported against one`, at `src/budget.ts:386-388`,
+      is false for a seat with stream readings. Where such a seat has an unexpired stream row,
+      omit the line; where all its stream rows have expired, keep the line but reword it to what
+      is true. **May be reworded:**
 
       ```
       !  seat "adam" has no reading yet: /usage reports no window to its token, and no worker run or probe has reported one

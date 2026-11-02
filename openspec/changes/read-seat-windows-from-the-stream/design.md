@@ -768,6 +768,58 @@ whose line uses a non-zero reserve goes idle once its last reading resets, and s
 readings return. Nobody's reserve is spent on a guess. A seat at `r` = 0 keeps running, stopped by
 refusal, as today. *A missing reading closes a reserved seat and changes nothing else* says so.
 
+## Reasoning the requirements do not carry
+
+The requirements state rules. Where a rule's reason is written nowhere else, it is here.
+
+- **Commands are declared on the role.** A worker that can edit files can edit a settings file in
+  the repository it works on, so an allowlist read from there is one the worker can widen itself.
+- **`allow` is a closed set** so that a typo fails validation instead of granting nothing. An org
+  base is best shipped with `[draft-pr, comment]`: everything reversible, nothing final.
+- **A role's reserve rises by inheritance**, while its `budget_share` falls: each moves the way
+  that holds a role back.
+- **Extra usage shuts only the window it names.** A seat spending extra usage is spending its
+  owner's money beyond the subscription, which no reserve anyone declared allows for, so the window
+  doing it shuts. A session past its cap says nothing about the week, and shutting the week for it
+  would hold the seat out for days.
+- **A refusal is recorded once.** The stream names the window and a machine-readable reset; the
+  envelope path infers the window from how far off the reset is. Two rows would be two
+  measurements of one fact.
+- **Readings arrive with the work.** A busy seat is read many times an hour, an idle one about once
+  a session window. Neither is a fault, and a system expecting a regular cadence would report the
+  idle one as faulty. Staleness is read where a figure is used, so nothing keeps a schedule for it.
+- **A built-in window length is not a knob.** A knob is set once from a guess and never revisited;
+  a built-in that measurement overwrites is a starting point with an expiry. A post-reset probe
+  reads the instance right after the reset it follows, so its length supersedes in either
+  direction. A difference between two resets seen in ordinary readings spans at least one length
+  and may span several unread ones, so it is trusted only when shorter than the length in use.
+- **Four kinds of idle are told apart.** A refused seat wants its reset, an unread seat wants a
+  reading, an empty queue points at a lane that matches no work, and a seat holding back needs nothing.
+- **A line's crossing is stated, not the reset.** The line rises as the window runs out, so the
+  window reopens before its reset, and stating the reset would be late by up to a whole window.
+  The crossing is approximate because the reading is a lower bound: the seat can be back later,
+  never earlier.
+- **A reserve's promise.** At any moment Igor leaves `r` × the part of the window still to come,
+  assuming the owner's use is spread across it. An owner who finds Igor takes too much, or who uses
+  the seat late in the window, raises the reserve; there is no other setting. The rule compares a
+  reading of the whole seat, so it needs no figure for the owner's use and none in dollars.
+- **One observation record.** A limit error is a reading at 100% with a reset; a stream reading is
+  the same windows by another route. The source value `stream` records the route, because
+  reporting says where a figure came from. A per-model weekly cap is separate from the all-models one, so a refusal of it
+  recorded as plain `week` would claim the whole window was full.
+- **Capacity from many readings.** Across an interval the owner sat out, the rise in fullness set
+  against Igor's spend gives capacity outright. Which observations to combine waits until many are
+  collected.
+- **Reporting shows a reading's age.** A reading an hour old and one a day old both bound the
+  window from below, but an operator who cannot tell them apart cannot tell a current seat from a
+  stale one.
+- **One definition of a spendable seat.** Another change that needs to know whether a role could
+  spend now cites *A role has a seat it can spend when the gate would choose one now* rather than
+  restate the gate.
+- **`budget_share` is a ceiling, not a reservation.** A reservation idles capacity a quiet role is
+  not using, and adding a role would mean editing every other. A ceiling composes, inherits
+  monotonically, and needs no coordination when the fleet changes.
+
 ## In-force text this overtakes, and the deltas that correct it
 
 `openspec validate` does not cross-check deltas against the prose of requirements they do not

@@ -3,15 +3,10 @@
 ### Requirement: A role's reserve is raised by inheritance and never lowered
 
 A role file MAY declare `reserve`, as seat-budget's *A role may hold back more of a seat than the
-seat does* defines it. A role's reserve SHALL be
-raised by inheritance and never lowered. A role MAY declare a larger reserve than the one it
-inherits from its parent or from `roles/org.yaml`, and SHALL NOT declare a smaller one:
-configuration declaring a child reserve below its parent's SHALL be refused, naming both values and
-the role each came from. A role declaring none SHALL take its parent's.
-
-This runs the opposite way to `budget_share`, which a child may only lower. Each moves in the
-direction that holds a role back: a lower share, a higher reserve. A role's reserve merges as a monotonic field of *Merge semantics differ by field kind*. How it combines with a
-seat's reserve is seat-budget's *A role may hold back more of a seat than the seat does*.
+seat does* defines it. A role MAY declare a larger reserve than it inherits from its parent or
+from `roles/org.yaml`, and SHALL NOT declare a smaller one: such configuration SHALL be refused,
+naming both values and the role each came from. A role declaring none SHALL take its parent's.
+Its reserve merges as a monotonic field of *Merge semantics differ by field kind*.
 
 #### Scenario: A child role may raise its inherited reserve
 
@@ -36,12 +31,8 @@ seat's reserve is seat-budget's *A role may hold back more of a seat than the se
 A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`,
 `commands`, `budget_share`, `reserve`, and `reviewers`. Each `sources` entry MUST name a
 `tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
-rejected rather than loaded.
-
-`commands` names the shell commands a worker may run, and is the only thing that lets one
-run anything at all. It is declared on the role and nowhere else: a worker that can edit
-files can edit a settings file in the repository it is working, so an allowlist read from
-there is one the worker can widen for itself.
+rejected rather than loaded. `commands` names the shell commands a worker may run, is the only
+thing that lets one run anything at all, and is declared on the role and nowhere else.
 
 #### Scenario: Well-formed role accepted
 
@@ -61,19 +52,14 @@ there is one the worker can widen for itself.
 
 ### Requirement: Merge semantics differ by field kind
 
-Inheritance SHALL apply three merge semantics, selected per field:
+Inheritance SHALL merge each field by kind:
 
-- **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`, `reserve`,
-  repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
-  widen it. For `reserve` the restriction is a higher value.
-- **Override** for settings (`seat`, poll interval, settle interval, cooldown): the most specific
-  level wins.
-- **Append** for `instructions` and `lane`: levels accumulate, with lane constraints conjoined.
+- **Monotonic** for permissions and limits (`allow`, `commands`, `budget_share`, `reserve`, repositories
+  and surfaces in reach): a role MAY narrow any, `reserve` by raising it, and MUST NOT widen them.
+- **Override** for settings (`seat`, poll, settle and cooldown intervals): the most specific wins.
+- **Append** for `instructions` and `lane`: levels accumulate, lanes conjoined.
 
-The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
-granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
-that lists any other word is refused at load, naming the valid actions. The safe default an org
-base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
+An `allow` action outside its closed set SHALL be refused at load.
 
 #### Scenario: Role narrows a permission
 
@@ -94,7 +80,8 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 #### Scenario: An action outside the vocabulary is refused
 
 - **WHEN** a role's `allow` lists `unassign`
-- **THEN** the role is refused at load, naming the valid actions
+- **THEN** the role is refused at load, naming the valid actions: `comment`, `review-comment`,
+  `draft-pr`, `pr`, `label`, `merge` and `send`, the closed set `allow` takes
 
 #### Scenario: Setting overridden
 

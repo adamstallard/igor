@@ -298,6 +298,33 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     is allowed to test whether its fault recurs; "seat probe" throughout would avoid that.
   - Some SHALLs lack scenarios, one rule sits in both `graceful-handoff` and `seat-budget`, and
     some rationale sits in requirement text.
+  - **From the 2026-11-02 consistency read, new and not yet fixed:**
+    - #101 is archived, so task 15.1's `stuck-conditions` delta is due. Until it is written,
+      this change's seat-budget spec opens the credential condition on a single probe 401 and
+      clears it on a successful probe outside the cooldown item, where the in-force
+      `stuck-conditions` opens a condition only once it recurs and clears it only through that
+      item; `design.md` already says one 401 no longer opens it alone. Seat-budget's rule that a
+      probe's spend row counts toward no condition also belongs in `stuck-conditions`, which
+      rebuilds every condition from its run rows.
+    - This change's rule that a newer, lower reading of an instance governs admits a seat with
+      an unexpired 100% row of the same instance, while the in-force *A seat at 100% is spent until
+      its window resets* and `spentFor` keep it shut.
+    - The crossing probe's exception is not scoped to the crossed window, so a session crossing
+      probes a seat whose week reading is still past its line.
+    - A seat whose last probe got no event, or was refused, stays held at its next crossing for
+      up to five hours, where decision 35 and its scenario say an hour.
+    - A seat held at its crossing meets every listed condition of *A role has a seat it can
+      spend when the gate would choose one now*, yet the gate would not choose it.
+    - When #174's startup check is a seat's first probe, a refused probe directory is fatal
+      under #174 and a recorded, retried probe here; neither says which applies.
+    - #171's `MODIFIED` copy of the probe requirement still holds every probe rule. Its copy
+      must become the seven requirements that rule is now split into, or seat-budget holds each
+      rule twice after #171 archives.
+    - `directed-interaction` (#140) declares a fraction of a cycle budget; under the line no cycle
+      budget exists to take a fraction of.
+    - "The seat's reserve line" is undefined where the line uses the larger of the seat's and
+      the role's reserve, and the crossing formula has no hour for a reading whose reset never
+      resolved.
 
 ## Why
 
