@@ -519,7 +519,7 @@ It SHALL check that `fs.protected_hardlinks` is `1`.
 
 It SHALL also check, as the worker user, what *A worker gets a secret only through the Igor,
 which registers it* requires of the metadata endpoint and of root-equivalent groups and
-sockets:
+sockets, and that the worker user's home holds none of six common credential files:
 
 - that an HTTP request to port 80 of `169.254.169.254` and of `fd00:ec2::254` gets no HTTP
   response within 2 seconds, made directly and, where the worker is given a proxy, through it;
@@ -527,7 +527,10 @@ sockets:
   `sudo -n -l` run as it lists no command;
 - that it cannot write `/run/docker.sock`, `/var/run/docker.sock`, `/run/podman/podman.sock` or
   `/run/containerd/containerd.sock`. A socket that does not exist passes, since a host without
-  it is the safe case, unlike a path the check is given to probe (below).
+  it is the safe case, unlike a path the check is given to probe (below);
+- that none of `~/.npmrc`, `~/.netrc`, `~/.git-credentials`, `~/.docker/config.json`,
+  `~/.aws/credentials` and `~/.config/gh/hosts.yml` exists in the worker user's home, as a file
+  or a link. A missing file passes, for the same reason.
 
 And it SHALL check that the Igor's own process is not dumpable, and that `fs.suid_dumpable`
 reads 0 (*The Igor's memory is never written out by a crash dump*).
@@ -666,6 +669,18 @@ journal on every worker start.
 
 - **WHEN** `/run/docker.sock` exists and the worker user can write it
 - **THEN** the Igor refuses to start, naming the socket
+
+#### Scenario: The worker user's home holds a credential file
+
+- **WHEN** the worker user's home holds `~/.git-credentials`, whether the operator or an earlier
+  worker put it there
+- **THEN** the Igor refuses to start, naming the file
+
+#### Scenario: A link to a credential file in the worker user's home refuses the start
+
+- **WHEN** the worker user's home holds `~/.docker/config.json` as a symbolic link, even one
+  whose target does not exist
+- **THEN** the Igor refuses to start, naming `~/.docker/config.json`
 
 #### Scenario: A host without Docker passes
 
@@ -838,8 +853,10 @@ In both modes, no variable that names an agent's socket, such as `SSH_AUTH_SOCK`
 The start check proves the metadata and the groups, sudo and sockets bullets (*Isolation is
 proved before any work is taken*). The deployment guide SHALL tell the operator to put no
 credential in the worker user's home, such as a registry token in `~/.npmrc`; a credential a
-worker needs is declared in the server's own configuration, and the Igor hands it over. Nothing
-the Igor runs checks the home.
+worker needs is to be declared in the server's own configuration and handed over by the Igor,
+under the rule above. The
+start check refuses six common credential files there (*Isolation is proved before any work is
+taken*); nothing checks the rest of the home.
 
 Under `igor run` the worker runs as the person's own user, so it can use whatever that user
 can: their SSH agent, their Docker, the metadata endpoint, and any credential in their home or

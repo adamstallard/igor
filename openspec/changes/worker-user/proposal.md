@@ -559,6 +559,28 @@ he approved both on 2026-10-24.
     kill, and a refusal there is written to standard error only: no run is left to fail, and an
     `exit` handler cannot wait for the append to the state branch's execution log that recording
     takes.
+54. **The start check refuses a credential file in the worker user's home** (2026-11-01,
+    settled by the agents coordinating this work under a rule Adam set outside this repository:
+    agents settle a question where one option is clearly right or the choice is cheap to
+    reverse. It stands until he says otherwise). Where the home holds
+    `~/.npmrc`, `~/.netrc`, `~/.git-credentials`, `~/.docker/config.json`, `~/.aws/credentials`
+    or `~/.config/gh/hosts.yml`, as a file or a link, `igor serve` refuses to start, naming the
+    file. Without the refusal, decision 41's fifth point, that the worker's home holds no
+    credential an operator put there, binds only the operator, and nothing notices a credential
+    left there. Igor itself reads none of these files. Settled this way because a credential the
+    check missed would leak silently, while a refusal costs a start and names the file. A credential elsewhere in
+    the home, such as a key under `~/.ssh`, is still the operator's to keep out.
+
+    The refusal has two costs, accepted here and cheap to undo before this change is built.
+    Since the home lasts across runs (decision 14), a worker can write one of these files, as
+    `npm config set`, `docker login` or a check doing the same would; the instance then runs on,
+    and its next start refuses until a person removes the file and starts the unit again, since
+    the unit does not restart on status 78 (decision 23). And the check goes by the file's name,
+    not its content, so a `~/.npmrc` holding only a registry mirror is refused too. The
+    worker's environment is built from a fixed list, so such a setting has no other place, and a
+    host that needs a mirror cannot use one until a later change gives it a place.
+    *Rejected:* deleting the files before each run, which would silently discard what an
+    operator put there.
 
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement,
 on another change, or on this change's next revision.
@@ -575,6 +597,15 @@ on another change, or on this change's next revision.
   #216's *Every open condition is readable without naming a role*, list the conditions that
   clear without a probe, and this one is missing from both lists; the agent revising this change
   is to report it to those changes.
+- **From the consistency read of 2026-11-01, for this change's authors.** `main` has archived
+  `condition-backoff`, so *A condition clears by not recurring, and a probe is what observes
+  that* is in force: every open condition clears after a cooldown and a probe item. This
+  change's *A failed worker spawn is a condition on its instance* clears its condition on a
+  passing check, with neither a cooldown nor a probe item, and this change only ADDs it. So it
+  needs two MODIFIED blocks: one on that in-force requirement, naming the instance condition as
+  an exception, and one on *A condition's scope is its cure's scope*, adding the instance to
+  its scopes. #171 also modifies both requirements and archives after this change, so its
+  copies must carry the exception too.
 - **From a third consistency read on 2026-10-24.** Decision 52 rests on sudo logging a refused
   command with the variables it would have passed, which task 6.12 measures; if it does not,
   the check before a spawn guards nothing, though decision 53's check before a kill still
@@ -706,13 +737,6 @@ on another change, or on this change's next revision.
   What `sudo -n -l` prints for a user with no sudoers entry has no measuring task. #153 has
   decided that Igor runs no `prose start`, which the proposal calls #153's to say.
 
-- **Credential files in the worker's home, for Adam.** Decision 41's fifth point, no credential
-  an operator put in the worker's home, binds the operator, and nothing checks it. *Recommendation:* have the start check refuse, naming the
-  file, where the worker's home holds `~/.npmrc`, `~/.netrc`, `~/.git-credentials`,
-  `~/.docker/config.json`, `~/.aws/credentials` or `~/.config/gh/hosts.yml`. No Igor run needs
-  any of them, and since the home lasts across runs (decision 14), the refusal also catches one
-  a worker left.
-
 - **The metadata block and DNS.** On Google Compute Engine and Oracle Cloud, `169.254.169.254`
   is also the resolver. A host whose `/etc/resolv.conf` names it directly, with no local
   resolver such as systemd-resolved in between, would lose every DNS lookup in the unit under
@@ -822,10 +846,13 @@ that doesn't depend on Claude Code enforcing anything.
   service user, or if `fs.protected_hardlinks` is not `1` (decisions 37 and 38). A file it has no path for is
   reported as not checked. It refuses if the worker user can reach the cloud metadata
   endpoint, is in a root-equivalent group such as `docker`, can write a container engine's
-  socket or holds a sudo right, or if the Igor is still dumpable (decisions 41 to 43). A refused start exits with status 78 (decision 23).
+  socket or holds a sudo right, or if the Igor is still dumpable (decisions 41 to 43), or if
+  the worker user's home holds one of six common credential files (decision 54). A refused
+  start exits with status 78 (decision 23).
 - **A secret reaches the worker only through the Igor, which registers it with #217's
   `rememberSecret`** (decision 41). The Igor passes no agent socket, stores no credential in a
-  tree's git directory, and the deployment guide puts none in the worker's home. The unit blocks
+  tree's git directory. The deployment guide tells the operator to put none in the worker's
+  home, where the start check refuses six common credential files. The unit blocks
   the metadata endpoint and sets `LimitCORE=0`, and the Igor makes itself not dumpable
   (decisions 42 and 43).
 - **`serve` always has a worker user, and `run` never does.** `run` runs the worker as the same

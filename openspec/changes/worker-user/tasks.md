@@ -448,6 +448,14 @@
       this Igor could not make itself undumpable (<why>), so a crash could write its memory, seat tokens included, to disk. See docs/deployment.md, "A separate user for the worker".
       ```
 
+      The worker user's home holding `~/.npmrc`, `~/.netrc`, `~/.git-credentials`,
+      `~/.docker/config.json`, `~/.aws/credentials` or `~/.config/gh/hosts.yml`, as a file or a
+      link (proposal, decision 54); a missing file passes. Each file found gets its own line:
+
+      ```
+      the worker user "<worker>" has <path> in its home, a file that commonly holds credentials, and whatever the worker runs could use them. Remove it: a worker gets a credential only from this Igor. See docs/deployment.md, "A separate user for the worker".
+      ```
+
       Each refusal above exits with status 78 (0.9), which the unit's
       `RestartPreventExitStatus=` keeps from restarting.
 
@@ -463,8 +471,10 @@
       ```
 
 - [ ] 5.5 Tests with an injected probe: each refusal, in order, the `claude`, `skills_dir`,
-      template, script, missing-path, `!log_allowed`, metadata, `docker` and dumpable checks
-      among them; a missing Docker socket passes; `IGOR_ENV_FILES`
+      template, script, missing-path, `!log_allowed`, metadata, `docker`, dumpable and
+      home credential-file checks among them, the home check with a regular file in the home, a
+      file in a subdirectory of it (`~/.docker/config.json`) and a dangling link; a missing Docker socket passes, and so does a
+      home with none of the six credential files; `IGOR_ENV_FILES`
       unset is reported as not checked, and its files are never reported as passed; `fs.protected_hardlinks` at `0` refuses; the file the `skills_dir`
       probe created is deleted; the first failure
       stops the check; every refusal exits with status 78; `serve` refuses with no worker user, and refuses `--same-user` as an
@@ -787,7 +797,10 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 
       **Put no credential in a worker user's home, and add it to no `docker` group.** A
       registry token in `~/.npmrc` or a key under `~/.ssh` there reaches whatever the worker
-      runs, and Igor never learns of it, so it cannot redact it. Igor gives a repository's
+      runs, and Igor never learns of it, so it cannot redact it. The start check refuses
+      `~/.npmrc`, `~/.netrc`, `~/.git-credentials`, `~/.docker/config.json`,
+      `~/.aws/credentials` and `~/.config/gh/hosts.yml` there; nothing checks the rest of the
+      home. Igor gives a repository's
       checks no credential except a password in the proxy URL (*A proxy*, below): a check that
       needs a secret is marked CI-only in the repository's
       entry in the `repos` map of `roles/org.yaml`, and the repository's own CI runs it. The `docker` group lets the

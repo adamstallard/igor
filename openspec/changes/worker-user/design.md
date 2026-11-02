@@ -463,6 +463,10 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
     check 5, since a host without it is the safe case.
 11. The Igor's own process is not dumpable: the native addon's read of `PR_GET_DUMPABLE`
     returns 0, and `/proc/sys/fs/suid_dumpable` reads 0 (*The Igor cannot be dumped*, below).
+12. As the worker, none of `~/.npmrc`, `~/.netrc`, `~/.git-credentials`, `~/.docker/config.json`,
+    `~/.aws/credentials` and `~/.config/gh/hosts.yml` exists in its home, as a file or a link,
+    checked with `test -e` or `test -L`, so a dangling link counts (proposal, decision 54). Each that does is a refusal naming it. A missing file passes,
+    unlike the paths in check 5, since a home without it is the safe case.
 
 A file the check has no path for is reported as not checked, never as passed (Adam,
 2026-10-19). Where `IGOR_ENV_FILES` is unset, as in #192's container, which loads no
@@ -507,9 +511,9 @@ through the Igor. This table says how `serve` deals with each:
 | an SSH agent | `workerEnv` builds the environment from a list, which holds no `SSH_AUTH_SOCK`, in both modes; a test proves no agent variable passes (task 1.9) |
 | the `docker`, `lxd`, `incus` or `disk` group, a container engine's socket, or a sudo right, each of which reads `/etc/igor` as root | start check 10 |
 | a credential in the tree's git configuration or a remote URL, which the worker can read in `<tree>-git` | `gitEnv` on `main` already gives each git command its token in that command's environment and writes none to a file; a test proves `<tree>-git/config` holds none (task 2.7) |
-| credentials an operator put in the worker's home, such as `~/.npmrc` | not closed by Igor: it rests on the operator. The deployment guide says to put none there (task 8.4), and nothing checks it (proposal, *Still open*) |
+| credentials an operator put in the worker's home, such as `~/.npmrc` | start check 12 refuses six common credential files there (proposal, decision 54); the rest of the home rests on the operator, and the deployment guide says to put no credential there (task 8.4) |
 
-**The metadata endpoint is blocked for the whole unit** (proposed 2026-10-21, for Adam;
+**The metadata endpoint is blocked for the whole unit** (approved by Adam on 2026-10-24;
 proposal, decision 42). The unit sets `IPAddressDeny=169.254.169.254 fd00:ec2::254`. systemd
 enforces it with a BPF program on the unit's control group, and every process in the group
 inherits it. A process `sudo` starts in the unit stays in that group unless `pam_systemd` in
@@ -799,7 +803,9 @@ Igor's pid in a pid file instead of with `ps`.
   `Defaults:igor !syslog` removed it, leaving only pam's session lines; `visudo -c` accepted
   both. Decision 28 takes `!log_allowed`. The token was real, since a model had to run, so
   one journal read made while measuring printed it unredacted into the measuring agent's
-  transcript, so that token counts as leaked and is its owner's to revoke; 6.12 counts the lines it looks for and never prints them.
+  transcript. That token, the one for the seat named `claude-adam-personal`, counted as leaked,
+  and Adam has revoked it. Task 6.12, which re-runs the measurement, counts the journal lines
+  holding a token and never prints them.
 - **6.6, two units with one worker user: confirms decision 7** (*Each instance has its own worker
   user*, above). Plain processes stood in for `claude`, which tests the same operating-system
   property.
