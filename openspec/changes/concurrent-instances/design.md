@@ -1802,15 +1802,6 @@ no `design.md` held a reason, it moved here.
     are fixed multiples of the poll interval*. All are fixed. The read suggests one
     requirement own the period and the others cite it by name. Which one should own it is the
     author's to decide.
-  - The paragraph of #140's proposal that this branch edits, in
-    `openspec/changes/directed-interaction/proposal.md`, says each rank rewrites its heartbeat
-    file every half poll interval; under decision 77 it is every half of the shortest interval
-    the rank has applied. It is left as it stands here because editing it brings #140's own
-    specs under spec-check, and they carry five errors of #140's own: in its `directed-interaction` spec, three
-    requirements over 500 characters and no Purpose for the new spec; in its `work-triage`
-    delta, one requirement over 500 characters. Spec-check checks every change a commit
-    touches, so editing that proposal brings them in. Whoever next edits that
-    paragraph, here or in #140, brings it in line.
 - **From the consistency read of 2026-11-02 after decision 76.**
   - *A run by hand runs as rank 0* says a rollback of the state branch no longer stops anyone,
     since no process reads its own file's id; under decisions 63 and 72 every process reads its

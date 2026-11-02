@@ -115,8 +115,10 @@ to reply to.
 
   As above, answering with a plain reply claims nothing, so nothing on the request shows another
   rank that it is taken. Usually one rank answers. A rank judges itself by its own state, but its
-  siblings by their heartbeat files, which each rank rewrites every half poll interval, so what it
-  reads can be that old. If the owner has just become free while the next rank still reads it as
+  siblings by their heartbeat files. Each rank rewrites its own file at intervals of half the
+  shortest poll interval it has used since it started, since a configuration change can lengthen
+  a rank's interval while it runs. A sibling's file can therefore be up to half of that
+  sibling's shortest interval old when a rank reads it. If the owner has just become free while the next rank still reads it as
   busy, both judge themselves first, and both answer; nothing limits that to one. Adam chose this
   over a hard limit, which would need a claim, and the settle interval a claim waits before it is
   checked, before every answer: a second reply is harmless, and a request kept waiting is the
