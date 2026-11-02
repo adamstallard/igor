@@ -7,7 +7,7 @@ identity. Everything here follows from refusing to conflate the two.
 ## Decisions
 
 Adam decided 1 to 52 on 2026-10-13, 2026-10-17, 2026-10-18, 2026-10-19 and 2026-10-21, and
-rewrote some of them on 2026-10-24, each marked with that date, such as 22 and 49. On 2026-10-24 he also made 55 and 58 himself, and approved 53, 54, 56 and 57, which this change drew up for him; both kinds are his. He made 62 and 63 on 2026-10-28, and 74 on 2026-11-01. The agents coordinating this work decided 59 and 61 on 2026-10-24,
+rewrote some of them on 2026-10-24, each marked with that date, such as 22 and 49. On 2026-10-24 he also made 55 and 58 himself, and approved 53, 54, 56 and 57, which this change drew up for him; those he approved count as his too. He made 62 and 63 on 2026-10-28, 74 on 2026-11-01 and 75 on 2026-11-02. The agents coordinating this work decided 59 and 61 on 2026-10-24,
 64 to 68 on 2026-10-28, 69 to 72 on 2026-10-30 and 73 on 2026-11-01, under a rule Adam set, kept outside this
 repository, on which questions they may settle without him: one with a single option that fits
 the rest of the change, an answer already given, or a proof or cheap reversal behind it. These
@@ -473,7 +473,7 @@ sign that no rollback gives.
     a long worker still notices. The condition has the cure key
     `instance:<role>-<rank>:duplicate`, on the instance scope #175 adds; it names each writer's
     host and operating-system process number, the host once where both share one. Both writers
-    stop taking items, keep their claims in silence as a stand-down does, and write themselves as
+    stop their workers and take no items, keep their claims in silence as a stand-down does, and record in their heartbeat files that they are
     not available, until a person ends one of the two processes; the condition then clears like a read-cleared one, with
     no probe item, once three of the maximum poll interval pass in which no counter under a
     start id other than its own rises, and is recorded in the execution log where it opens and clears.
@@ -494,6 +494,36 @@ sign that no rollback gives.
 74. **Host names and process numbers go on the state branch, even where it is public.** They are
     not secrets, and the operator needs them to find the second writer that decisions 63 and 72
     detect.
+
+**Decided by Adam on 2026-11-02**
+
+75. **A stop waits for a holder that has stood down or has stopped on finding a second process
+    on its rank.** The holder's worker has already stopped: decision 17's timer stops a
+    stood-down process's worker, and decision 72 has both processes on a rank stop theirs. The
+    label stays on and no stop receipt is posted until the holder resumes and answers the stop,
+    or the first sibling to reach the item after counting the holder gone answers it. This is an
+    exception to the in-force rule that a stop releases immediately. The holder does not answer
+    while it waits, because it keeps its claims in silence: decision 17 gives the reason for a
+    stand-down, that a sibling may already have taken the item over, and decision 72 has a second
+    process do as a stand-down does. The reasons for the wait:
+    - The work has already stopped; only the acknowledgement waits.
+    - The stood-down wait is bounded wherever another process serves the role: a sibling counts
+      the holder gone once its file has not changed for three of the longest poll interval the
+      holder's heartbeats have declared to that sibling (decision 49), 90 minutes at the
+      30-minute maximum. With no other process serving the role, the stop waits until the holder
+      resumes. The wait usually ends sooner by itself, once the holder's heartbeat writes succeed
+      again and it resumes. A sibling sees only that the holder's heartbeat file has stopped
+      changing; until it counts the holder gone it cannot know the holder has stood down and
+      stopped its worker, so an earlier answer risks a receipt while the worker still runs
+      (`NoReceiptWhileWorked`).
+    - The wait where a second process was found has no bound, and that is accepted. No sibling
+      counts the rank gone, since its file keeps changing. The wait ends once the operator ends
+      one of the two processes and the duplicate condition then clears, three of the maximum poll
+      interval later; the process that remains holds the rank's claims and answers the stop.
+      Nothing alerts the operator today: the condition shows only in the process's own output,
+      the decision records and the execution log, so the stop waits until someone checks. #238
+      is an open issue to make Igor tell the operator when a condition keeps a scope, such as
+      this rank, from taking items.
 
 ### How the decisions were made
 
@@ -1693,19 +1723,23 @@ no `design.md` held a reason, it moved here.
     where its own claim message holds the item, while *A retired rank does not hold its items
     forever* has a process remove the label from an item a gone rank's message held, and the
     holder rule does not list that takeover among its exceptions.
-  - *For a person to decide:* a holder that has stood down for missed heartbeats, or stopped as a
-    second process on its rank, keeps its claim in silence and can leave a stop unanswered until a
-    sibling counts it gone, up to 90 minutes, where the in-force `work-claiming` says a stop
-    directed at an Igor SHALL take effect immediately and release the claim.
 - **From the consistency read of 2026-11-02, for the author.** None of these comes from the
   compaction; the read found them in text the compaction left as it was.
+  - *A stop waits for a holder that has stood down or found a second process* states its
+    exception to the in-force *Stop is unconditional and open to anyone* in its own text, as
+    *A process that cannot write its heartbeat stands down* does for its exceptions. The change
+    carries no `MODIFIED` copy of that requirement, whose text says a stop takes effect
+    immediately; this is left as it is, since a copy would conflict with #237, an open pull
+    request that shortens that requirement's text on main. Whether to add one once #237 merges
+    is the author's to decide.
   - *A run by hand runs as rank 0* says a rollback of the state branch no longer stops anyone,
     since no process reads its own file's id; under decisions 63 and 72 every process reads its
     own rank's file, so that section is stale.
-  - A process stopped as a second writer on its rank keeps writing heartbeats, so no sibling ever
-    counts it gone: its claims and any stop on them wait for a person to end one process, not up
-    to 90 minutes. The TLA+ model has no hosts, so `StopNeverLost` and `OrphanRecovered` do not
-    cover that state.
+  - The TLA+ model runs one process per rank, so `StopNeverLost` and `OrphanRecovered` do not
+    cover a rank whose two processes have stopped on finding each other. Such a rank keeps its
+    claims (decision 72), and leaves the stops on them unanswered (decision 75), until the
+    duplicate condition clears. This
+    is accepted: as decision 63 says, a task and a test cover that state instead.
   - The proposal's *Out of scope* says nothing needs the number of processes, while hand-overs,
     give-backs and stand-downs branch on whether one process or several run the role.
   - With the state branch unwritable, heartbeats and keepalives both fail: the prober stands down

@@ -6,8 +6,7 @@ Where an Igor stops claimed work of its own accord, on any condition it detects 
 post a handoff to the item before releasing. Silence after a claim MUST NOT be a permitted
 outcome, except where `work-claiming`'s *A claim that cannot be kept is given back, out loud*
 lets one of several processes running a role post nothing. A stop directed at the Igor is
-exempt: it releases the claim at once, and its release message SHALL name any partial work
-product in one line, not a handoff.
+exempt: its release message SHALL name any partial work product in one line, not a handoff.
 
 #### Scenario: Handoff posted on exhaustion
 

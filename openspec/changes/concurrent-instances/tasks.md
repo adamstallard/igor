@@ -370,7 +370,9 @@
       them to the holder test here
 - [ ] 4.22 A stop said on a handed-over item is answered only by the rank whose claim message
       holds it; other ranks ignore it. Where no claim message counts, the rank that reaches the
-      item answers it
+      item answers it. A holder that has stood down, or stopped on finding a second process on
+      its rank, answers a stop on an item it holds, handed over or found, only once it resumes;
+      a sibling answers it once it counts the holder gone (decision 75)
 - [ ] 4.23 Tests for 4.21, 4.22 and 4.26: a rank that does not hold the item and fails its
       verification leaves the label; a holder whose verification fails withdraws out loud; a
       claim message posted between the test and the removal keeps the label on; a failed test
@@ -380,6 +382,11 @@
       the same half settle interval and not after it (decision 65), while a refusal after a
       reread is posted however late; the holder sets an item down; a stop on a handed-over item a sibling
       works is ignored by the other rank; a stop on a hand-over nobody has claimed is answered
+      by the first rank to reach it. Tests for decision 75: a stop on an item a stood-down holder
+      holds is answered by no sibling before one counts the holder gone, and by the holder if it
+      resumes first. A stop on an item held by a rank whose two processes stopped on finding
+      each other is answered by no sibling. Once a person ends one of the two processes and the
+      duplicate condition clears, the process that remains answers it
 - [ ] 4.24 Each heartbeat also carries its writer's host name and process id. A process that
       reads, in its own rank's file, a start id other than its own whose counter advanced between two
       of its reads after its own first write stops taking new items, stops its worker as a
@@ -519,3 +526,7 @@
       `$STATE_DIRECTORY/trees`, where 1.8 puts the trees, in place of `/tmp`, and its comment says
       so. Without it, trees move to `~/.local/state/igor/trees` inside the container and the
       volume holds nothing
+- [ ] 6.9 `docs/architecture.md` calls a stop immediate and unconditional, under *Stop is that
+      override*. Say that a stop on an item whose holder has stood down, or stopped on finding a
+      second process on its rank, waits for that holder to resume or be counted gone, though its
+      work has already stopped (decision 75)

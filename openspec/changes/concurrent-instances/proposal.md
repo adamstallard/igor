@@ -174,7 +174,10 @@ Explicitly out of scope:
   claims of a rank whose heartbeat stops changing for three poll intervals become adoptable,
   each heartbeat declares its process's poll interval, and a claim left on the Igor's
   open pull request is caught up whoever left it. `igor run` runs as rank 0, beside any serving
-  rank. A retired rank exits with status 0, and an edited claim message counts for nothing.
+  rank. A retired rank exits with status 0, and an edited claim message counts for nothing. A
+  process that finds a second process writing its rank's heartbeat file stops. A stop on an
+  item whose holder has stopped that way, or stood down, waits for that holder to resume or be
+  counted gone: its work has already stopped, and only the acknowledgement waits.
 - `work-triage`: An item a live sibling holds is passed over before triage, a claim this
   process takes over on the Igor's own pull request is not skipped as work in flight, and an
   item the process holds whose pull request still merges is triaged again only once it changes

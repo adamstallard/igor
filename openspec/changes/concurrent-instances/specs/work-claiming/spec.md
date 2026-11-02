@@ -395,9 +395,17 @@ needing two roles goes in two issues.
 
 A stop SHALL release the claim, removing the Igor from the holder field, and tracker state SHALL
 decide what follows. A stop cancels a hand-over, which only a new one restores. On work the Igor's
-own search found, a go-ahead, or the cooldown ending, lifts the stop. A go-ahead's names are read as
+own search found, a go-ahead or the cooldown's end lifts the stop. A go-ahead's names are read as
 a stop's are, and one naming Igors SHALL lift it only for them. After a stop on a handed-over item
-with no run active, the next cycle SHALL remove the Igor from the holder field, with a stop receipt.
+with no run active, the first cycle that may answer it SHALL release the claim, with a stop
+receipt.
+
+#### Scenario: A stop waits for a holder that has stopped itself
+
+- **WHEN** a person says stop on a handed-over item, with no run active, whose holder has stood
+  down or stopped on finding a second process on its rank
+- **THEN** no cycle releases the claim until *A stop waits for a holder that has stood down or
+  found a second process* lets one answer it
 
 #### Scenario: A human takes the item
 
@@ -1512,6 +1520,42 @@ claimed it yet or its holder is gone, the process that reaches the item SHALL an
 
 - **WHEN** a person hands an issue over and says stop before any rank's claim message is on it
 - **THEN** the first rank to reach the item removes the label and posts the stop receipt
+
+### Requirement: A stop waits for a holder that has stood down or found a second process
+
+Where the process whose claim message holds an item has stood down, or stopped on finding a
+second process writing its rank's file, the label's removal and the stop receipt SHALL wait until
+it resumes and answers, or the first sibling to reach the item after counting it gone answers, an
+exception to *Stop is unconditional and open to anyone*. Where a sibling runs, a stand-down's wait
+is at most three of the longest poll interval its heartbeats declared: 90 minutes at the
+30-minute maximum.
+
+#### Scenario: A stop waits for a holder that has stood down
+
+- **WHEN** rank 2's claim message holds an item, rank 2 has stood down and its timer
+  has stopped its worker, and a person says stop on the item
+- **THEN** no worker runs on the item, and no rank removes the label or posts the stop receipt yet
+- **AND** rank 2 answers the stop once a heartbeat lands and it resumes, or else the first sibling
+  to reach the item after counting rank 2 gone answers it
+- **AND** rank 1, serving the same role, counts rank 2 gone once rank 2's file has not changed for
+  three of the longest poll interval rank 2's heartbeats have declared to rank 1: 90 minutes at
+  the 30-minute maximum
+
+#### Scenario: A stop waits for a lone process that has stood down
+
+- **WHEN** rank 1 is the only process serving `backend`, its claim message holds an item, it has
+  stood down and its timer has stopped its worker, and a person says stop on the item
+- **THEN** the stop waits until a heartbeat lands and rank 1 resumes and answers it
+
+#### Scenario: A stop waits for a holder stopped as a second process
+
+- **WHEN** two processes serve `backend-2`, both have stopped on finding the other writing the
+  rank's file, and a person says stop on an item `backend-2`'s claim message holds
+- **THEN** no worker runs on the item, and no rank removes the label or posts the stop receipt
+- **AND** no sibling counts `backend-2` gone, since its file keeps changing
+- **AND** once a person ends one of the two processes and the duplicate condition clears, three of
+  the maximum poll interval later, the process that remains, which holds the rank's claims,
+  answers the stop
 
 ### Requirement: A rank removed from the roster exits cleanly
 
