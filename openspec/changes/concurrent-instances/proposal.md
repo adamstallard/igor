@@ -56,8 +56,8 @@ not a claim nobody is behind.
 set the age past which the startup sweep deleted a working tree. The sweep now goes by rank, and
 Adam decided on 2026-10-13 to remove the ceiling entirely. A worker that keeps emitting events
 and never finishes is then killed by no limit, which is accepted: a person's stop is honoured at
-the next checkpoint. Once #143 (`read-seat-windows-from-the-stream`) is built, the seat's reserve line, a spend
-threshold per seat, also stops new items; this change does not wait for it.
+the next checkpoint. The seat's reserve line from #143 (`read-seat-windows-from-the-stream`), a
+spend threshold per seat, also stops new items.
 
 **Retiring a rank is recorded, not detected.** A crash is not retirement: the supervisor restarts
 the process and it recovers its own claim. Removing a process is a decision, and the roster — the

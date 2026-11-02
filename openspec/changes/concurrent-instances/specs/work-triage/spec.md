@@ -2,11 +2,12 @@
 
 ### Requirement: Items with work already in flight are skipped
 
-Triage SHALL skip any item the adapter reports as having work in flight, an artifact such as a pull
-request, unless that artifact is the Igor's own and cannot merge, or the role's label holds the item
-with a claim this process takes over under `work-claiming`: a gone rank's, or one whose holding
-claim message carries this serving rank, posted by it or its predecessor, or this `igor run`'s run
-id. This rule is universal and MUST NOT be configurable; only its detection is adapter-supplied.
+Triage SHALL skip any item the adapter reports as having work already in flight, an artifact such as
+a pull request, unless that artifact is the Igor's own and cannot merge, or the role's label holds
+the item with a claim this process carries on as its own: one with its own rank, posted by it or a
+predecessor, and for `igor run` carrying its own run id too, or a gone rank's, as `work-claiming`
+defines. This rule is universal and MUST NOT be configurable; only its detection is
+adapter-supplied.
 
 #### Scenario: Item with an open linked artifact skipped
 
@@ -48,12 +49,12 @@ id. This rule is universal and MUST NOT be configurable; only its detection is a
 
 ### Requirement: An item held by another party is never a candidate
 
-Triage SHALL skip any item whose holder field names a party other than this Igor. This rule is
-universal and MUST NOT be configurable. Where several processes run the Igor's role, an item whose
-holding claim message, the earliest that counts, carries the rank of another of its processes that
-is not gone SHALL be passed over before triage as that process's. An item the role's label holds
-with no such message, or with one carrying this process's rank (for `igor run`, and run id), is
-this Igor's.
+Triage SHALL skip any item whose holder field names a party other than the running Igor. This
+rule is universal and MUST NOT be configurable. An item whose holding claim message carries the
+rank of another process of its role that is not gone is that process's, and SHALL be passed over
+before triage, with no triage call. An item the role's label holds with no such message, or with
+this process's own rank, is the running Igor's; for `igor run`, only if the message also carries
+its run id.
 
 #### Scenario: An item someone else holds is skipped before any claim
 
@@ -86,13 +87,14 @@ this Igor's.
 
 ## ADDED Requirements
 
-### Requirement: A held item whose own pull request still merges is passed over until it changes
+### Requirement: A held item whose own pull request still merges is triaged only when it changes
 
-Where this process's rank holds an item, as *Items with work already in flight are skipped*
-defines, and the Igor's own open pull request on it still merges, triage SHALL pass the item over
-with no triage call, unless the item or pull request was updated since this process last triaged
-it, the pull request no longer merges, or it is a two-gate artifact carrying an actionable review
-under `follow-the-two-gate-workflow` (#150). A process triages such an item once after it starts.
+Where an item's holding claim message carries this process's rank, posted by it or a predecessor,
+and for `igor run` also its run id, and the Igor's own open pull request for it still merges, triage
+SHALL pass it over unless the item or pull request changed since this process last triaged it, the
+pull request stopped merging, or the pull request carries an actionable two-gate review. While it
+still merges without one, the item gets no worker. A process triages such an item once after
+starting.
 
 #### Scenario: A restarted holder triages its unchanged pull request once
 
@@ -103,26 +105,26 @@ under `follow-the-two-gate-workflow` (#150). A process triages such an item once
 
 #### Scenario: A held item whose pull request still merges is not triaged again until it changes
 
-- **WHEN** this process's claim message holds an item whose Igor pull request still merges, and
-  neither the item nor the pull request has been updated since this process last triaged it
+- **WHEN** this process's claim message holds an item whose Igor pull request still merges, as
+  after a catch-up that gave its claim back and kept a person's label, and neither the item nor
+  the pull request has been updated since this process last triaged it
 - **THEN** the item is passed over with no triage call
 - **AND** once a comment is added to the item, or the pull request stops merging, the next cycle
   triages it
+- **AND** no worker runs on it while the pull request still merges and carries no actionable
+  review
 
-### Requirement: A held pull request runs a worker only for a review to act on
+#### Scenario: Another run's rank-0 message is not igor run's own
 
-Where this process's rank holds an item whose Igor pull request still merges, the holder SHALL
-resume the item with a worker where the pull request is a two-gate artifact carrying an actionable
-review under `follow-the-two-gate-workflow` (#150), and SHALL otherwise run no worker over it.
+- **WHEN** an `igor run` finds an item whose holding claim message carries rank 0 and another
+  run's id
+- **THEN** that message is not its own, since every run is rank 0 and its message must also carry
+  its own run id, so this rule does not pass the item over as held by it
 
 #### Scenario: A review to act on brings a worker
 
 - **WHEN** this process's claim message holds an item whose Igor pull request, a two-gate
   artifact, still merges, and a reviewer requests changes on it
-- **THEN** the next cycle triages the item, and the holder resumes it with a worker, as #150 says
-
-#### Scenario: A held pull request with no review to act on gets no worker
-
-- **WHEN** this process's claim message holds an item whose Igor pull request still merges and
-  carries no actionable review
-- **THEN** the holder runs no worker over that pull request
+- **THEN** the next cycle triages the item, and the holder resumes it with a worker, as
+  `follow-the-two-gate-workflow` (#150) says of an actionable review, rather than carrying on with
+  a catch-up that changes nothing

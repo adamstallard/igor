@@ -2,12 +2,12 @@
 
 ### Requirement: An Igor never goes silent on a claimed item
 
-An Igor that stops claimed work **of its own accord** — exhaustion, unrecoverable failure or
-anything it detects itself — SHALL post a handoff to the item before releasing; silence after a
-claim MUST NOT be allowed. Among one role's processes, two post nothing: one stood down for missed
-heartbeats, and one finding another's claim message holding the item. A stop directed at the Igor
-releases the claim at once without a handoff; its one-line release message SHALL name any partial
-work product.
+Where an Igor stops claimed work of its own accord, on any condition it detects itself, it SHALL
+post a handoff to the item before releasing. Silence after a claim MUST NOT be a permitted
+outcome, except where `work-claiming`'s *A claim that cannot be kept is given back, out loud*
+lets one of several processes running a role post nothing. A stop directed at the Igor is
+exempt: it releases the claim at once, and its release message SHALL name any partial work
+product in one line, not a handoff.
 
 #### Scenario: Handoff posted on exhaustion
 
@@ -34,8 +34,5 @@ work product.
 
 - **WHEN** a process stands down for missed heartbeats while its worker runs
 - **THEN** its worker stops and it posts nothing on the item
-
-#### Scenario: A rank that finds another's claim message posts no handoff
-
-- **WHEN** a process stops work on an item and finds another process's claim message holding it
-- **THEN** it posts nothing on the item
+- **AND** where several processes run the role, one that finds another's claim message holding
+  the item also posts nothing on it, whether or not it stood down
