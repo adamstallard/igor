@@ -1877,6 +1877,22 @@ no `design.md` held a reason, it moved here.
     Igor's artifact is not skipped* has the taker resume the gone rank's work, where this
     change's taker catches the item up and runs no worker. #140 belongs in *Conflicts with other open
     changes, recorded and not resolved*, above, beside #150, #106 and #216.
+- **From a review of the reset-time reply, 2026-11-02, for the author.** The reset-time reply
+  tells a requester when the role's seats, the model subscriptions it pays with, next reset.
+  - *No requirement sends the reset-time reply to a mention.* Decisions 67 and 78 and task 3.9
+    have a rank send it once when no rank is available, but no requirement here or in #140
+    (`directed-interaction`, branch `directed-asks`) says it SHALL. Only *A chat message becomes
+    an issue at the first available rank in its order* requires it, for a chat message; decision
+    73 bases that on decision 67's rule for a mention, which no requirement states. The author
+    would settle this by adding that mention requirement to this change, and recording it in
+    this file beside decisions 67, 70 and 78.
+  - *A busy rank counts as unavailable, so a busy role with budget sends the reset time.* A rank
+    is available only when it is free (holding no claim) and has a seat it can spend, among other
+    conditions. So a one-rank role busy on an item tells a mention's requester when its seats
+    reset, though nothing ran out. That contradicts `docs/architecture.md` §5.4's "never busy,
+    only out of budget". The fix §5.4 points to, which the author has still to choose: send the
+    reset time only when no rank has a seat it can spend, and otherwise let the message wait for
+    a free rank.
 
 ## Roads not taken
 
