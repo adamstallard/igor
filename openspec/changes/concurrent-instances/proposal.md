@@ -2,32 +2,37 @@
 
 Capacity and identity are different things, and the claim protocol currently conflates them.
 
-An Igor is one named teammate with one account, so a claim says who has your issue. Capacity is
-how many processes run behind that name. Wanting more backend throughput should mean starting
-more processes, not inventing `igor-backend-2` — a second name in the assignee field that
-nobody asked for and that means nothing to a reader.
+An Igor is one role with one identity, its GitHub App on GitHub, so a claim says which role has
+your issue. Capacity is how many processes run behind that identity. Wanting more backend
+throughput should mean starting more processes, not inventing a `backend-2` role — a second
+`igor:` label that nobody asked for and that means nothing to a reader.
 
-But two processes of one Igor cannot currently tell their claims apart. `verifyClaim` asks "am
-I among the assignees", both are `igor-backend`, and both answer yes. They would work the same
-item in parallel and open two pull requests.
+But two processes of one role cannot currently tell their claims apart. Both claim with the
+role's `igor:<role>` label, and verification asks whether any *other* holder's label is on the
+item. Neither finds one, so both answer that the claim is theirs. They would work the same item
+in parallel and open two pull requests.
 
-**Depends on `core-igor-loop`.** Nothing else is needed: the disambiguating mechanism already
-exists for a different reason.
+**Depends on `core-igor-loop` and `one-claiming-surface` (#156), both archived, and on open
+changes:** `worker-user` (#175), whose worker users the sweep runs as and whose user names the role-name
+check bounds; `read-seat-windows-from-the-stream` (#143) and `seat-files` (#171), whose seat
+rules the heartbeat's availability and `igor run`'s token cite; `pre-worker-breaker` (#173),
+whose set-down is one of the give-backs only the holder makes; and `stopped-scope-visible` (#82),
+whose restart policy keeps a retired rank down. Issue #204 orders the archives. The disambiguating mechanism, the claim message, already exists
+for a different reason.
 
 The universal skip for an item somebody else holds does not cover this. It cannot: an item only
-the Igor's account holds has to stay a candidate, or a claim left behind by a process that died
+the role's own label holds has to stay a candidate, or a claim left behind by a process that died
 is never recovered. That is precisely the case a sibling's live claim is indistinguishable from.
 
 ## What Changes
 
 **A process identifies itself, and a claim records which one took it.** Every claim already
-posts a message — added so a message-only surface can say *which* Igor holds something. It
-gains an instance marker, and verification becomes a conjunction: the account is among the
-holders, *and* the earliest claim message on the item is this process's.
+posts a message after setting the holder field, naming the Igor and saying how to stop it. The
+message gains the process's rank, and verification becomes a conjunction: the role's label is
+the only holder, *and* the earliest claim message on the item that counts is this process's.
 
-That is the mechanism already committed to for surfaces with no holder field: storage ordering
-plus a settle interval. Nothing new is introduced, and no coordinator, lease service or
-inbound endpoint appears.
+That is the mechanism the claim protocol already uses: storage ordering plus a settle interval.
+Nothing new is introduced, and no coordinator, lease service or inbound endpoint appears.
 
 **Ordering is the surface's own sequence key, never a timestamp.** GitHub returns comment
 times to the second — `2026-09-15T01:11:12Z` — and sibling processes on one poll interval wake
@@ -35,62 +40,95 @@ together and claim inside the same second, so "earliest" is a tie exactly where 
 needed. Simultaneity is the normal case here, not a rare race. Comment ids ascend strictly with
 creation (measured: 5673068718, 5673143226, 5673525664 over an hour), so the id is a total order
 where the timestamp is not. Each adapter exposes its surface's key as an opaque comparable, and
-nothing in the claim path compares times.
+claim messages are never ordered against each other by time. Only the item's latest release, a
+label event with no shared key, is compared with a message by time.
 
 **A dead process's claim is recovered by identity, not by waiting.** A sibling can observe only
 how old a claim is, and a worker bounded by silence rather than duration has no maximum age, so
-no age is conclusive. Because only one process runs at a rank, a claim carrying a process's own
-rank was left by a predecessor that is gone: it takes the item back and re-works it. A sibling
-leaves it alone. Correctness still never depends on knowing whether a process is alive — the
-question is whose claim it is, which does not decay.
+no age is conclusive. Because one process serves a rank, a claim carrying a process's own rank was left by a predecessor that is gone. A second process at that rank would break this, so Igor watches for one and, on finding two writers, stops both until a person ends one (design.md, decisions 63 and 72). The restarted process takes the item back and
+re-works it, or catches it up where the Igor's pull request is open. A sibling leaves it alone while the rank is alive, which the rank's heartbeat
+shows, as *Retiring a rank is recorded, not detected* below says.
 
 The cooldown does not cover this. It governs when a stopped or deferred item may be reconsidered,
 not a claim nobody is behind.
 
+**The worker's absolute ceiling goes.** `ABSOLUTE_CEILING_MS` killed a worker after 6 hours, and
+set the age past which the startup sweep deleted a working tree. The sweep now goes by rank, and
+Adam decided on 2026-10-13 to remove the ceiling entirely. A worker that keeps emitting events
+and never finishes is then killed by no limit, which is accepted: a person's stop is honoured at
+the next checkpoint. The seat's reserve line from #143 (`read-seat-windows-from-the-stream`), a
+spend threshold per seat, also stops new items.
+
 **Retiring a rank is recorded, not detected.** A crash is not retirement: the supervisor restarts
 the process and it recovers its own claim. Removing a process is a decision, and the roster — the
-ranks that exist, declared like seats — is where it is recorded, so scaling down releases the
-orphan on the next cycle. An abandonment bound backs it up for the one case the roster cannot
-cover, a rank left declared that no longer runs. That bound governs how long an unattended claim
-may sit, never how long work may run, so it cuts nothing short.
+ranks that exist, declared like seats — is where it is recorded. A removed rank shuts down as
+when its supervisor stops the process, finishing or handing off its item, and its claims are freed by the abandonment
+bound only if it dies first, as are those of a rank left declared that no longer runs. Each
+process writes a heartbeat to its own file on the state branch every half of the shortest poll
+interval it has applied since it started (each process applies the configuration in the lore repository at a cycle start, so a lore
+commit can change its interval while it runs; a process stands down after two of that shortest
+interval, so writing every half of it keeps one late write from standing it down), from a
+timer of its own that keeps running while a worker runs, and its first one before its first
+cycle: a counter it increments on each write, beside an id picked at each start. A process counts a sibling gone only after it has itself watched the sibling's counter
+fail to change for three poll intervals, 30 minutes at the default poll; any process
+may then take the sibling's claims. Each heartbeat declares its process's poll interval, so ranks
+on different intervals still agree: a watcher counts in the longest of its own interval and those
+it has seen declared, or in the 30-minute maximum where it has seen none, and a writer stands down in the shortest it has
+applied. No time in the file is compared, so neither a clock stepped
+back nor a lost, reset or rolled-back state branch makes a live rank look gone. A process that
+cannot write its heartbeat for two intervals stands down: it starts no claim, and the heartbeat
+timer stops its worker. A process taking over an item from a gone rank first removes the
+label and adds it again, except on an item with the Igor's open pull request, which it catches up
+under a claim message that supersedes the gone rank's. Without one or the other, the gone rank's
+old claim message would count again when the rank returned, and both would work the item. The bound governs how long an unattended claim
+may sit, never how long work may run: a working process keeps writing heartbeats.
 
 **Discovery may hand the same candidate to several processes**, and that is allowed to happen.
 Watermarks are a cache, so the cost is duplicated triage rather than duplicated work; the claim
 protocol resolves the race after it. Preventing the overlap would need coordination this
 design has done without everywhere else.
 
-**Each process has a rank, and rank decides both where it starts and when it may act.**
+**Processes saving one source keep the lower watermark.** Each rank's latest mark for a source
+counts, and discovery uses the lowest of them, until a rank passes the abandonment bound and stops
+counting. A mark is an issue update time, and discovery triages only issues updated after it.
+A mark too low costs repeated triage; a mark too high skips issues a sibling has not taken,
+until the issue is updated again, such as by a new comment. When every rank is gone,
+discovery uses the lowest of every rank's latest mark rather than starting cold.
+A cycle appends its mark only after attempting every candidate, so a crash between triage and
+the claims loses no item. Every cycle also considers each item carrying its role's label,
+whatever the mark, so a crashed rank's claim is found even below every mark.
+
+**Each process has a rank, and each item has an owner among the ranks.**
 
 Rank is a number given to a process when it is started — not discovered, not negotiated, and
-needing no registry: rank 3 waits its turn whether or not a rank 2 exists, and a gap costs only
-the wait. One process per rank is an operator invariant, in the same class as not declaring two
-seats with one id.
+needing no registry: a missing rank costs nothing, since a rank waits only for available ranks
+ahead of it. `igor run` is rank 0, outside the roster.
 
-*Rank is a starting offset.* Given roughly the same candidate list, rank 1 begins at the first
-item, rank 2 at the second, rank 3 at the third. Where there are at least as many items as
-processes, nothing collides and nothing waits.
+*An item's owner goes first.* A hash of the item's id picks its owner among the ranks the roster
+declares, so every process computes the same owner without asking anyone. Where the owner is
+not available, as its heartbeat says, the next available rank after it goes first. Each process
+attempts the items it goes first for before the others, so ranks mostly work different items
+from the start, and the claim still settles any collision.
 
-*Rank is also a delay, for when there are not.* Rank k waits `(k-1)` settle intervals before
-acting on a contested item, and then **reads before claiming**. Seeing the item already taken,
-it moves on silently. This is the property a shuffle cannot give: a shuffle makes a collision
-less likely, while a lower rank that looks first makes the retraction impossible. The cost of a
-collision was never the wasted request — it was the claim-and-retract comment landing on
-somebody's issue.
+*A rank behind the owner waits.* Before claiming an item another available rank goes first for,
+a rank waits one settle interval per available rank ahead of it, and then **reads before
+claiming**. Seeing the item already taken, it moves on silently. This is the property a shuffle
+cannot give: a shuffle makes a collision less likely. Here the rank that goes first reads the
+item first and claims it, and the one behind it then sees the claim and moves on; a retraction
+is left only where two ranks both read the item before either has posted, as when their
+heartbeat reads differ. The cost of a collision was never the wasted request — it was the
+claim-and-retract comment landing on somebody's issue.
 
 The interval is `settleSeconds`, which already means "long enough for a claim to become visible
-to someone else". That is exactly what a lower rank is waiting for, so it is not a second number
-to keep in agreement with the first.
+to someone else". That is exactly what a rank behind the owner is waiting for, so it is not a
+second number to keep in agreement with the first.
 
-Capacity is therefore consumed in rank order, the same shape as a seat pool taking the first
-with headroom. A persistently thin queue leaves the highest ranks idle, which is the correct
-outcome and a question the decision log should be able to answer.
-
-**Processes attempt candidates in different orders.** Nothing sorts or shuffles today: GitHub's
-search order flows through discovery, screening and triage unchanged, so every process receives
-the same list and every process tries the first item first. N−1 lose it, then N−2 lose the
+**Processes attempt candidates in different orders.** Today every process sorts its candidates
+the same way, oldest first, and keeps the first ten, so every process receives the same list and
+every process tries the first item first. N−1 lose it, then N−2 lose the
 second, and so on — quadratic wasted claims, each burning a settle interval and posting a claim
 comment that is immediately retracted. Diverging the order makes a collision incidental instead
-of guaranteed, and costs a shuffle.
+of guaranteed, and costs only the wait behind the owner above.
 
 **Concurrent state writes conflict, and a conflicted write is retried rather than fatal.** Today
 one throws and the cycle is reported as failed, which is recoverable but reads as a defect.
@@ -102,8 +140,9 @@ once the ref settles succeeds.
 
 So retry is mandatory, and the only question is whether it is *correct*. **State becomes
 append-only, which is what makes it so.** `discovery.json` and `deferred.json` are both folds
-over a stream — the newest `updatedAt` per source, the last record per item — so each can be a
-log that is replayed on read. Retrying then means re-reading and re-appending the same line:
+over a stream — for discovery, each rank's latest mark per source and then the lowest across
+the ranks that count; for deferrals, the last record per item — so each can be a log that is
+replayed on read. Retrying then means re-reading and re-appending the same line:
 order-independent, and incapable of clobbering. Retrying a read-modify-write of a keyed map
 means re-applying a semantic change to a base that moved, and the naive form of it — reissuing
 the same bytes with a fresh sha — silently destroys whatever the other writer just recorded.
@@ -119,30 +158,58 @@ Explicitly out of scope:
 
   The tracker's rate limit is not like that, and is worth knowing before scaling ranks.
   Measured on a personal account: `core` (REST) allows 5,000 requests an hour, `graphql`
-  5,000 points, and `search` 30 a minute — three separate budgets, and the limit is per
-  *account*. Discovery runs on `graphql` so it does not compete; claims, comment reads and
-  every state read and write land in `core`.
+  5,000 points, and `search` 30 a minute — three separate budgets, each held by the identity
+  making the requests. Discovery runs on `graphql` so it does not compete; claims, comment reads
+  and every state read and write land in `core`.
 
-  One machine account per Igor therefore buys each Igor its own 5,000 an hour, which is a
-  capacity argument for per-Igor accounts on top of identity. But processes of one Igor share
-  an account, so N ranks divide one budget rather than multiplying it. Nothing here bounds
-  that, and nothing needs to yet; it is the ceiling on how far ranks scale, and it is reached
-  by request count rather than by spend.
+  Each role acting as its own GitHub App therefore gives each role its own budgets. But
+  processes of one role share their App, so N ranks divide one budget rather than multiplying
+  it. Nothing here bounds that, and nothing needs to yet; it is the ceiling on how far ranks
+  scale, and it is reached by request count rather than by spend.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `work-claiming`: A claim is held by the process that took it, not by the account. Verification
-  distinguishes a sibling process from the Igor itself.
-- `work-discovery`: A conflicted state write is retried rather than failing the cycle, and
-  candidates are attempted in an order that differs between processes.
+- `work-claiming`: A claim is held by the process that took it, not by the role's identity.
+  Verification distinguishes a sibling process from the Igor itself, each item's hash owner
+  goes first for it, a hand-over goes through the same contest, the
+  claims of a rank whose heartbeat stops changing for three poll intervals become adoptable,
+  each heartbeat declares its process's poll interval, and a claim left on the Igor's
+  open pull request is caught up whoever left it. `igor run` runs as rank 0, beside any serving
+  rank. A retired rank exits with status 0, and an edited claim message counts for nothing. A
+  process that finds a second process writing its rank's heartbeat file stops. A stop on an
+  item whose holder has stopped that way, or stood down, waits for that holder to resume or be
+  counted gone: its work has already stopped, and only the acknowledgement waits.
+- `work-triage`: An item a live sibling holds is passed over before triage, a claim this
+  process takes over on the Igor's own pull request is not skipped as work in flight, and an
+  item the process holds whose pull request still merges is triaged again only once it changes
+  or carries a review to act on.
+- `work-discovery`: A conflicted state write is retried rather than failing the cycle,
+  processes saving one source keep the lower watermark, and #101's watermark rule names a
+  stand-down.
+- `task-execution`: The worker's absolute ceiling is removed, and the sweep removes working
+  trees by rank rather than by age; each `igor run` removes its own trees and those a gone run
+  left.
+- `role-config`: A role's processes share one identity and differ only by rank, the roster
+  declares the ranks each role may run, a process is named `<role>-<rank>`, a role's name fits
+  its worker users, and `igor serve` reads the role's environment file itself, which holds
+  single-quoted or plain values. The poll interval stays configurable, the settle interval must
+  be shorter than it, and the five timings derived from it have no settings: four under
+  `work-claiming`, which are the heartbeat period, the stand-down threshold, the stand-down check and the
+  abandonment bound, and the probe keepalive. The in-force scenarios that start `igor serve reviewer` give
+  the rank.
+- `surface-adapter`: The in-force scenarios that start `igor serve reviewer` give the rank.
+- `graceful-handoff`: A rank that stood down, or that finds another rank's claim message holding
+  the item, ends its part in silence.
+- `stuck-conditions`: A probe lapses when the process working it stops appending keepalive rows
+  to the execution log, the record of runs on the state branch that every role can read.
 
 ## Impact
 
 - Makes the settle interval load-bearing where it has so far been precautionary: with one
   process there was nothing to race.
-- Duplicated triage becomes an ordinary cost of running several processes, visible in the
-  decision log rather than hidden.
+- Duplicated triage of an item no process has claimed becomes an ordinary cost of running
+  several processes.
 - The failure this prevents — two pull requests for one issue — is the most visible kind of
   misfire an Igor can produce, in front of exactly the people the claim was meant to reassure.
