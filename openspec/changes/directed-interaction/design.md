@@ -224,17 +224,19 @@ or a rule already in force:
   counts as answered too. "Once" means that nobody answers a mention after its reply exists.
   Two of a role's processes can still each answer a plain mention before either sees the
   other's reply, which #179's decision 37 accepts.
-- **The reply giving the seats' reset time is not an answer.** #179's decision 67 has a role
-  with no available process reply with when its seats reset, and #179 owns sending it, with
-  "available" as #179 defines it; this change only limits it. If that reply counted, the mention
-  would never get its real answer. A rank posts it only if no reset-time reply to that mention
-  is there yet; otherwise every poll would post it again. Two ranks reading a stale heartbeat
-  can still each post one, which #179's decision 37 accepts for any duplicate reply. After the
-  reply the mention keeps waiting, and the mentions source holds its watermark before the
-  mention, as for a stop, so a later poll reads it again. The same rule belongs in #179, as an
-  agents' decision beside its decisions 67 and 70: decision 70 lets a rank move its watermark
-  past a mention once a reply from the role's bot account exists, so without the rule it would
-  count the reset-time reply and lose the mention.
+- **The reply giving the seats' reset time is not an answer.** Under #179's decision 67, when no
+  process of a role is available, as #179 defines "available", one of its ranks replies to the
+  mention with the time the role's seats next reset. #179 owns sending that reply, and this
+  change adds two limits to it. First, the reply does not answer the mention: if it did, the
+  mention would never get its real answer. Second, a rank posts the reply only if no reset-time
+  reply to that mention is there yet, since otherwise every poll would post it again. Each rank
+  judges which ranks are available from their heartbeat files, so two ranks reading a stale one
+  can still each post the reply, which #179's decision 37 accepts for any duplicate reply. After
+  the reply the mention keeps waiting. The mentions source holds its watermark before the
+  mention, as it does for a mention on a stopped item (below), so a later poll reads it again.
+  #179 has both limits. Its decision 78 sends the reset-time reply once per message, whether a
+  mention or a chat message. Its decision 70 counts a reply as an answer, but not one giving only
+  the reset time, so that reply lets no rank move its watermark past the mention.
 - **A stop holds back answers as well as work.** A stop is the brake anyone can pull, including
   on a runaway exchange, so a mention on a stopped item is answered only once the item is
   eligible again. Meanwhile the mentions source holds its watermark back before the mention, so
