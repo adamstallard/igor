@@ -40,19 +40,55 @@
 # left as it is. The same happens on a pull request from a fork, because
 # GitHub gives the workflow only a read-only token there.
 #
-# Editing this file: in a repository that uses spec-check, this file is
-# .github/workflows/spec-check.yml, written by `spec_check.py setup-ci` from
-# the template .agents/skills/spec-check/ci/spec-check.yml in
-# adamstallard/shared-skills. `setup-ci --force` replaces the whole file,
-# discarding any local edit, and is also the way to update SPEC_CHECK_SHA.
-# The pin is the commit given with `--sha`, or else the newest commit that
-# changed spec_check.py in the shared-skills clone `setup-ci` runs from; that
-# commit must be on one of the clone's remote-tracking branches, so GitHub
-# can serve it. A change every repository should get goes in the template,
-# by a pull request to adamstallard/shared-skills; once it merges, run
-# `setup-ci --force` from an updated clone. A change only this repository
-# needs can be made here, but must be made again after each
-# `setup-ci --force`.
+# Where the script comes from: each run downloads spec_check.py from
+# adamstallard/shared-skills at the commit SPEC_CHECK_SHA names, below.
+# That commit is the pin. A commit on the main branch of
+# adamstallard/shared-skills always downloads. A commit never pushed to
+# GitHub fails the download, and so fails the check. Whether the download
+# works for any other commit, such as one pushed only to a fork, is
+# untested, so pin a commit on main. To
+# confirm that the pin is on main, run this, with <sha> the SPEC_CHECK_SHA
+# value below:
+#   gh api repos/adamstallard/shared-skills/compare/main...<sha> --jq .status
+# It prints `behind` (the commit is an ancestor of main's head) or
+# `identical` (it is main's head) when the commit is on main. Any other
+# output, or an error, means it is not: update the pin as below.
+#
+# How the pin is set: `spec_check.py setup-ci` writes this workflow as
+# .github/workflows/spec-check.yml into the git repository named by
+# `--repo <dir>`, or else the one holding the current directory. It copies
+# the workflow from the clone of adamstallard/shared-skills it runs from, so
+# an out-of-date clone writes an out-of-date workflow. The pin is the commit
+# given with `--sha`, or else the newest commit that changed spec_check.py
+# in the history of the clone's checked-out branch. setup-ci does not
+# confirm the pin is on main. Without `--sha` it requires only that the
+# commit is on one of the clone's remote-tracking branches, which may be a
+# fork's or a branch other than main. With `--sha` it checks only that the
+# value is a full 40-character SHA.
+#
+# To update the pin, or this workflow:
+# 1. Update a clone of adamstallard/shared-skills that has main checked out:
+#      git -C <clone> pull --ff-only
+#    If shared-skills' manage-skills installed spec-check, then
+#    ~/.agents/skills/spec-check is a link into a clone, and this prints it:
+#      git -C ~/.agents/skills/spec-check rev-parse --show-toplevel
+# 2. From inside the repository that holds this workflow, run:
+#      python3 <clone>/.agents/skills/spec-check/scripts/spec_check.py setup-ci --force
+#    Add `--sha <commit>` to pin a commit on main other than the default.
+# 3. Commit .github/workflows/spec-check.yml.
+# Without `--force`, setup-ci refuses to replace an existing workflow and
+# changes nothing. With it, setup-ci replaces the whole file, discarding any
+# local edit. Without `--sha`, the pin is the newest commit that changed
+# spec_check.py, so after pulling a shared-skills merge that left
+# spec_check.py alone, the pin stays where it was: the workflow gets the
+# template's new steps and runs the same spec_check.py as before.
+#
+# Editing this file by hand works, SPEC_CHECK_SHA included, as long as the
+# pin stays a full 40-character SHA of a commit on main. The next
+# `setup-ci --force` discards the edit, so setup-ci is the supported way to
+# change the pin. An edit every repository should get goes in the template,
+# .agents/skills/spec-check/ci/spec-check.yml in adamstallard/shared-skills,
+# by a pull request; once it merges, update as above.
 name: spec-check
 on:
   pull_request:
@@ -72,7 +108,7 @@ jobs:
         env:
           # A full commit SHA of adamstallard/shared-skills, never a branch,
           # so the script the workflow runs cannot change under it.
-          SPEC_CHECK_SHA: 6133b32284044047e0ed67cbf1a7c38a824628c8
+          SPEC_CHECK_SHA: ce93007ecf0f470276db1f30cd2b433ddb6f3041
           GH_TOKEN: ${{ github.token }}
         run: |
           curl -fsSL "https://raw.githubusercontent.com/adamstallard/shared-skills/$SPEC_CHECK_SHA/.agents/skills/spec-check/scripts/spec_check.py" -o "$RUNNER_TEMP/spec_check.py"
