@@ -13,18 +13,26 @@ approved.
   random id written once and a lock per role that the operating system releases when its holder
   ends (an exclusive `flock`, or a listening Unix socket a live holder answers on).
 - [ ] 2.2 Write the serving record at `serving/<role>.json` on the state branch: start id,
-  counter, poll interval at start, host name, process id, lock directory id. Every write is
+  counter, host name, process id, lock directory id. Every write is
   conditional on the file's `sha`; a serving write finding the file absent creates it,
   conditional on its absence.
 - [ ] 2.3 Measure the record's age on the larger of elapsed monotonic and elapsed wall-clock
   time, and test it across a suspend on the target hosts.
+- [ ] 2.4 Keep the lock directory on storage that outlives a restart: beside the lore clone on a
+  host, and on the bind-mounted volume under Compose. Measure that the lock is exclusive on each
+  shipped deployment (local disk, a bind mount, Docker Desktop file sharing); where it is not,
+  `docs/deployment.md` says that deployment cannot run `igor serve`.
+- [ ] 2.5 Record each running worker's process group in the lock directory, and at takeover kill
+  any recorded group still alive before removing its tree.
+- [ ] 2.6 Measure how the Contents API answers a write refused because the branch moved and one
+  refused because the file's `sha` changed, and retry only the first for files other than the
+  serving record.
 
 ## 3. Startup guard and takeover
 
 - [ ] 3.1 Before the first cycle: take the lock or exit 78; read the record; take over at once
-  where it names this lock directory; otherwise watch for three of the longer of the process's
-  own and the declared poll interval, reading every half poll interval, and exit 78 on any
-  change.
+  where it names this lock directory; otherwise watch for 30 minutes, reading every 5, exiting 78
+  when a write lands and 1 when the record disappears.
 - [ ] 3.2 Take over with one write conditional on the record read at start; exit 78
   where it fails because the record changed, and exit 1 where the record cannot be read or the
   write gets no answer.
@@ -36,13 +44,14 @@ approved.
 
 ## 4. Serving
 
-- [ ] 4.1 Run the record timer every half poll interval, independent of the cycle and workers:
-  stand down (stop every worker, post nothing, exit 1) once the last landed write is two poll
-  intervals old; otherwise send the next conditional write. A write that fails because the
+- [ ] 4.1 Run the record timer every 5 minutes, independent of the poll interval, the cycle and
+  the workers: stand down (stop every worker, post nothing, exit 1) once the last landed write
+  is 20 minutes old; otherwise send the next conditional write. A write that fails because the
   record names another start id stops every worker and exits 1.
 - [ ] 4.2 Check the same age before every claim, publication or post, and stand down instead
-  where it is two poll intervals.
-- [ ] 4.3 Keep the timer's interval fixed at the one the process started with.
+  where it is 20 minutes.
+- [ ] 4.3 Define the 5-minute write period, the 20-minute stand-down and the 30-minute watch as
+  constants in one place, read by no configuration, and refuse a role-file key for any of them.
 
 ## 5. Adoption
 
@@ -72,6 +81,8 @@ approved.
   sweep for trees no slot names.
 - [ ] 6.7 Retry a state write the branch refuses because it moved, re-reading and re-applying
   the change.
+- [ ] 6.8 Run slot `k` of role `r` as `igor-worker-<r>-<k>` once #175's worker users exist,
+  through whatever per-slot mechanism #175 settles.
 
 ## 7. `igor run`
 

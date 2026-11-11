@@ -2,8 +2,8 @@
 
 ### Requirement: The abandoned-tree threshold derives from the worker's longest possible life
 
-For every working tree no worker slot names (`role-process`), such as one `igor run` made, the
-sweep that reclaims trees left by a dead process SHALL use a threshold above the longest a tree
+For every working tree not named for a worker slot of this process's lock directory
+(`role-process`), such as one `igor run` made or one another checkout's process left, the sweep that reclaims trees left by a dead process SHALL use a threshold above the longest a tree
 can be in use: the absolute ceiling plus the provisioning and publication either side of the
 worker. The margin SHALL be additive, because what a tree outlives its worker by is a clone and
 a push rather than a share of the run.

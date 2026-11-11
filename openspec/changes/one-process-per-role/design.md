@@ -22,7 +22,7 @@ a second one out, including across a crash and a restart.
 **Non-Goals:**
 - One role across several hosts, or a role that keeps working while its host is down.
 - Failover. This change has each serving process rewrite a record on the state branch every
-  half poll interval, and stop itself once it cannot; a starting process that sees the record
+  5 minutes, and stop itself once its last landed write is 20 minutes old; a starting process that sees the record
   change exits with status 78. That record is the lease the planned active/standby design
   needs: a standby would wait instead of exiting, and take over once the record stops changing.
   The waiting is not built here.
@@ -51,7 +51,9 @@ Each is restated here for one process per role; the number is #179's decision.
    (from #179's decision 63, which was Adam's, and its decision 72). The serving record holds
    the writer's start id, picked at random at each start, and a counter it raises at each write.
    #179 kept a record per rank and watched for a rank's; here there is one record per role: the
-   starting process watches it, and any change to it means another live process.
+   starting process watches it, and any write that lands on it means another live process. A
+   record that disappears means nothing about liveness, so the watcher exits with status 1 and
+   its supervisor starts it again to watch afresh.
 6. **Host names and process ids go on the state branch, even where it is public** (from #179's
    decision 74, Adam's). The serving record carries them so the operator can find the other
    process a refusal names.
@@ -75,9 +77,8 @@ Each is restated here for one process per role; the number is #179's decision.
     lands, the unit's `Restart=always` starts a refused process again every 30 seconds, and
     each start refuses again: safe, and noisy in the journal.
 12. **A process stops its own workers on a timer the cycle cannot delay** (from #179's decision
-    76). It fires every half poll interval whatever the cycle and the workers are doing, and
-    stands the process down once its last landed record write is two poll intervals old, inside
-    the three poll intervals a starting process watches.
+    76). It fires on its own schedule, whatever the cycle and the workers are doing, and stands
+    the process down before a starting process's watch can end, at the timings decision 17 sets.
     The process also checks before each claim, publication or post, which covers a process
     resuming from a pause before its timer has fired.
 
@@ -112,19 +113,40 @@ behind it.
     process that replaced it. With one conditional
     file, one of two simultaneous starters wins. This is the state branch's own compare-and-swap
     on a file, which the Contents API offers through the file's `sha`; it is not a claim, so it
-    does not touch `work-claiming`'s rule that claims never depend on a conditional write. A lost
-    record costs a starting process at most one refused start: a watching process counts the
-    loss as a change and exits with status 78, and by its next start a live process has written
-    the record again, within half a poll interval of the loss. *Proof:* TLC, `negative/NoConditionalWrites.cfg`.
-17. **The record's timing is fixed when the process starts, and declared in the record.** #179
-    needed per-heartbeat declarations and a stand-down in the shortest interval applied
-    (its decisions 49 and 76) because a process's interval could change while it ran. Here the
-    timer's interval never changes, so neither is needed. *One good option.*
+    does not touch `work-claiming`'s rule that claims never depend on a conditional write. *Proof:*
+    TLC, `negative/NoConditionalWrites.cfg`. A lost
+    record costs a starting process one restart: it exits with status 1, which its supervisor
+    restarts, unlike status 78, and on its next watch a live process has written the record
+    again, within 5 minutes of the loss; with no live process, the next watch takes over.
+17. **The record's timing is fixed in code, the same for every process, and independent of the
+    poll interval: a write every 5 minutes, a stand-down at 20 minutes without a landed write,
+    and a watch of 30.** The record carries no interval, and a starting process watches for 30
+    minutes whether or not a record exists.
+    - Timing tied to each process's poll interval is unsafe. With the record lost, a starter has
+      no declared interval and watches three of its own. A live process whose interval is 1.5
+      times the starter's or more, and whose writes stop landing, stands down only at two of its
+      own intervals, which is three or more of the starter's: at or after the watch's end, so
+      both serve. TLC
+      finds exactly that, at 3 times and at 1.5 times: `model/rejected/IntervalTimed.tla` is
+      that timing, and its configurations `SlowPollLost.cfg` and `MidPollLost.cfg` violate
+      `OneProcessWorks`. Waiting three of a 30-minute maximum poll interval, which #228 proposes, is safe, but makes every
+      first start wait 90 minutes.
+    - A fixed timing leaves no mismatch to bound: every process writes, stands down and watches
+      alike, the case the main configurations check. `OneProcessPerRoleSlowPollLost.cfg`,
+      `OneProcessPerRoleMidPollLost.cfg` and `OneProcessPerRoleSlowPollPause.cfg` give the two
+      processes poll intervals of 30 or 15 minutes against 10, and pass.
+    - The values match what interval-tied timing gave a process polling every 10 minutes: the same
+      write load, 12 writes an hour per role, against a REST limit of 5,000 requests an hour; the
+      same tolerance, three writes that fail in a row before a stand-down; and a first start
+      that waits 30 minutes, not 90. A 5-minute period with a 10-minute stand-down and a
+      15-minute watch would halve the wait, but one failed write would then end every run.
+    - #179 needed per-heartbeat declarations (a heartbeat was its equivalent of a record write) and a stand-down in the shortest interval applied
+      (its decisions 49 and 76) because a process's interval could change while it ran; a
+      fixed timing needs neither. *Proof:* TLC.
 18. **A starting process takes its role's lock, and a restart from its own checkout takes over
     at once.** The lock lives in a lock directory beside the process's lore checkout, with a
     random id written there once, and the operating system releases it when its holder ends.
-    Without it, every restart, including each upgrade, would wait three poll intervals, 30
-    minutes at the default, before working. With it, a restart from the same checkout takes over
+    Without it, every restart, including each upgrade, would wait 30 minutes before working. With it, a restart from the same checkout takes over
     at once, and a second process from that checkout is refused at once. Another checkout has
     another lock directory and id, so it watches as a process on another host does. *Proof:*
     TLC, `OneProcessPerRoleSameHost.cfg` and `negative/NoLock.cfg`.
@@ -177,19 +199,23 @@ inside one process are not modelled.
 | `OneProcessWorks` | *One process serves a role at a time* |
 | `EveryClaimAccountedFor` | *A process that takes over adopts or gives back every claim of its role* |
 
-Every configuration has two processes, two items, half a poll interval of 1 tick (so a poll
-interval is 2 ticks), a stand-down at 4 ticks (two intervals) and a watch of 6 (three). TLC 2.19 (tla2tools v1.7.4) ran each with no error found:
+Every configuration has two processes and two items. A tick is 5 minutes: a record write every
+tick, a stand-down at 4 ticks (20 minutes) and a watch of 6 (30). Poll intervals are 2 ticks (10
+minutes) unless a configuration says otherwise. TLC 2.19 (tla2tools v1.7.4) ran each with no error found:
 
 | Configuration | What it covers | Distinct states |
 | --- | --- | --- |
-| `OneProcessPerRole.cfg` | p1 serves on h1, p2 may start on h2; one pause; 3 starts, counting p1's | 208,177 |
-| `OneProcessPerRoleLostRecord.cfg` | the same, with a lost record instead of a pause | 108,471 |
-| `OneProcessPerRoleSameHost.cfg` | p1 serves, p2 may start from the same checkout; a pause | 63,655 |
-| `OneProcessPerRoleFirstStart.cfg` | no record; both may start at once, on two hosts; a pause | 485,747 |
-| `OneProcessPerRoleStale.cfg` | a crash on h1 left the record and claims; a pause | 797,404 |
-| `OneProcessPerRoleAllFaults.cfg` | two hosts; a pause and a lost record; 4 starts | 3,817,929 |
+| `OneProcessPerRole.cfg` | p1 serves on h1, p2 may start on h2; one pause; 3 starts, counting p1's | 516,622 |
+| `OneProcessPerRoleLostRecord.cfg` | the same, with a lost record instead of a pause | 264,470 |
+| `OneProcessPerRoleSameHost.cfg` | p1 serves, p2 may start from the same checkout; a pause | 180,859 |
+| `OneProcessPerRoleFirstStart.cfg` | no record; both may start at once, on two hosts; a pause | 1,204,717 |
+| `OneProcessPerRoleStale.cfg` | a crash on h1 left the record and claims; a pause | 2,051,079 |
+| `OneProcessPerRoleSlowPollLost.cfg` | p1 polls every 30 minutes, p2 every 10; a lost record | 554,273 |
+| `OneProcessPerRoleMidPollLost.cfg` | p1 polls every 15 minutes, p2 every 10; a lost record | 309,770 |
+| `OneProcessPerRoleSlowPollPause.cfg` | p1 polls every 30 minutes, p2 every 10; a pause | 1,041,752 |
+| `OneProcessPerRoleAllFaults.cfg` | two hosts; a pause and a lost record; 4 starts | 9,099,302 |
 
-Each finishes in about a minute or less on a laptop. Each negative configuration removes one
+Each finishes in under three minutes on a laptop. Each negative configuration removes one
 guard, and TLC finds a violation in it:
 
 | Negative configuration | Guard removed | Violates |
@@ -198,13 +224,14 @@ guard, and TLC finds a violation in it:
 | `NoWatch.cfg` | the watch | `OneProcessWorks` |
 | `NoConditionalWrites.cfg` | conditional record writes | `OneProcessWorks` |
 | `NoStandDownTimer.cfg` | the stand-down | `OneProcessWorks` |
-| `LateStandDown.cfg` | the margin: stand-down at three intervals, equal to the watch | `OneProcessWorks` |
+| `LateStandDown.cfg` | the margin: stand-down at 30 minutes, equal to the watch | `OneProcessWorks` |
 | `NoAdoption.cfg` | adoption at takeover | `EveryClaimAccountedFor` |
+| `rejected/SlowPollLost.cfg` | the fixed timing, replaced by `IntervalTimed.tla`'s; intervals 3 times apart | `OneProcessWorks` |
+| `rejected/MidPollLost.cfg` | the fixed timing, replaced by `IntervalTimed.tla`'s; intervals 1.5 times apart | `OneProcessWorks` |
 
 **What the model assumes:**
-- Both processes run the same poll interval. Where the record declares an interval, the watch
-  counts the longer of the two, so different intervals are safe there; Open Question 1 is about
-  a record that is absent.
+- A process's poll interval spaces only the claims its cycles make. The record's timing reads
+  no poll interval, in the model as in the spec.
 - A resumed process's overdue timer runs before anything else it does. A real process resumes
   its workers at the same moment, but a worker changes only its own tree, because the serving
   process, not the worker, publishes; and that process checks the age before each claim,
@@ -215,34 +242,37 @@ guard, and TLC finds a violation in it:
 
 ## Risks / Trade-offs
 
-- **A restart from another checkout or host, and a role's first start, wait three poll intervals
-  before working:** 30 minutes at the default. A restart from the same checkout does not wait.
-- **A GitHub outage of two poll intervals ends every running worker's run.** The process exits
+- **A restart from another checkout or host, and a role's first start, wait 30 minutes before
+  working.** A restart from the same checkout does not wait.
+- **A GitHub outage of 20 minutes ends every running worker's run**, whatever the poll interval. The process exits
   with status 1, and its restart adopts the claims and works them again, paying twice. That is
   the price of never letting a process work after it may have been replaced.
 - **An upgrade or a crash interrupts all N workers together**, and the process taking over works
   again each item without a pull request (#241's accepted costs).
 - **Two open pull requests modify requirements this change modifies.** #140 (`directed-asks`)
-  also modifies work-triage's *An item held by another party is never a candidate*, so whichever
-  archives second must carry the other's text; and its exception for a gone rank's claim rests on
-  ranks, which this change removes. The open change `directed-interaction` on `main` also reasons
-  from ranks. #204 orders the archives.
+  also modifies work-triage's *An item held by another party is never a candidate*, and its
+  exception for a gone rank's claim rests on ranks, which this change removes. #175
+  (`worker-user`) modifies task-execution's *Igor forwards the termination it is sent*: in #175's
+  copy, a kill under `igor serve` reaches every process the worker user owns, where this change's
+  copy kills each worker's process group, so the merged text needs both. Whichever archives second
+  carries the other's text; #204 orders the archives.
+- **The open change `directed-interaction` on `main` assumes one item at a time.** Its proposal
+  reasons from ranks, and says *"a process already working an item is not planning a cycle"*,
+  which is false once a cycle runs while workers run.
+- **A hand-run `igor serve` killed with SIGKILL leaves its workers running.** Each worker is in a
+  process group of its own; under systemd or Compose they die with the unit or container, but
+  by hand they survive, and the restart's fast takeover removes their trees while they spend
+  seats. Task 2.5 kills them at takeover.
+- **Some in-force text still assumes a cycle works its items one after another:**
+  `work-claiming`'s grounds for its stop lookback (how far back a claim looks for a stop said
+  before it), its two surface failures *in a row*, and
+  `work-discovery`'s closed list of reasons a watermark stays below an item. `seat-budget`'s
+  *first seat in that list with headroom* does not name the seats running workers hold. Decisions 14
+  and 22 settle how this change behaves there, but the in-force text still reads otherwise, and
+  this change has no delta for it. They are left open for Adam's review.
+- **`igor-worker-<r>-<k>` can pass Linux's 32-character user-name limit,** and no requirement
+  refuses a role name and worker count whose user names would. Left open for Adam's review.
 
 ## Open Questions
 
-1. **For Adam: how long does a starting process watch when the role has no serving record?**
-   That happens at a role's first start, and after the state branch is lost or reset. A test
-   cannot tell the options apart; they differ in a rare unsafe case and in the wait at every
-   first start. The spec is written to option A.
-   - **A. Three of its own poll interval** (30 minutes at the default). Unsafe in one case: the
-     record was lost while another process of the role serves with a poll interval more than six
-     times the starter's. That process writes again up to half its interval after the loss,
-     which then comes after the starter's watch of three of its own intervals ends. Processes of one role
-     read one role file, so their intervals differ only through `--poll` or a change between
-     their starts.
-   - **B. Three of the 30-minute maximum poll interval** (90 minutes). Always safe; every first
-     start waits 90 minutes. #228 (`probe-claim`) brings that maximum in for its probe lapse. If it
-     lands, B adds no new limit; and under A, the unsafe case then needs a starting process whose
-     interval is under 5 minutes, since no interval may exceed 30.
-   - *Recommended: A.* The unsafe case needs a lost state branch, a second process started by
-     mistake within the watch, and poll intervals six times apart, all at once.
+No picker questions. *Risks* lists the findings left open for Adam's review.

@@ -4,10 +4,12 @@
 #   below lists must pass, so a failure is a regression in the spec or the
 #   model. A configuration added to model/ runs only once it is listed.
 # - "TLC negative configurations": each guard of the change is a TRUE or
-#   FALSE constant in the model. Each file in model/negative/ removes one, or,
+#   FALSE constant in the model. Each file in model/negative/ sets one FALSE, or,
 #   in LateStandDown.cfg, sets the stand-down age equal to the watch length.
 #   TLC must find a violation there; a file that passes means the model does
-#   not show that guard is needed.
+#   not show that guard is needed. The same step runs each file in
+#   model/rejected/ against IntervalTimed.tla, the record timing tied to the
+#   poll interval that the change rejects, and requires a violation too.
 #
 # To move to another tla2tools.jar release, change TLA_TOOLS_VERSION and
 # TLA_TOOLS_SHA256 together: the checksum step rejects any other file.
@@ -45,6 +47,9 @@ jobs:
           - OneProcessPerRoleSameHost.cfg
           - OneProcessPerRoleFirstStart.cfg
           - OneProcessPerRoleStale.cfg
+          - OneProcessPerRoleSlowPollLost.cfg
+          - OneProcessPerRoleMidPollLost.cfg
+          - OneProcessPerRoleSlowPollPause.cfg
           - OneProcessPerRoleAllFaults.cfg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,12 +90,16 @@ jobs:
           # TLC exits 12 for a broken invariant. Any other code, including 0,
           # fails this step.
           failed=""
-          for cfg in negative/*.cfg; do
+          for cfg in negative/*.cfg rejected/*.cfg; do
+            case $cfg in
+              rejected/*) spec=rejected/IntervalTimed.tla ;;
+              *) spec=OneProcessPerRole.tla ;;
+            esac
             echo "::group::TLC $cfg"
             set +e
             java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \
               -workers 1 -cleanup -metadir "$RUNNER_TEMP/states-$(basename "$cfg")" \
-              -config "$cfg" OneProcessPerRole.tla
+              -config "$cfg" "$spec"
             code=$?
             set -e
             echo "::endgroup::"

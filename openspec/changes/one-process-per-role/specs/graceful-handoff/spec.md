@@ -5,9 +5,10 @@
 Where an Igor stops work it has claimed **of its own accord** — exhaustion, unrecoverable
 failure, or any condition it detects itself — it SHALL post a handoff to the item before
 releasing, because the claim told others to stand off. A stop directed at the Igor is exempt: it
-releases at once, and any partial work is named in a one-line receipt. A process that stands
-down posts nothing, since it may have been replaced; the process taking over its role answers on
-each claim (`role-process`).
+releases at once, and any partial work is named in a one-line receipt. A serving process
+that stops because it cannot rewrite its serving record, or because another process wrote it,
+posts nothing, since it may have been replaced; the process taking over answers on each claim
+(`role-process`).
 
 #### Scenario: Handoff posted on exhaustion
 

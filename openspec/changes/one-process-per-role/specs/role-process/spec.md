@@ -25,24 +25,34 @@ different hosts.
 - **WHEN** `igor serve backend` runs on host A and `igor serve frontend` on host B
 - **THEN** both serve, each its own role
 
-### Requirement: A serving process rewrites its serving record every half poll interval
+### Requirement: A serving process rewrites its serving record every 5 minutes
 
-A serving process SHALL keep its role's serving record on the state branch, holding: a start
-id, picked at random at each start; a counter; its poll interval at start; its host name and
-process id; and its lock directory's id. It SHALL rewrite the record, raising the counter, every
-half of that interval, from a timer that runs whatever the cycle and workers do. Each write SHALL
-be conditional on the record holding its last write, or, where the record is absent, on its
-absence.
+A serving process SHALL keep its role's serving record on the state branch: a start id picked
+at random at each start, a counter, its host name and process id, and its lock directory's id.
+It SHALL rewrite it, raising the counter, every 5 minutes, from a timer that runs whatever the
+poll interval, cycle and workers. Each write SHALL be conditional on the record it last read or
+wrote, or on its absence, and a failed one that finds its own start id SHALL be sent again.
 
 #### Scenario: The record is rewritten while a long worker runs
 
-- **WHEN** a worker runs for longer than a poll interval
-- **THEN** the serving record's counter rises every half poll interval while it runs
+- **WHEN** a worker runs for an hour
+- **THEN** the serving record's counter rises every 5 minutes while it runs
+
+#### Scenario: A slow poll interval does not slow the record
+
+- **WHEN** a role's poll interval is 30 minutes
+- **THEN** its serving process still rewrites the record every 5 minutes
 
 #### Scenario: A record another process wrote displaces this one
 
 - **WHEN** a serving process's conditional write fails, and the record names another start id
 - **THEN** the process stops every worker at once, posts nothing, and exits with status 1
+
+#### Scenario: A write that finds its own record is sent again
+
+- **WHEN** a serving process's conditional write fails, and the record still names its own start
+  id, as after an earlier write of its own landed late
+- **THEN** it writes again, conditional on the record it now reads, and goes on serving
 
 #### Scenario: A record that is gone is written again
 
@@ -53,10 +63,11 @@ absence.
 ### Requirement: A starting process refuses to start beside a live process of its role
 
 Before its first cycle, a starting process SHALL take its role's lock in a lock directory beside
-its lore checkout, a lock the operating system releases when its holder ends, and SHALL exit with
-status 78 where it cannot. It SHALL then watch the serving record for three times the longer of its
-own poll interval and the one the record declares, or three of its own with no record, and SHALL
-exit with status 78 where the record changes meanwhile, naming the other process's host and id.
+its local clone of the lore repository, which the operating system releases when its holder
+ends, exiting with status 78 where it cannot. Unless the next requirement lets it take over at
+once, it SHALL watch the serving record for 30 minutes whatever any poll interval, exiting with
+status 78 where a write lands, naming the writer's host, pid and start id, and with 1 where the
+record disappears.
 
 #### Scenario: A second process from the same checkout is refused at once
 
@@ -67,19 +78,25 @@ exit with status 78 where the record changes meanwhile, naming the other process
 #### Scenario: A live process on another host is found by its record
 
 - **WHEN** `igor serve backend` starts on host B while a process on host A serves `backend`
-- **THEN** within three poll intervals it sees the record's counter rise, logs host A's name and
+- **THEN** within 30 minutes it sees the record's counter rise, logs host A's name and
   the other process's id, and exits with status 78
 
 #### Scenario: A record left by a crash on another host is taken over
 
 - **WHEN** the process serving `backend` on host A crashed, and `igor serve backend` starts on
   host B
-- **THEN** after three poll intervals with no change to the record, the process on B takes over
+- **THEN** after 30 minutes with no change to the record, the process on B takes over
 
-#### Scenario: The watch counts the longer interval
+#### Scenario: Different poll intervals do not change the watch
 
-- **WHEN** a starting process's poll interval is 10 minutes and the record declares 20
-- **THEN** it watches for 60 minutes
+- **WHEN** a process polling every 10 minutes starts on host B while a process on host A,
+  polling every 30, serves its role
+- **THEN** within 30 minutes it sees the record's counter rise, and exits with status 78
+
+#### Scenario: A record lost during the watch restarts the watch
+
+- **WHEN** the serving record disappears while a starting process watches it
+- **THEN** the process exits with status 1, and its supervisor starts it again to watch afresh
 
 ### Requirement: A process takes over its role with one conditional write
 
@@ -117,8 +134,7 @@ held that lock while it lived and so has ended.
 
 - **WHEN** the process serving `backend` crashes and systemd starts `igor@backend` again on the
   same host
-- **THEN** the new process takes over before its first cycle, without waiting three poll
-  intervals
+- **THEN** the new process takes over before its first cycle, without waiting 30 minutes
 
 #### Scenario: Another checkout on the same host is another lock directory
 
@@ -129,36 +145,36 @@ held that lock while it lived and so has ended.
 
 ### Requirement: A serving process that cannot rewrite its record stops its workers
 
-Where a serving process's last landed record write is two of its poll intervals old, it SHALL
-stop every worker at once, post nothing, leave its claims for the next serving process to adopt,
-and exit with status 1. Its timer SHALL check at every firing, and the process SHALL check before
-every claim, publication or post, measuring age on a clock that counts time the host was
-suspended. A starting process watches three intervals, so this process stops first.
+Where a serving process's last landed record write is 20 minutes old, it SHALL stop every
+worker at once, post nothing, leave its claims for the next serving process to adopt, and exit
+with status 1. Its timer SHALL check at every firing, and the process SHALL check before every
+claim, publication or post, measuring age on a clock that counts time the host was suspended. A
+starting process watches for 30 minutes, so this process stops first.
 
-#### Scenario: GitHub does not answer for two poll intervals
+#### Scenario: GitHub does not answer for 20 minutes
 
-- **WHEN** every record write fails for two poll intervals while three workers run
+- **WHEN** every record write fails for 20 minutes while three workers run
 - **THEN** the process stops all three workers, leaves their items labelled with nothing posted,
   and exits with status 1
 
 #### Scenario: A paused process resumes
 
-- **WHEN** a serving process resumes after a pause longer than two poll intervals
+- **WHEN** a serving process resumes after a pause longer than 20 minutes
 - **THEN** it stops its workers before it claims, publishes or posts anything, and exits with
   status 1
 
 #### Scenario: A long cycle does not delay the check
 
-- **WHEN** a cycle's triage takes longer than two poll intervals while every record write fails
-- **THEN** the timer stops the workers once the last landed write is two poll intervals old
+- **WHEN** a cycle's triage takes longer than 20 minutes while every record write fails
+- **THEN** the timer stops the workers once the last landed write is 20 minutes old
 
 ### Requirement: A process that takes over adopts or gives back every claim of its role
 
-After taking over, before new claims, the process SHALL treat every item whose role label the
-Igor's own bot account added as its predecessor's claim, whatever the discovery watermark. It
+After taking over, before new claims, the process SHALL treat every item whose holder entry the
+Igor itself set as its predecessor's claim, whatever the discovery watermark. It
 SHALL catch up an item with the Igor's open pull request, then give the claim back, and triage
-any other again, working it under a fresh claim message or giving the claim back out loud. A
-label a person added is not adopted: it directs the Igor as any hand-over does.
+any other again, working it under a fresh claim message or giving the claim back out loud. An
+entry a person set is not adopted: it directs the Igor as any hand-over does.
 
 #### Scenario: A claimed item with no pull request is worked again
 
@@ -208,13 +224,21 @@ a stop receipt, as for a stop said while no run is active.
 A serving process SHALL run up to its role's `workers` workers at once, in worker slots numbered
 from 1, each on a different item. A cycle SHALL hand the items it would claim, in the order it
 would claim them, to free slots, without waiting for a worker to finish. An item that finds no
-free slot SHALL NOT be claimed, and the watermark SHALL stay below it.
+free slot SHALL NOT be claimed, and the watermark SHALL stay below it; an adopted one SHALL be
+given back out loud.
 
 #### Scenario: More items than slots
 
 - **WHEN** a role with `workers: 2` has three items triage proceeds on, and no worker is running
 - **THEN** the cycle claims the first two and starts a worker on each, and leaves the third
   unclaimed for a later cycle
+- **AND** the source's watermark stays below the third
+
+#### Scenario: An adopted item with no free slot is given back
+
+- **WHEN** a process with `workers: 1` takes over three claims its predecessor left, and triage
+  proceeds on all three
+- **THEN** it works the first, and gives the other two back with a comment saying why
 
 #### Scenario: A cycle runs while workers run
 
@@ -263,7 +287,7 @@ be claimed. Triage's model call is no worker, and its seat is chosen as before.
 
 Where the state branch refuses a write because the branch moved, the process SHALL read what the
 branch now holds, apply its own change to that, and write again. It SHALL NOT send again content
-built from what it read before.
+built from what it read before. The serving record is excepted: its writes stay conditional.
 
 #### Scenario: Two roles write state at once
 
@@ -288,6 +312,13 @@ named it held that directory's lock and has ended.
 
 - **WHEN** a process takes over after a crash that left trees for slots 1 and 2 of its role
 - **THEN** it removes both, with the outbox beside each, before its first cycle
+
+#### Scenario: Trees named for another lock directory are left to the age sweep
+
+- **WHEN** a process takes over while trees of its role named for another lock directory exist,
+  as when a paused process from another checkout still runs workers
+- **THEN** it does not remove them, and the age-based sweep reclaims them once they are older
+  than its threshold
 
 #### Scenario: Another role's trees are left alone
 

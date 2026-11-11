@@ -49,3 +49,19 @@ One process serves a role at a time, and runs the role's workers (`role-process`
 - **WHEN** two processes are started for the `backend` role under the `backend` identity
 - **THEN** they are one Igor, and a claim made by either names the same identity
 - **AND** only one of them serves the role (`role-process`)
+
+### Requirement: Timing values are configurable with stated defaults
+
+Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
+value someone guesses differently each time: a **settle interval** of 10 seconds before a claim
+is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The serving
+record's timings are the exception, fixed in code for every process (`role-process`).
+
+These are starting points to tune against observation, not derived values, and SHALL be
+recorded as such rather than presented as considered.
+
+#### Scenario: Default applied when unset
+
+- **WHEN** a role does not set the settle interval
+- **THEN** the inherited or default value is used
+- **AND** the effective value is visible via `role explain`

@@ -23,6 +23,6 @@ single cycle invoked by hand is the unit that process repeats, not a substitute 
 
 #### Scenario: Budget is re-checked between items
 
-- **WHEN** several items are claimed in one cycle and capacity runs out partway
-- **THEN** the remaining items are not started
+- **WHEN** several items would be claimed in one cycle and capacity runs out partway
+- **THEN** the remaining items are not claimed
 - **AND** the reason is reported

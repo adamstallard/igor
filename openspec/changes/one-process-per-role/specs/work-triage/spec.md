@@ -24,8 +24,7 @@ issue every cycle — noise directed at exactly the people a claim exists to inf
 #### Scenario: An item the Igor itself holds is still a candidate
 
 - **WHEN** a candidate is held only by the running Igor, has no open artifact (no work in
-  flight), and none of the Igor's workers is working it, since `role-process` passes those over
-  before triage
+  flight), and none of the Igor's workers is working it
 - **THEN** it is not skipped, because that is a claim left behind by a process that stopped
 
 #### Scenario: Nobody named means nobody holds it

@@ -9,7 +9,7 @@
 (* names its own lock directory, whose lock it now holds) or watches the   *)
 (* record for Watch ticks first. It takes over with one write, conditional *)
 (* on the record not having changed since it read it. A serving process    *)
-(* rewrites the record every Half ticks, each write conditional on the     *)
+(* rewrites the record every WritePeriod ticks, each write conditional on the     *)
 (* record still holding its own last write, and stands down once its last  *)
 (* landed write is StandDown ticks old. Processes crash, restart, pause    *)
 (* and resume; the record can be lost; writes can fail, land late or never *)
@@ -21,6 +21,11 @@
 (* process's timer firing is urgent: a tick waits for every firing that is *)
 (* due. A paused process does nothing, and its counters still advance, as  *)
 (* on a clock that counts time the host was suspended.                     *)
+(*                                                                         *)
+(* The record's timing (WritePeriod, StandDown, Watch) is fixed in code and the   *)
+(* same for every process. A process's poll interval, PollOf, only spaces  *)
+(* its cycles' claims, so processes polling at different intervals still   *)
+(* time the record alike.                                                  *)
 (*                                                                         *)
 (* The record is modelled by its writer's start id and lock directory. A   *)
 (* real record also carries a counter, so every write changes it; here a   *)
@@ -41,7 +46,8 @@ CONSTANTS
     Procs,          \* processes that may be started for the role
     LockDirOf,      \* the lock directory each process uses: its host, in effect
     Items,          \* items the role may claim
-    Half,           \* half the poll interval: the serving process's write period
+    WritePeriod,           \* the record's write period, fixed in code and the same for every process
+    PollOf,         \* each process's poll interval, which spaces its cycles; the record ignores it
     StandDown,      \* age of the last landed write at which a serving process stands down
     Watch,          \* how long a starting process watches the record before taking over
     MaxStarts,      \* starts allowed, all processes together, counting one serving at the outset
@@ -60,6 +66,11 @@ CONSTANTS
 \* Where the processes run, for LockDirOf: each on a host of its own, or both on one.
 TwoHosts == [p \in Procs |-> IF p = "p1" THEN "h1" ELSE "h2"]
 OneHost  == [p \in Procs |-> "h1"]
+
+\* Poll intervals, for PollOf, in ticks: WritePeriod is 5 minutes, so 2 ticks is the default 10.
+EqualPoll == [p \in Procs |-> 2]
+SlowPoll == [p \in Procs |-> IF p = "p1" THEN 6 ELSE 2]   \* p1 at 30 minutes, p2 at 10
+MidPoll == [p \in Procs |-> IF p = "p1" THEN 3 ELSE 2]  \* p1 at 15 minutes, p2 at 10
 
 NoRec  == [sid |-> <<"none", 0>>, dir |-> "none"]
 NoPend == [kind |-> "none", new |-> NoRec, age |-> 0, cur |-> FALSE, ok |-> FALSE]
@@ -81,10 +92,11 @@ VARIABLES
     pend,       \* this process's write in flight, or NoPend
     workers,    \* items this process's workers are working
     labelled,   \* items carrying the role's `igor:<role>` label
-    adopt       \* items this process took over and has not yet adopted or given back
+    adopt,      \* items this process took over and has not yet adopted or given back
+    cycleIn     \* ticks until this process's next cycle may claim
 
 vars == <<phase, starts, paused, pauses, losses, lock, rec, fast, seen, watched, fireIn,
-          age, pend, workers, labelled, adopt>>
+          age, pend, workers, labelled, adopt, cycleIn>>
 
 Sid(p)      == <<p, starts[p]>>
 Mine(p)     == [sid |-> Sid(p), dir |-> LockDirOf[p]]
@@ -132,13 +144,14 @@ Init ==
     /\ fast = [p \in Procs |-> FALSE]
     /\ seen = [p \in Procs |-> FALSE]
     /\ watched = [p \in Procs |-> 0]
-    /\ fireIn = [p \in Procs |-> IF InitServing /\ p = "p1" THEN Half ELSE 0]
+    /\ fireIn = [p \in Procs |-> IF InitServing /\ p = "p1" THEN WritePeriod ELSE 0]
     /\ age = [p \in Procs |-> 0]
     /\ pend = [p \in Procs |-> NoPend]
     /\ workers = [p \in Procs |-> IF InitServing /\ p = "p1" THEN Items ELSE {}]
     \* A live process, or a crashed predecessor, holds every item.
     /\ labelled = IF InitServing \/ InitRecord = "stale" THEN Items ELSE {}
     /\ adopt = [p \in Procs |-> {}]
+    /\ cycleIn = [p \in Procs |-> 0]
 
 (* A supervisor or a person starts a process. Without the role's lock it refuses
    (exit 78) at once. With it, it reads the record: one naming its own lock
@@ -170,7 +183,7 @@ WatchFire(p) ==
          THEN /\ End(p)
               /\ UNCHANGED pend
          ELSE IF ~Ready(p)
-           THEN /\ fireIn' = [fireIn EXCEPT ![p] = Half]
+           THEN /\ fireIn' = [fireIn EXCEPT ![p] = WritePeriod]
                 /\ UNCHANGED <<phase, workers, adopt, paused, fast, seen, watched, age, lock, pend>>
            ELSE /\ phase' = [phase EXCEPT ![p] = "taking"]
                 /\ pend' = [pend EXCEPT ![p] =
@@ -197,7 +210,7 @@ ServeFire(p) ==
     /\ IF StandDownTimer /\ age[p] >= StandDown
          THEN /\ End(p)
               /\ pend' = [pend EXCEPT ![p].cur = FALSE]
-         ELSE /\ fireIn' = [fireIn EXCEPT ![p] = Half]
+         ELSE /\ fireIn' = [fireIn EXCEPT ![p] = WritePeriod]
               /\ pend' = IF pend[p] = NoPend
                            THEN [pend EXCEPT ![p] =
                                   [kind |-> "serve", new |-> Mine(p), age |-> 0, cur |-> TRUE,
@@ -257,6 +270,7 @@ Drop(p) ==
 (* The tracker writes a serving process makes for items. *)
 Claim(p, i) ==
     /\ CanAct(p)
+    /\ cycleIn[p] = 0
     /\ i \notin labelled
     /\ labelled' = labelled \cup {i}
     /\ workers' = [workers EXCEPT ![p] = @ \cup {i}]
@@ -332,16 +346,27 @@ Tick ==
     /\ age' = [p \in Procs |-> IF phase[p] = "serving" THEN Up(age[p], StandDown) ELSE age[p]]
     /\ pend' = [p \in Procs |-> IF pend[p] = NoPend THEN NoPend
                                 ELSE [pend[p] EXCEPT !.age = Up(@, StandDown)]]
+    /\ cycleIn' = [p \in Procs |-> IF cycleIn[p] > 0 THEN cycleIn[p] - 1 ELSE 0]
     /\ UNCHANGED <<phase, starts, paused, pauses, losses, lock, rec, fast, seen, workers,
                    labelled, adopt>>
 
+(* A cycle ends, and the process's next one claims after its poll interval. *)
+CycleEnd(p) ==
+    /\ CanAct(p)
+    /\ cycleIn[p] = 0
+    /\ cycleIn' = [cycleIn EXCEPT ![p] = PollOf[p]]
+    /\ UNCHANGED <<phase, starts, paused, pauses, losses, lock, rec, fast, seen, watched,
+                   fireIn, age, pend, workers, labelled, adopt>>
+
 Next ==
     \/ Tick
-    \/ LoseRecord
-    \/ \E p \in Procs :
-         \/ Start(p) \/ WatchFire(p) \/ TakeTimeout(p) \/ ServeFire(p)
-         \/ Land(p) \/ Drop(p) \/ Crash(p) \/ Pause(p) \/ Resume(p)
-         \/ \E i \in Items : Claim(p, i) \/ Finish(p, i) \/ AdoptWork(p, i) \/ AdoptGiveBack(p, i)
+    \/ \E p \in Procs : CycleEnd(p)
+    \/ /\ UNCHANGED cycleIn
+       /\ \/ LoseRecord
+          \/ \E p \in Procs :
+               \/ Start(p) \/ WatchFire(p) \/ TakeTimeout(p) \/ ServeFire(p)
+               \/ Land(p) \/ Drop(p) \/ Crash(p) \/ Pause(p) \/ Resume(p)
+               \/ \E i \in Items : Claim(p, i) \/ Finish(p, i) \/ AdoptWork(p, i) \/ AdoptGiveBack(p, i)
 
 Spec == Init /\ [][Next]_vars
 
@@ -351,7 +376,8 @@ TypeOK ==
     /\ \A p \in Procs : workers[p] \subseteq Items /\ adopt[p] \subseteq Items
     /\ labelled \subseteq Items
     /\ \A d \in Dirs : lock[d] \in Procs \cup {"free"}
-    /\ \A p \in Procs : age[p] \in 0..StandDown /\ watched[p] \in 0..Watch /\ fireIn[p] \in 0..Half
+    /\ \A p \in Procs : age[p] \in 0..StandDown /\ watched[p] \in 0..Watch /\ fireIn[p] \in 0..WritePeriod
+    /\ \A p \in Procs : cycleIn[p] \in 0..PollOf[p]
 
 (* Proves role-process, "One process serves a role at a time": at no moment do two
    processes work the role's items, counting a process that may claim, publish or
