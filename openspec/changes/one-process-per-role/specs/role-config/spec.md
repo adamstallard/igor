@@ -22,6 +22,25 @@ effective value and the level it came from.
 - **WHEN** a role sets `workers: 0`, or `workers: two`
 - **THEN** the role is refused, naming the value
 
+### Requirement: A role whose worker user names would be too long is refused
+
+Where workers run as users of their own (`role-process`), loading a role SHALL refuse it where
+`igor-worker-<role>-<k>`, for its largest worker slot `k`, would pass Linux's 32-character limit
+on a user name, naming the role and the limit, and
+nothing SHALL start for it.
+
+#### Scenario: A long role name with two workers is refused
+
+- **WHEN** a role named `documentation-writer` sets `workers: 2`, so its second worker user would
+  be `igor-worker-documentation-writer-2`, 34 characters
+- **THEN** the role is refused with a message naming `documentation-writer` and the 32-character
+  limit, and no process starts for it
+
+#### Scenario: A short role name passes
+
+- **WHEN** a role named `backend` sets `workers: 9`
+- **THEN** it loads, its largest worker user `igor-worker-backend-9` being 21 characters
+
 ## MODIFIED Requirements
 
 ### Requirement: An Igor holds exactly one role

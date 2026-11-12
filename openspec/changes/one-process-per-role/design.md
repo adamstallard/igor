@@ -95,8 +95,9 @@ behind it.
     waits for the next cycle.** Today's claim order is kept, and the poll interval bounds the
     wait. Starting a cycle early when a slot frees is an optimisation for later. Leaving an item
     unclaimed for want of a slot is not the deferral graceful-handoff's *Busy is not a reason*
-    forbids: that scenario is about a claimed item handed off, and nothing here is claimed.
-    *Cheap to reverse.*
+    forbids: that scenario is about a claimed item handed off, and nothing here is claimed. An
+    adopted item is already claimed, so it is never given back for want of a slot or seat: it
+    stays claimed and is worked before any new item as slots free. *Cheap to reverse.*
 15. **No two running workers of a process share a seat, and nothing opts in to sharing.** Igor
     sees its own spend on a seat only at the next reading, so each worker running on a seat can
     carry it past its reserve line by up to one run (`docs/architecture.md` §6.3.4); with one
@@ -182,6 +183,26 @@ behind it.
     interval go to #228 (`probe-claim`); the reply giving a seat's reset time goes to #140
     (`directed-asks`); the reread of the configuration at each cycle goes to #208
     (`lore-pull`). None of them is needed for one process per role. *Can wait.*
+26. **The in-force text that assumed one item at a time is modified here, compacted to fit.**
+    `work-claiming`'s *A claim is verified after a settle interval* and *A claim that cannot be
+    kept is given back, out loud*, and `work-discovery`'s *Watermarks reduce reconsideration
+    without governing it*, now state decisions 14 and 22. Refinements added beside them would
+    leave contradicting text in force. Each was over OpenSpec's 500-character limit, so each is
+    compacted in #232's order: cut, then move detail into scenarios, then split. Only the
+    give-back requirement needed a split, into *Two runs in a row that the surface failed stop a
+    cycle* and *A write says what the surface recorded*; every in-force scenario stays under its
+    old name. The reasons cut are in the archived changes that added them. *Cheap to reverse.*
+27. **`seat-budget` gets no delta here.** #171, which archives first, removes *A pool is an
+    ordered list of seats…* and adds *A role draws on the seat with the most headroom*, and
+    spec-check simulates the archive against `main`, where #171's requirement is not yet in
+    force, and a `MODIFIED` copy of a requirement not in force fails that simulation. Once #171 is on `main`, this change modifies that requirement to choose among seats
+    the process's running workers do not hold (task 6.9). Until then the in-force *first seat in
+    that list with headroom* reads as if a busy seat were chosen; role-process's seat rule governs.
+    *Can wait.*
+28. **Where workers run as users of their own, a role whose worker user names would pass 32
+    characters is refused at load.** Linux
+    refuses to create such a user, so the role would otherwise fail at its first worker, after
+    it had claimed. *One good option.*
 
 ## What the model proves
 
@@ -238,7 +259,12 @@ guard, and TLC finds a violation in it:
   publication or post.
 - The lock directory is on a local filesystem, where the operating system's lock is exclusive.
 - A write's age is counted from when it was sent, so a write that lands late makes its process
-  stand down sooner, never later.
+  stand down sooner, never later; *A serving process that cannot rewrite its record stops its
+  workers* says so.
+- A crash ends a process's workers with it. Under systemd or Compose they die with the unit or
+  container; a hand-run process killed with SIGKILL leaves them, and *A process that takes over
+  ends its predecessor's surviving workers* ends them after the takeover write and before the
+  process removes a tree or starts a worker.
 
 ## Risks / Trade-offs
 
@@ -249,13 +275,21 @@ guard, and TLC finds a violation in it:
   the price of never letting a process work after it may have been replaced.
 - **An upgrade or a crash interrupts all N workers together**, and the process taking over works
   again each item without a pull request (#241's accepted costs).
-- **Two open pull requests modify requirements this change modifies.** #140 (`directed-asks`)
-  also modifies work-triage's *An item held by another party is never a candidate*, and its
-  exception for a gone rank's claim rests on ranks, which this change removes. #175
+- **Open pull requests overlap this change.** #140 (`directed-asks`)
+  also modifies work-triage's *An item held by another party is never a candidate*. Its copy of
+  *Items with work already in flight are skipped*, a requirement this change does not modify,
+  lets a process carry on the claim of a rank that has gone; that rule rests on ranks, which
+  this change removes, and competes with this change's adoption rule. #175
   (`worker-user`) modifies task-execution's *Igor forwards the termination it is sent*: in #175's
   copy, a kill under `igor serve` reaches every process the worker user owns, where this change's
   copy kills each worker's process group, so the merged text needs both. Whichever archives second
-  carries the other's text; #204 orders the archives.
+  carries the other's text; #204 orders the archives. #106 (`role-keyed-watermark`) archives
+  after this change and modifies *Watermarks reduce reconsideration without governing it*, so
+  its copy must carry this change's text. #173 (`pre-worker-breaker`) adds requirements about
+  surface failures beside *Two runs in a row that the surface failed stop a cycle*; neither
+  modifies the other's, so nothing is merged by hand, but #173's rules have to read the count in
+  the order runs end. This change
+  archives after #171, and its `seat-budget` delta waits for #171 (decision 27).
 - **The open change `directed-interaction` on `main` assumes one item at a time.** Its proposal
   reasons from ranks, and says *"a process already working an item is not planning a cycle"*,
   which is false once a cycle runs while workers run.
@@ -263,16 +297,23 @@ guard, and TLC finds a violation in it:
   process group of its own; under systemd or Compose they die with the unit or container, but
   by hand they survive, and the restart's fast takeover removes their trees while they spend
   seats. Task 2.5 kills them at takeover.
-- **Some in-force text still assumes a cycle works its items one after another:**
-  `work-claiming`'s grounds for its stop lookback (how far back a claim looks for a stop said
-  before it), its two surface failures *in a row*, and
-  `work-discovery`'s closed list of reasons a watermark stays below an item. `seat-budget`'s
-  *first seat in that list with headroom* does not name the seats running workers hold. Decisions 14
-  and 22 settle how this change behaves there, but the in-force text still reads otherwise, and
-  this change has no delta for it. They are left open for Adam's review.
-- **`igor-worker-<r>-<k>` can pass Linux's 32-character user-name limit,** and no requirement
-  refuses a role name and worker count whose user names would. Left open for Adam's review.
+
+- **A refused App credential stands every process down after 20 minutes.** Every state-branch
+  write then fails, so the process stops its workers and exits, and on restart the startup guard's first
+  read of the record fails while GitHub refuses the credential, so it exits 1 and restarts in a
+  loop. `surface-adapter`'s *An Igor that cannot act as its App does not start* instead has a running
+  process take no new item and resume once a token mints again, without exiting, and #82
+  (`stopped-scope`) keeps `igor serve` running through a condition. This change has to be
+  reconciled with both before it is built, by this change's and #82's authors.
 
 ## Open Questions
 
-No picker questions. *Risks* lists the findings left open for Adam's review.
+None for Adam. The refused-credential stand-down in *Risks* is open for this change's and #82's
+authors. Three facts the design relies on are unmeasured, each with a task that measures it
+before the code depends on it:
+- whether the clock behind the age check counts a suspend (task 2.3, decision 21);
+- whether the lock is exclusive on a bind mount and on Docker Desktop's file sharing (task 2.4);
+- whether the Contents API answers *branch moved* differently from *file changed* (task 2.6). If
+  it does not, a refused write other than the serving record's is read again and re-applied in
+  either case. That is safe for any file, since the change is re-applied to what the file now
+  holds; it costs only a read.

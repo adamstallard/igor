@@ -23,7 +23,8 @@ approved.
   shipped deployment (local disk, a bind mount, Docker Desktop file sharing); where it is not,
   `docs/deployment.md` says that deployment cannot run `igor serve`.
 - [ ] 2.5 Record each running worker's process group in the lock directory, and at takeover kill
-  any recorded group still alive before removing its tree.
+  any recorded group still alive whose leader's start time matches the record, before removing
+  its tree or starting a worker.
 - [ ] 2.6 Measure how the Contents API answers a write refused because the branch moved and one
   refused because the file's `sha` changed, and retry only the first for files other than the
   serving record.
@@ -46,7 +47,7 @@ approved.
 
 - [ ] 4.1 Run the record timer every 5 minutes, independent of the poll interval, the cycle and
   the workers: stand down (stop every worker, post nothing, exit 1) once the last landed write
-  is 20 minutes old; otherwise send the next conditional write. A write that fails because the
+  was sent 20 minutes ago; send no new write while one is in flight; otherwise send the next conditional write. A write that fails because the
   record names another start id stops every worker and exits 1.
 - [ ] 4.2 Check the same age before every claim, publication or post, and stand down instead
   where it is 20 minutes.
@@ -83,6 +84,10 @@ approved.
   the change.
 - [ ] 6.8 Run slot `k` of role `r` as `igor-worker-<r>-<k>` once #175's worker users exist,
   through whatever per-slot mechanism #175 settles.
+- [ ] 6.9 Once #171 is on `main`, add to this change a `MODIFIED` *A role draws on the seat with
+  the most headroom* that chooses among the seats the process's running workers do not hold.
+- [ ] 6.10 Where workers run as users of their own, refuse a role at load where
+  `igor-worker-<role>-<workers>` passes 32 characters, naming the role and the limit.
 
 ## 7. `igor run`
 

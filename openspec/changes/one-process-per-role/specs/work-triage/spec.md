@@ -5,10 +5,6 @@
 Triage SHALL skip any item whose holder field names a party other than the running Igor. This
 rule is universal and MUST NOT be configurable.
 
-Acting on work that is visibly someone else's is not an organizational preference. Left to a
-lane, an org that forgets to write it gets an Igor that claims and retracts on a colleague's
-issue every cycle — noise directed at exactly the people a claim exists to inform.
-
 #### Scenario: An item someone else holds is skipped before any claim
 
 - **WHEN** a candidate is held by a party other than the running Igor

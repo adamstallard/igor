@@ -38,11 +38,16 @@ whose directory, `openspec/changes/concurrent-instances/`, this change deletes. 
   sweep of slot trees.
 - `role-config`: adds *A role sets how many workers its process runs*; modifies *An Igor holds
   exactly one role*, whose processes of one role were interchangeable, and *Timing values are
-  configurable with stated defaults*, which now excepts the serving record's fixed timings.
+  configurable with stated defaults*, which now excepts the serving record's fixed timings; adds
+  *A role whose worker user names would be too long is refused*.
 - `graceful-handoff`: modifies *An Igor never goes silent on a claimed item*, so a process that
   stands down leaves its claims silent for the process taking over to answer.
 - `work-discovery`: modifies *The cycle repeats without supervision*, so that shutdown now
-  finishes every item in hand, not one.
+  finishes every item in hand, not one, and *Watermarks reduce reconsideration without
+  governing it*, which keeps the mark below an item left for want of a slot or seat.
+- `work-claiming`: modifies *A claim is verified after a settle interval* and *A claim that
+  cannot be kept is given back, out loud* for workers that run at once, and splits the latter's
+  surface-failure count and its rule on what a write says into requirements of their own.
 - `task-execution`: modifies *Igor forwards the termination it is sent*, which leaves every
   running worker to finish on a graceful wind-down, and *The abandoned-tree threshold derives
   from the worker's longest possible life*, which now covers only trees no worker slot names.
@@ -61,9 +66,13 @@ No entry in a capability's `decisions.md` record is added, changed or removed.
 ### Modified Capabilities
 
 - `role-config`: a role sets `workers`; processes of one role are no longer interchangeable;
-  the serving record's timings are fixed, not configurable.
+  the serving record's timings are fixed, not configurable; a role whose worker user names would
+  pass 32 characters is refused.
 - `graceful-handoff`: a stand-down leaves its claims to the process taking over.
-- `work-discovery`: shutdown finishes every item in hand.
+- `work-discovery`: shutdown finishes every item in hand; the watermark stays below an item left
+  for want of a slot or seat.
+- `work-claiming`: claims are verified, and surface failures counted, for workers that run at
+  once.
 - `task-execution`: winding down leaves every worker running; the age-based tree sweep covers
   only trees no worker slot names.
 - `work-triage`: an item the Igor's own workers hold is not a candidate.

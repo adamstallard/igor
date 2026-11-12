@@ -78,7 +78,7 @@ record disappears.
 #### Scenario: A live process on another host is found by its record
 
 - **WHEN** `igor serve backend` starts on host B while a process on host A serves `backend`
-- **THEN** within 30 minutes it sees the record's counter rise, logs host A's name and
+- **THEN** within 30 minutes it sees the record's counter rise, logs host A's name, the serving process's start id and
   the other process's id, and exits with status 78
 
 #### Scenario: A record left by a crash on another host is taken over
@@ -145,7 +145,7 @@ held that lock while it lived and so has ended.
 
 ### Requirement: A serving process that cannot rewrite its record stops its workers
 
-Where a serving process's last landed record write is 20 minutes old, it SHALL stop every
+Where a serving process's last landed record write was sent 20 minutes ago, it SHALL stop every
 worker at once, post nothing, leave its claims for the next serving process to adopt, and exit
 with status 1. Its timer SHALL check at every firing, and the process SHALL check before every
 claim, publication or post, measuring age on a clock that counts time the host was suspended. A
@@ -210,7 +210,8 @@ entry a person set is not adopted: it directs the Igor as any hand-over does.
 ### Requirement: A stop said while no process served the role is answered at adoption
 
 Where a stop directed at the Igor was said on an adopted item after the latest claim message the
-Igor posted there, the process SHALL NOT work the item. It SHALL remove its holder entry and post
+Igor posted there, and no go-ahead lifts it as `work-claiming` allows for an item the Igor found itself, the process SHALL NOT work
+the item. It SHALL remove its holder entry and post
 a stop receipt, as for a stop said while no run is active.
 
 #### Scenario: A stop said while the role was down
@@ -224,21 +225,21 @@ a stop receipt, as for a stop said while no run is active.
 A serving process SHALL run up to its role's `workers` workers at once, in worker slots numbered
 from 1, each on a different item. A cycle SHALL hand the items it would claim, in the order it
 would claim them, to free slots, without waiting for a worker to finish. An item that finds no
-free slot SHALL NOT be claimed, and the watermark SHALL stay below it; an adopted one SHALL be
-given back out loud.
+free slot or seat SHALL NOT be claimed (`work-discovery` keeps the watermark below it); an adopted
+one SHALL stay claimed and be worked before any new item as slots and seats free.
 
 #### Scenario: More items than slots
 
 - **WHEN** a role with `workers: 2` has three items triage proceeds on, and no worker is running
 - **THEN** the cycle claims the first two and starts a worker on each, and leaves the third
   unclaimed for a later cycle
-- **AND** the source's watermark stays below the third
 
-#### Scenario: An adopted item with no free slot is given back
+#### Scenario: An adopted item waits for a slot, not given back
 
 - **WHEN** a process with `workers: 1` takes over three claims its predecessor left, and triage
   proceeds on all three
-- **THEN** it works the first, and gives the other two back with a comment saying why
+- **THEN** it works the first, keeps the other two claimed, and works each as the slot frees,
+  before claiming any new item
 
 #### Scenario: A cycle runs while workers run
 
@@ -283,6 +284,12 @@ be claimed. Triage's model call is no worker, and its seat is chosen as before.
 - **WHEN** one of a role's two seats runs a worker of the role, and the other has headroom
 - **THEN** the next item's worker spends from the other seat
 
+#### Scenario: Triage may spend from a busy seat
+
+- **WHEN** both of a role's seats run a worker of the role, and a cycle triages an item
+- **THEN** triage's model call spends from the seat the budget gate would choose with no workers
+  running
+
 ### Requirement: A state write refused because the branch moved is retried
 
 Where the state branch refuses a write because the branch moved, the process SHALL read what the
@@ -305,13 +312,14 @@ built from what it read before. The serving record is excepted: its writes stay 
 A working tree's name SHALL carry its role, its worker slot and its process's lock directory id.
 Where workers run as Unix users of their own, slot `k` of role `r` SHALL run as
 `igor-worker-<r>-<k>`. After taking over, the process SHALL remove every tree named for its
-role and lock directory, with the outbox beside it, whatever its age, because the process that
-named it held that directory's lock and has ended.
+role and lock directory, with the directory beside it for its outgoing work, whatever its age,
+because the process that named it held that directory's lock and has ended.
 
 #### Scenario: Trees a crash left are removed at once
 
 - **WHEN** a process takes over after a crash that left trees for slots 1 and 2 of its role
-- **THEN** it removes both, with the outbox beside each, before its first cycle
+- **THEN** it removes both, with the directory beside each for its outgoing work, before its first
+  cycle
 
 #### Scenario: Trees named for another lock directory are left to the age sweep
 
@@ -329,6 +337,21 @@ named it held that directory's lock and has ended.
 
 - **WHEN** slots 1 and 2 of role `dev` run workers at once, under worker users
 - **THEN** they run as `igor-worker-dev-1` and `igor-worker-dev-2`
+
+### Requirement: A process that takes over ends its predecessor's surviving workers
+
+Each worker's process group SHALL be recorded in the lock directory while it runs. After taking
+over, and before removing any tree, the process SHALL kill every recorded group still alive whose
+leader's start time matches the record,
+because a predecessor killed without its unit, as by SIGKILL on a hand-run `igor serve`, leaves
+its workers running and spending seats.
+
+#### Scenario: Workers a killed process left are ended
+
+- **WHEN** a hand-run `igor serve` is killed with SIGKILL while two workers run, and is started
+  again from the same checkout
+- **THEN** the new process kills both workers' process groups before it removes their trees or
+  starts a worker of its own
 
 ### Requirement: `igor run` keeps no serving record and takes no lock
 
