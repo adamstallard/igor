@@ -2881,7 +2881,18 @@ describe('a credential the provider refuses names itself, and names which creden
     terminal_reason: 'api_error',
     result: 'Failed to authenticate. API Error: 401 Invalid bearer token',
   }
-  const TOKEN = 'sk-ant-oat01-revoked'
+  /**
+   * The part after the public `sk-ant-oat01-` prefix is the secret. Its letters are uppercase,
+   * which lowercase hex hashes and English words in a log row are not, and none is A–F, so no
+   * hash, timestamp or word can contain three consecutive characters of it. Any fragment
+   * `leaksNone` finds is therefore a leak.
+   */
+  const SECRET = 'QZXJWVKPYMTRNHGS'
+  const TOKEN = `sk-ant-oat01-${SECRET}`
+  /** Fails on any three consecutive characters of `secret`, so a leaked prefix or suffix fails as the whole would. */
+  const leaksNone = (written: string, secret: string) => {
+    for (let i = 0; i + 3 <= secret.length; i++) expect(written).not.toContain(secret.slice(i, i + 3))
+  }
 
   beforeEach(() => {
     ledger.records.length = 0
@@ -2924,7 +2935,7 @@ describe('a credential the provider refuses names itself, and names which creden
     expect(row()['tokenFingerprint']).toBe(credentialFingerprint({ CLAUDE_CODE_OAUTH_TOKEN: TOKEN }))
     // A hash, and never the credential or any part of it: this row is committed to the
     // destination, where a prefix of a secret is a prefix an attacker no longer has to guess.
-    expect(JSON.stringify(row())).not.toContain(TOKEN)
+    leaksNone(JSON.stringify(row()), SECRET)
   })
 
   it('stays an ordinary failure, with no refusal captured and no capacity invented', async () => {
@@ -3010,7 +3021,8 @@ describe('a credential the provider refuses names itself, and names which creden
     // refusal row carrying no hash is one no condition can count. Such a seat would then burn an
     // item on its refused credential every cycle (#56), for the whole configuration that
     // forwarding exists to support.
-    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'ambient-one')
+    const ambient = 'JWQRXZTPMNVKHGSY'
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', `sk-ant-oat01-${ambient}`)
     const { provider } = fakeProvider([])
     const { host } = fakeCodeHost()
     const { t } = fakeTracker()
@@ -3025,7 +3037,7 @@ describe('a credential the provider refuses names itself, and names which creden
 
     expect(result.cures).toContain('seat:fleet-1:credential')
     expect(row()['tokenFingerprint']).toMatch(/^[0-9a-f]{64}$/)
-    expect(JSON.stringify(row())).not.toContain('ambient-one')
+    leaksNone(JSON.stringify(row()), ambient)
   })
 
   it('publishes the fingerprint only beside the key that reads it', async () => {

@@ -66,6 +66,7 @@ function deps(found: Candidate[], claim: (c: Candidate) => Promise<boolean> = as
 
 describe('an item triaged to proceed and never taken', () => {
   it('is triaged again next cycle, rather than passed by the watermark', async () => {
+    stored.clear()
     const found = [issue(1, 30), issue(2, 20)]
     const open: Gate = { exhausted: () => false, seat: 'igor-1', reason: 'room' }
     const spent: Gate = { exhausted: () => true, reason: 'the budget ran out mid-cycle' }

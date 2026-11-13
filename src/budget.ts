@@ -392,8 +392,13 @@ async function usageUnder(
 
 /** The part of `claude auth status` that decides whether a window can exist. */
 export interface AuthContext {
+  loggedIn?: boolean
   authMethod?: string
   subscriptionType?: string
+  /** Where an API key came from, such as `ANTHROPIC_API_KEY` or `apiKeyHelper`. Never the key. */
+  apiKeySource?: string
+  /** Who serves the calls: `firstParty` for Anthropic, or a cloud provider such as `bedrock`. */
+  apiProvider?: string
 }
 
 /**
@@ -412,7 +417,7 @@ export function hasSubscription(auth: AuthContext): boolean {
 }
 
 /** Never rejects: a diagnosis that fails leaves the original error standing, never replaces it. */
-function runAuthStatus(env: NodeJS.ProcessEnv): Promise<AuthContext | undefined> {
+export function runAuthStatus(env: NodeJS.ProcessEnv): Promise<AuthContext | undefined> {
   return new Promise((resolve) => {
     const child = spawn('claude', ['auth', 'status'], { env, stdio: ['ignore', 'pipe', 'ignore'] })
     child.stdout.setEncoding('utf8')
@@ -441,6 +446,60 @@ export interface SeatUsage {
    *  seen to be cured. Absent where the seat names no token source and nothing is ambient, or
    *  where resolving it failed. */
   fingerprint?: string
+  /** What `claude auth status` reports under the environment a worker on this seat would get.
+   *  Set only by `describeWorkers`, which `igor budget` runs. */
+  worker?: AuthContext
+}
+
+/**
+ * Runs `claude auth status` under the environment a worker on each seat would get, for every seat
+ * read live or read as unmeasured, so `igor budget` can say what a worker would pay with.
+ *
+ * Igor asks `claude` instead of looking for credentials itself, because `claude` looks in more
+ * places than Igor would: token variables, a login file under `HOME`, an API key in its settings
+ * or from a helper, a cloud provider. It also decides which one wins. A seat is returned
+ * unchanged, with no `worker`, where its worker environment cannot be built, as when a
+ * `token_command` fails on this second run, or where `claude auth status` gives no answer.
+ */
+export async function describeWorkers(
+  readings: readonly SeatUsage[],
+  envFor: (seat: Seat) => Promise<NodeJS.ProcessEnv>,
+  describe: (env: NodeJS.ProcessEnv) => Promise<AuthContext | undefined> = runAuthStatus,
+): Promise<SeatUsage[]> {
+  return Promise.all(
+    readings.map(async (r) => {
+      // A seat read as unmeasured is asked too. Where `claude` finds an API key, it uses the key
+      // over a seat token or a login, and an API key carries no subscription, so such a seat reads
+      // as unmeasured. `budgetGate` still lets the loop spend an unmeasured seat, so the API key
+      // would pay for its items.
+      if (r.usage === undefined && r.unmeasured !== true) return r
+      const env = await envFor(r.seat).catch(() => undefined)
+      const worker = env === undefined ? undefined : await describe(env)
+      return worker === undefined ? r : { ...r, worker }
+    }),
+  )
+}
+
+/**
+ * What a logged-in worker would pay with, where it is not a subscription, or nothing where it is.
+ * The answer is a cloud provider such as Bedrock, an API key, or else the `authMethod` itself.
+ * `claude.ai` (an interactive login) and `oauth_token` (a seat token) count as subscriptions,
+ * and only when Anthropic serves the calls.
+ */
+function nonSubscription(auth: AuthContext): string | undefined {
+  // A cloud provider pays with its own credentials and ignores any Anthropic key `claude` found,
+  // so it is named ahead of `apiKeySource`.
+  if (auth.apiProvider !== undefined && auth.apiProvider !== 'firstParty') return auth.apiProvider
+  const subscriptionMethod = auth.authMethod === 'claude.ai' || auth.authMethod === 'oauth_token'
+  // `apiKeySource` names a key `claude` found, not the credential it pays with. The key a Console
+  // `/login` stores, reported as `/login managed key`, loses to a subscription login or a seat
+  // token, and `authMethod` then names that login or token. Any other key source is taken as the
+  // payer whatever `authMethod` says: an `ANTHROPIC_API_KEY` beside a gateway's
+  // `ANTHROPIC_AUTH_TOKEN` is reported as `oauth_token`, and the key still pays.
+  const outranked = subscriptionMethod && auth.apiKeySource === '/login managed key'
+  if (auth.apiKeySource !== undefined && !outranked) return `an API key from ${auth.apiKeySource}`
+  if (subscriptionMethod) return undefined
+  return auth.authMethod ?? 'an unnamed credential'
 }
 
 /** Tolerates individual failures, so one bad token does not blind the whole report. */
@@ -1465,6 +1524,7 @@ export function renderBudget(
         )
       }
       lines.push(`${''.padEnd(WIDTH.seat)} !  the rows above are derived, not read: ${r.error ?? 'unreadable'}`)
+      if (r.worker !== undefined) lines.push(...workerLines(r))
       lines.push(...conditionLines(r.seat.id, true))
       continue
     }
@@ -1486,22 +1546,59 @@ export function renderBudget(
           `${percent(m.percentUsed).padStart(WIDTH.used)}`,
       )
     }
-    // Reading a seat inherits this process's environment, so a keychain or an interactive login
-    // answers for it. A worker's environment does not, being written out rather than inherited. Such a
-    // seat reports healthy here and cannot pay for a single item, which is the one
-    // misconfiguration this command would otherwise conceal.
-    //
-    // Asked of the hash rather than of the token fields: a seat naming no source still spends
-    // whatever `AMBIENT_TOKENS` holds, which `workerEnv` forwards.
-    if (r.fingerprint === undefined) {
-      lines.push(
-        `${''.padEnd(WIDTH.seat)} !  readable here but cannot pay: no token source and nothing ` +
-          `ambient to inherit. See docs/seats.md.`,
-      )
-    }
+    lines.push(...workerLines(r))
     lines.push(...conditionLines(r.seat.id, true))
   }
   return `${lines.join('\n')}\n`
+}
+
+/**
+ * The lines under a readable seat saying what its worker would pay with, where that is anything
+ * but the seat's subscription: not logged in, an API key or cloud provider (#195), or a credential
+ * stored under `HOME`. A seat is read under this process's environment, where a keychain login can
+ * answer for a seat that names no token source. A worker's environment is written out and carries
+ * no `USER`, so the keychain does not answer there, and without a line such a seat would read
+ * healthy and could not pay for a single item.
+ *
+ * Without `worker`, where `claude auth status` was not asked or did not answer, the seat is judged
+ * by `fingerprint`, the hash of its token or of an ambient token variable. No fingerprint means no
+ * token source and no ambient token, so the seat was read through a login a worker may not have,
+ * and gets a warning. A seat with a fingerprint and no `worker` gets no line.
+ */
+function workerLines(r: SeatUsage): string[] {
+  const pad = ''.padEnd(WIDTH.seat)
+  const w = r.worker
+  if (w === undefined) {
+    return r.fingerprint === undefined
+      ? [`${pad} !  readable here but cannot pay: no token source and nothing ambient to inherit. See docs/deployment.md.`]
+      : []
+  }
+  if (w.loggedIn !== true) {
+    return [`${pad} !  readable here but cannot pay: a worker on this seat would not be logged in. See docs/deployment.md.`]
+  }
+  const payer = nonSubscription(w)
+  if (payer !== undefined) {
+    return [
+      `${pad} !  a worker on this seat would pay with ${payer}, not a subscription, and Igor's loop ` +
+        `must spend no API credits (#195). See docs/deployment.md.`,
+    ]
+  }
+  // Logged in with no fingerprint: the worker's environment held no token variable, and `HOME` is
+  // the only other thing it carries, so `claude` found the credential under `HOME`. `claude.ai`
+  // there is a login file. Any other method is a token in `claude`'s settings, which would
+  // override a seat token as well, and the line says so, since giving the seat a token would not
+  // stop the settings token paying.
+  if (r.fingerprint === undefined) {
+    const found =
+      w.authMethod === 'claude.ai'
+        ? 'the login stored under HOME'
+        : `the ${w.authMethod ?? 'unnamed'} credential in claude's settings under HOME, which overrides any seat token`
+    return [
+      `${pad} !  pays with ${found}: every seat naming no token source spends it, and no refusal of it ` +
+        `can stop a seat. See docs/deployment.md.`,
+    ]
+  }
+  return []
 }
 
 /**
