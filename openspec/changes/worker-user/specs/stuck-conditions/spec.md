@@ -2,46 +2,36 @@
 
 ### Requirement: A failed worker spawn is a condition on its instance
 
-Under `igor serve`, the Igor SHALL record each of these under the cure key `instance:<role>-<rank>:sudoers`,
-scoped to the instance that met it, the instance being one rank of a role as
-`concurrent-instances` (#179) numbers them, each rank unique to one process across hosts:
-
-- a spawn of the worker through `sudo` that fails, meaning `sudo` refused it or the process could
-  not be started; the worker's own exit status is never a spawn failure;
-- a refused `sudo -n -u <worker user> true` check that `task-execution` requires, before a spawn,
-  a later `claude -p`, one of #189's checks or a kill, except the check before the start check's
-  metadata probe, which refuses the start instead, and the check before a kill at process exit,
-  which is written to standard error only.
-
-The instance SHALL be a scope beside the role, the seat and the Igor that this capability's
-requirement *A condition's scope is its cure's scope* names, and #101's code SHALL read a key of
-that shape, with its new `instance` prefix, as naming the instance. A condition on it SHALL stop
-only that instance taking new items; other ranks of the role, other roles and the Igor go on,
-and `igor serve` does not exit, as `stopped-scope-visible` (#82) requires of every condition. The
-condition SHALL be counted, opened and rebuilt from the execution log as every condition is, so
-it opens once its occurrences reach #101's recurrence threshold. Each run row, the line the Igor
-appends to the execution log for every run, SHALL name the instance that ran it. #101 counts
-occurrences in a row, and a run that records none ends the row: naming the instance lets a clean
-run of that instance do so for its condition, as a clean run of a role does for a role's. The stop
-SHALL name the cure as the sudoers line for `igor-worker-<role>-<rank>` on the host that
-instance runs on.
-
-The condition SHALL clear only on a passing check: never by a probe item, and with no cooldown,
-since the check observes the cure without spending an item. While it is open, the instance SHALL
-run the check at the start of each cycle, before taking any item; a refused check there keeps
-the condition open and is not an occurrence. The instance SHALL append a condition row of kind
-`check`, naming the key and saying that the check passed, only where the check clears the
-condition, not on every cycle. This is how `seat-files` (#171) clears its read-cleared conditions,
-in *A read-cleared condition opens on a failing read and clears on a passing one*. Those stop
-nothing by themselves, while this condition stops its instance, so it is stated here rather than as one of that
-kind.
+Under `igor serve`, the Igor SHALL record under the cure key `instance:<role>:sudoers` each failed
+`sudo` spawn of the worker, and each refused check `task-execution` records under that key. A role's
+*instance* is its `igor serve` processes; a condition on it SHALL stop only the instance taking new
+items. Each run row, the execution-log row a run writes, SHALL name its instance, so a clean run
+ends its count. The stop SHALL name the sudoers line for `igor-worker-<role>` on the host that
+failed.
 
 #### Scenario: A recurring spawn failure stops only its instance
 
-- **WHEN** rank 2 of role `dev` fails to spawn its worker through `sudo` as many times as #101's
-  recurrence threshold, and rank 1 of `dev` spawns its worker normally
-- **THEN** a condition opens on `instance:dev-2:sudoers`, rank 2 takes no new item, rank 1 and every other
-  role go on taking items, and the stop names the sudoers line for `igor-worker-dev-2`
+- **WHEN** role `dev`'s `igor serve` fails to spawn its worker through `sudo` as many times as
+  #101's recurrence threshold
+- **THEN** a condition opens on `instance:dev:sudoers`, a key #101's code reads as naming the
+  instance, `dev`'s `igor serve` takes no new item,
+  every other role goes on taking items, and the stop names the sudoers line for
+  `igor-worker-dev`
+- **AND** `igor serve` does not exit
+- **AND** an `igor run` of `dev` is not stopped by it
+
+#### Scenario: An open condition is rebuilt after a restart
+
+- **WHEN** the condition on an instance is open and its `igor serve` restarts
+- **THEN** the condition is rebuilt from the execution log, as every condition is, and the
+  instance still takes no new item
+
+#### Scenario: An igor run's rows leave the count alone
+
+- **WHEN** an `igor run` of role `dev` runs items between two failed spawns of `dev`'s
+  `igor serve`
+- **THEN** its run rows name no instance, so they neither count as failures nor end the
+  instance's recurrence in a row
 
 #### Scenario: A first spawn failure stops nothing
 
@@ -59,6 +49,21 @@ kind.
 - **WHEN** an instance's worker starts and later exits with a non-zero status
 - **THEN** nothing is recorded under the instance's cure key
 
+#### Scenario: Clean runs between two failures keep the count from growing
+
+- **WHEN** an instance's spawn fails once, the instance then runs items with clean spawns, and a
+  later spawn fails once more
+- **THEN** the clean runs, each naming the instance, count as runs that did not meet the
+  condition, so the two failures are not a recurrence in a row
+
+### Requirement: A sudoers condition clears only on a passing check at a cycle's start
+
+While the condition on an instance is open, the instance SHALL run its `sudo -n -u <worker user>
+true` check at the start of each cycle, before taking any item, and the condition SHALL clear only
+when that check passes: never by a probe item, and with no cooldown. A refused check there SHALL
+keep the condition open and SHALL NOT count as an occurrence. The instance SHALL append a condition
+row whose `kind` is `check`, naming the key, only where the check clears the condition.
+
 #### Scenario: A passing check clears the condition at a cycle's start
 
 - **WHEN** the condition on an instance is open, its sudoers line has been fixed, and the
@@ -72,10 +77,3 @@ kind.
   its check at a cycle's start is refused
 - **THEN** the condition stays open, the instance takes no new item and no probe item, and
   nothing is appended
-
-#### Scenario: Clean runs between two failures keep the count from growing
-
-- **WHEN** an instance's spawn fails once, the instance then runs items with clean spawns, and a
-  later spawn fails once more
-- **THEN** the clean runs, each naming the instance, count as runs that did not meet the
-  condition, so the two failures are not a recurrence in a row
