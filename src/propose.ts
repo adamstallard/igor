@@ -16,6 +16,7 @@ import {
   requestReviewers,
   type OpenedPr,
 } from './github.js'
+import { oneLine } from './text.js'
 
 export const BRANCH_PREFIX = 'lore/propose/'
 
@@ -140,9 +141,9 @@ export function pullRequestBody(entries: readonly Entry[], author: string): stri
     const others = contributingAuthors(entry).filter((a) => a !== author)
     lines.push(`### \`${entry.id}\``)
     lines.push('')
-    lines.push(`> ${entry.claim.replace(/\s+/g, ' ').trim()}`)
+    lines.push(`> ${oneLine(entry.claim)}`)
     lines.push('')
-    lines.push(`**Applies:** ${entry.conditions.prose.replace(/\s+/g, ' ').trim()}`)
+    lines.push(`**Applies:** ${oneLine(entry.conditions.prose)}`)
     if (entry.conditions.paths?.length) {
       lines.push(`**Paths:** ${entry.conditions.paths.map((p) => `\`${p}\``).join(', ')}`)
     }

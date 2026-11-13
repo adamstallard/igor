@@ -21,6 +21,7 @@ import {
   type WorkingTree,
 } from './worktree.js'
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
+import { escapeRegExp } from './text.js'
 
 /**
  * Doing the work on a claimed item: **the worker edits files, and the loop decides what becomes
@@ -215,7 +216,7 @@ export function workerSystemPrompt(role: Role, allowed: readonly Action[], lore 
  * adds itself, and collapses the blank lines left behind.
  */
 export function stripLinkage(transcript: string, linkage: string): string {
-  const escaped = linkage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const escaped = escapeRegExp(linkage)
   return transcript
     .replace(new RegExp(`^\\s*${escaped}\\s*$`, 'gim'), '')
     .replace(/\n{3,}/g, '\n\n')
