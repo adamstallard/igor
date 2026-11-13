@@ -10,7 +10,7 @@ logs, and how Igor confirms its skills load before it works.
 
 Igor's model steps SHALL load their skills from one Claude Code plugin directory, `skills_dir`:
 `/opt/igor/skills`, or the path `IGOR_SKILLS_DIR` names in its starting environment, which SHALL be
-absolute or refuse the start. Nothing else sets it. It holds `.claude-plugin/plugin.json` naming the
+absolute or refuse the start. It holds `.claude-plugin/plugin.json` naming the
 plugin `igor`, and each skill in `skills/<name>/`. Igor SHALL call each skill `igor:<name>`, and
 give its scripts paths in its `skills/<name>/`. Without `skills_dir`, `igor serve` SHALL refuse to
 start.
@@ -158,15 +158,14 @@ to keep them out.
 ### Requirement: The worker's home is its user's, or its run's
 
 With a worker user (#175), the worker's home SHALL be that user's own, lasting across runs. With
-none, in same-user mode, which only `igor run` uses, each run SHALL have its own home for its tasks,
-named by the run id each `igor run` picks under #179's *The sweep removes trees by rank, never by
-age*, in Igor's state directory as #216's *A handoff states what was done, what remains, and who
-could continue* defines it. Igor SHALL set the worker's `HOME` to it and remove it when the run
-ends.
+none, in same-user mode, which only `igor run` uses, each run SHALL have its own home for its
+tasks, named by the run's id, in Igor's state directory as #216 defines it, in *A handoff states
+what was done, what remains, and who could continue*, the requirement where the specs define it.
+Igor SHALL set the worker's `HOME` to it and remove it when the run ends.
 
 #### Scenario: A worker user's home is its own
 
-- **WHEN** Igor runs a worker as the worker user of role `generalist`, rank 1
+- **WHEN** Igor runs a worker as the worker user of role `generalist`
 - **THEN** each `claude -p` it starts for that worker's task has `HOME` set to that user's own
   home
 - **AND** that home is reset before each model step of the task
@@ -180,20 +179,32 @@ ends.
 - **AND** that home is reset as a worker user's is
 - **AND** each run's home is gone once that run ends
 
+### Requirement: An igor run removes what a crashed run of its role left
+
+Each `igor run` SHALL pick a run id and, while it runs, hold an exclusive lock on its own file,
+`<role>-<run id>.lock`, in Igor's state directory, which the system frees when its process ends.
+Before its first cycle, an `igor run` SHALL remove the home, the plugin directory it assembled, and
+the startup check's working directory and `HOME` of each earlier run of its role whose lock it can
+take, and nothing of a run whose lock it cannot take. `igor run --plan` SHALL remove nothing.
+
 #### Scenario: A crashed run's home and plugin directory are removed
 
 - **WHEN** an `igor run` of `generalist` crashes, leaving its home and the plugin directory it
   assembled, and a later `igor run` of `generalist` starts
-- **THEN** the later run removes both at its start, with the crashed run's trees, under #179's
-  *The sweep removes trees by rank, never by age*
+- **THEN** the later run takes the crashed run's lock, and removes both at its start
+
+#### Scenario: A live run's home is left alone
+
+- **WHEN** an `igor run` of `generalist` starts while another `igor run` of `generalist` is still
+  running
+- **THEN** it cannot take the other run's lock, and removes nothing of that run's
 
 #### Scenario: A plan removes nothing
 
 - **WHEN** a person runs `igor run generalist --plan`, and Igor's state directory holds the home
   and the plugin directory, both of which a run keeps there, of an earlier run of `generalist`
   that crashed
-- **THEN** the plan removes neither, as #179's sweep rule has it: `igor run --plan` removes
-  nothing
+- **THEN** the plan removes neither
 
 ### Requirement: Every model step in the worker's home starts from Igor's template
 

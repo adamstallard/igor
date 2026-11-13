@@ -63,12 +63,12 @@ every call, so they live in one place, `pinned-skills`.
   `src/budget.ts` (`runUsage`), and `src/wiring.ts` for `skills_dir` and the startup check.
 - **#153** depends on this change. #153's design writes the skills directory as `<skills>`, which
   is `<skills_dir>/skills`: Igor's code runs prose's and bug-hunter's scripts from there, and the
-  worker is granted none of them (#153). Its role-config requirement refuses a role that lists
-  a skill not installed under `skills_dir`, in every command that runs a model step; this change
-  refuses nothing on that account. Under `igor run`'s fallback (decision 20), the installed
-  skills that check reads are the person's. #153 runs no `prose start`, the call that opened prose's editing hook in a worker's session,
-  and needs prose's `sign` to take `--goals-file`, as `check` already does (Adam, 2026-10-19,
-  on #153). Shared-skills #27 added that option to `sign` and merged on 2026-10-21, so the
+  worker is granted none of them (#153). Its role-config requirement refuses a role that lists a
+  skill not installed under `skills_dir`, in every command that runs a model step; this change
+  refuses nothing on that account. Under `igor run`'s fallback (decision 20), the installed skills
+  that check reads are the person's. #153 runs no `prose start`, the call that opened prose's
+  editing hook in a worker's session, and needs prose's `sign` to take `--goals-file`, as `check`
+  already does. Shared-skills #27 added that option to `sign` and merged on 2026-10-21, so the
   pinned commit must be at or after that merge (task 0.2).
 - **#171** (`seat-files`) archives after this change, in issue #204's order, but its code is
   built first (decision 30). Decision 17 rests on it (design.md's *Open Questions*, the ambient login).

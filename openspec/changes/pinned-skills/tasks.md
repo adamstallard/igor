@@ -14,8 +14,9 @@
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
       (`caller-result.sh`), prose's `check`, `sign`, `verify-staged` and `verify-post`, and
       `--goals-file` on prose's `sign` as well as `check`. #153 needs it on `sign`, and drops
-      `prose start`, the call that opened prose's editing hook in a worker's session (Adam, 2026-10-19, on #153). Shared-skills #27 added
-      `--goals-file` to `sign` and merged on 2026-10-21; pin a commit at or after that merge
+      `prose start`, the call that opened prose's editing hook in a worker's session. Shared-skills
+      #27 added `--goals-file` to `sign` and merged on 2026-10-21; pin a commit at or after that
+      merge
 - [x] 0.3 Before building, measure on the Claude Code version the server runs, and record in
       `design.md`. Done 2026-10-18 on Claude Code 2.1.303. The version the server runs is not
       known, so it was not measured on, and `design.md` gives the results for 2.1.303 alone.
@@ -112,14 +113,13 @@
       home for the `igor run`, under Igor's state directory, named by the run's id, such as
       `<state directory>/home/<role>-<run>`. It is created when the run first needs it, passed
       as the worker's `HOME`, and removed when the run ends, whether it ends normally or on an
-      error Igor catches. The run's id is the one #179 gives each `igor run`, which its trees
-      also carry. A run that crashes leaves its home behind. So at its start, before its first
-      cycle, each `igor run` also removes the home, and the plugin directory task 1.3 assembled,
-      of each earlier run of its role whose lock it can take, in the same sweep as #179's task
-      4.5 removes that run's trees; it leaves those of a run whose lock it cannot take. The lock
-      is #179's: each `igor run` holds it, while it runs, on its own file
-      `<role>-0-<run id>.lock` in the trees' directory, rank 0 being `igor run`'s. `igor run
-      --plan` removes nothing. Tests: of two earlier runs' homes and plugin directories, the one
+      error Igor catches. A run that crashes leaves its home behind, so each `igor run` picks a
+      run id and, while it runs, holds an exclusive lock on its own file, `<role>-<run id>.lock`,
+      in Igor's state directory. At its start, before its first cycle, it removes the home, the
+      plugin directory task 1.3 assembled and the startup check's two directories of each
+      earlier run of its role whose lock it can take, and the lock file with them; it leaves
+      those of a run whose lock it cannot take. `igor run --plan` removes nothing. Tests: of two
+      earlier runs' homes and plugin directories, the one
       whose lock is free is removed and the other kept; `--plan` removes neither
 - [ ] 2.4 The template, shipped in Igor's installation, holding exactly these two files (not to
       be reworded), and no skills and no `CLAUDE.md`. Task 0.3's measurements of a home just reset from the template ran on them:
