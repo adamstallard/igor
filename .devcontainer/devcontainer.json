@@ -1,0 +1,14 @@
+{
+  // The Dockerfile's development target: the same node, git, gh and claude that CI and the
+  // runtime image use, with the checkout mounted at /workspace.
+  "name": "igor",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "..",
+    "target": "development"
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "remoteUser": "node",
+  "onCreateCommand": "npm ci"
+}

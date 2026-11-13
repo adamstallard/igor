@@ -95,6 +95,11 @@ npm link          # puts `igor` on your PATH
 it installs. Without linking, `npm run igor -- <command>` from the clone does the same thing
 and needs no build.
 
+The steps above are all you need to try Igor. For working on Igor itself, `.devcontainer/`
+opens the clone in a container with node, git, `gh` and `claude` at the versions CI tests
+against. [Docker](docs/deployment.md#docker) in the deployment guide covers that image, and
+running an Igor in it.
+
 Every command below assumes `igor` is on your path, and that you are running it inside the
 lore repository it works from. Igor finds its configuration by walking up from the working
 directory, so a command run anywhere else reports no config rather than guessing at one.
