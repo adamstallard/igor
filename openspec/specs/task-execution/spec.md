@@ -1,7 +1,14 @@
 # task-execution Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Do the work an Igor has claimed, within limits the loop enforces rather than asks the worker to
+keep. A headless worker gets the role's instructions, the normalized item, a disposable working
+tree, and an environment holding its seat's token but no tracker or code-host credential; the
+loop, not the worker, publishes. It publishes only what the role allows, by default draft pull
+requests and comments, and links each to its item. An Igor never merges its own pull request,
+and approval from another Igor does not count as a person's. This spec also covers how long a
+worker may run, keeping a published change complete and mergeable, recording transcripts, and
+publishing finished work as a draft when someone else takes the item over mid-run.
 ## Requirements
 ### Requirement: The worker receives standing instructions and the normalized item
 
