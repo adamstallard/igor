@@ -310,15 +310,15 @@ built from what it read before. The serving record is excepted: its writes stay 
 ### Requirement: A worker slot's number names what the slot owns
 
 A working tree's name SHALL carry its role, its worker slot and its process's lock directory id.
-Where workers run as Unix users of their own, slot `k` of role `r` SHALL run as
-`igor-worker-<r>-<k>`. After taking over, the process SHALL remove every tree named for its
-role and lock directory, with the directory beside it for its outgoing work, whatever its age,
-because the process that named it held that directory's lock and has ended.
+After taking over, an `igor serve` process SHALL remove every tree named for its role and lock
+directory, with its outbox (the directory beside it for its outgoing work), whatever its age. Every other
+tree, each one `igor run` made included, SHALL be left to the sweep at the abandoned-tree
+threshold; `igor run` SHALL name its trees with no lock directory id.
 
 #### Scenario: Trees a crash left are removed at once
 
 - **WHEN** a process takes over after a crash that left trees for slots 1 and 2 of its role
-- **THEN** it removes both, with the directory beside each for its outgoing work, before its first
+- **THEN** it removes both, with the outbox beside each, before its first
   cycle
 
 #### Scenario: Trees named for another lock directory are left to the age sweep
@@ -333,10 +333,29 @@ because the process that named it held that directory's lock and has ended.
 - **WHEN** a process of `backend` takes over on a host where `frontend` is working a tree
 - **THEN** the `frontend` tree is left in place
 
+#### Scenario: A run's tree is left at takeover
+
+- **WHEN** a process of `backend` takes over from its own checkout while `igor run backend` works
+  a tree there
+- **THEN** the run's tree is left in place, for the sweep at the abandoned-tree threshold
+
+### Requirement: Each worker slot runs as a worker user of its own
+
+Where workers run as users of their own (#175), slot 1 SHALL run as #175's `igor-worker-<role>`
+and slot `k`, for `k` of 2 and above, as `igor-worker-<role>-<k>`, created by the same setup with
+the same rights and checks, the Igor holding every slot's group. Each slot's tree and outbox SHALL take that slot user's group, so that no slot can
+read or write another's, and a kill by worker user SHALL reach only that slot's processes.
+
 #### Scenario: Two slots run as two users
 
-- **WHEN** slots 1 and 2 of role `dev` run workers at once, under worker users
-- **THEN** they run as `igor-worker-dev-1` and `igor-worker-dev-2`
+- **WHEN** slots 1 and 2 of role `dev` run workers at once
+- **THEN** they run as `igor-worker-dev` and `igor-worker-dev-2`
+- **AND** neither can read the other's tree or see the other's processes
+
+#### Scenario: Killing one slot's worker leaves the other running
+
+- **WHEN** the worker in slot 2 is killed
+- **THEN** every process of `igor-worker-dev-2` ends, and the worker in slot 1 goes on
 
 ### Requirement: A process that takes over ends its predecessor's surviving workers
 
@@ -353,12 +372,19 @@ its workers running and spending seats.
 - **THEN** the new process kills both workers' process groups before it removes their trees or
   starts a worker of its own
 
-### Requirement: `igor run` keeps no serving record and takes no lock
+### Requirement: `igor run` keeps no serving record and takes no serving lock
 
-`igor run` SHALL neither write nor read its role's serving record, and SHALL NOT take its role's
-lock. It SHALL claim by its role's label, as a serving process does.
+`igor run` SHALL neither write nor read its role's serving record, SHALL NOT take the serving
+lock (its role's lock in the lock directory), and SHALL run one worker at a time, whatever `workers`. It
+SHALL claim by its role's label, as a serving process does. A lock a run holds for its own
+files, as #174 gives it, is not the serving lock.
 
 #### Scenario: A run beside a served role starts
 
 - **WHEN** a person runs `igor run backend` while a process serves `backend`
 - **THEN** the run starts, and the serving process goes on serving
+
+#### Scenario: A run works one item at a time
+
+- **WHEN** a person runs `igor run backend` for a role that sets `workers: 3`
+- **THEN** the run starts one worker, and starts no other until that one ends

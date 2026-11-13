@@ -63,7 +63,8 @@ approved.
   given back, keeping a person's label; any other is triaged again, then worked under a fresh
   claim message or given back out loud.
 - [ ] 5.3 Remove every tree named for the role and this process's lock directory, with its
-  outbox, whatever its age.
+  outbox, whatever its age; leave every other tree, `igor run`'s included, to the sweep at the
+  abandoned-tree threshold.
 
 ## 6. Workers
 
@@ -78,20 +79,25 @@ approved.
   ends, or the next; two in a row stop that cycle, as `work-claiming` has it.
 - [ ] 6.5 On SIGTERM, claim nothing more, leave every running worker to complete or hand off,
   and exit after the last ends.
-- [ ] 6.6 Name trees `igor-tree-<role>-<slot>-<lock directory id>-<random>`; keep the age
-  sweep for trees no slot names.
+- [ ] 6.6 Name trees `igor-tree-<role>-<slot>-<lock directory id>-<random>`, and `igor run`'s
+  with no lock directory id; leave every tree not named for this
+  process's role and lock directory to the age sweep.
 - [ ] 6.7 Retry a state write the branch refuses because it moved, re-reading and re-applying
   the change.
-- [ ] 6.8 Run slot `k` of role `r` as `igor-worker-<r>-<k>` once #175's worker users exist,
-  through whatever per-slot mechanism #175 settles.
+- [ ] 6.8 Where workers run as users of their own, run slot 1 as #175's `igor-worker-<role>` and
+  slot `k` of 2 and above as `igor-worker-<role>-<k>`: extend #175's user setup and sudoers rule
+  to create and name each slot user, give each slot's tree and outbox its user's group, and give
+  the unit every slot's group in `SupplementaryGroups` and every slot's home in `ReadWritePaths`.
 - [ ] 6.9 Once #171 is on `main`, add to this change a `MODIFIED` *A role draws on the seat with
   the most headroom* that chooses among the seats the process's running workers do not hold.
-- [ ] 6.10 Where workers run as users of their own, refuse a role at load where
-  `igor-worker-<role>-<workers>` passes 32 characters, naming the role and the limit.
+- [ ] 6.10 Where workers run as users of their own and `workers` is 2 or more, refuse a role at
+  load where `igor-worker-<role>-<workers>` passes 32 characters, naming the role and the limit;
+  keep #175's 20-character check for every role.
 
 ## 7. `igor run`
 
-- [ ] 7.1 Confirm `igor run` neither reads nor writes the serving record and takes no lock.
+- [ ] 7.1 Confirm `igor run` neither reads nor writes the serving record, takes no serving lock,
+  and runs one worker at a time whatever `workers`; it keeps #174's lock on its own files.
 
 ## 8. Docs
 

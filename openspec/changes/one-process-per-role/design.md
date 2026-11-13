@@ -38,7 +38,10 @@ a second one out, including across a crash and a restart.
 2. **Never two servers for one role at once; a restart is the recovery.** Active/standby with
    a lease is the direction for failover, and this change leaves room for it (*Non-Goals*).
 3. **`igor run` is a dev tool.** It keeps its label claim, and the docs say not to point it at
-   a served role. Nothing else coordinates the two.
+   a served role. Nothing else coordinates the two. The next two sentences are this change's, not Adam's.
+   `igor run` takes no serving lock or record; the lock #174 gives a run on its own files is a
+   different lock. `igor run` runs one worker at a time whatever `workers`, because #174 gives
+   each run one home directory and leaves open what several workers sharing it would need.
 4. **Duplicate roles are allowed, not recommended for redundancy.** A duplicate does not rescue
    a dead host's items, since the dead role's label still holds them; it doubles triage; and
    where both claim one item, the loser's retraction is noise on the item.
@@ -70,7 +73,9 @@ Each is restated here for one process per role; the number is #179's decision.
     process's lock directory (this document's decision 18), and the process taking over removes
     only trees named for its own lock directory. A process from another checkout can take over
     while the old process is paused, before the old one stands down; the old process's workers
-    may still hold their trees, and the different id keeps them out of the sweep.
+    may still hold their trees, and the different id keeps them out of that removal. Every tree the process taking over does
+    not remove at once, `igor run`'s included, is left to the age-based sweep at the in-force
+    abandoned-tree threshold, which is the rule #175 relies on for `igor run`'s trees.
 11. **A starting process that finds another live process exits with status 78** (from #179's
     decisions 24 and 32, Adam's). #82 (open) makes the shipped systemd unit leave a process that
     exits with status 78 stopped. Until it
@@ -91,13 +96,13 @@ behind it.
     `igor.config.yaml`. A role file already holds the role's other settings, and the most
     specific level winning lets an org base set a default that roles override. No upper bound:
     seats bound it (decision 15). *Cheap to reverse.*
-14. **Items go to free slots in the order the cycle would claim them; a slot freed mid-interval
-    waits for the next cycle.** Today's claim order is kept, and the poll interval bounds the
-    wait. Starting a cycle early when a slot frees is an optimisation for later. Leaving an item
+14. **Items go to free slots in the order the cycle would claim them; a new claim waits
+    for the next cycle.** Today's claim order is kept, and the poll interval bounds the wait for
+    a slot freed mid-interval. An adopted item, already claimed, starts as soon as a slot and a seat are free. Starting a cycle early when a slot frees is an optimisation for later. Leaving an item
     unclaimed for want of a slot is not the deferral graceful-handoff's *Busy is not a reason*
     forbids: that scenario is about a claimed item handed off, and nothing here is claimed. An
     adopted item is already claimed, so it is never given back for want of a slot or seat: it
-    stays claimed and is worked before any new item as slots free. *Cheap to reverse.*
+    stays claimed and is worked before any new item, each as a slot and a seat free. *Cheap to reverse.*
 15. **No two running workers of a process share a seat, and nothing opts in to sharing.** Igor
     sees its own spend on a seat only at the next reading, so each worker running on a seat can
     carry it past its reserve line by up to one run (`docs/architecture.md` §6.3.4); with one
@@ -169,11 +174,17 @@ behind it.
     `work-claiming` stops a cycle at two runs in a row that a surface did not answer. Runs now
     end in any order, some after the cycle that claimed them; a run counts toward whichever cycle
     is running when it ends, or, where none is, toward the next one. *One good option.*
-23. **Slot `k` of role `r` runs as worker user `igor-worker-<r>-<k>`**, as #241 recommended, so
-    workers running at once stay isolated from each other's `/proc` as #175 requires. This
-    change requires the name. #175 derives the user from the unit's `%i` and generates no
-    drop-in per instance; a slot number cannot come from `%i`, so #175 needs another way to
-    provide one user per slot, and #175 decides how.
+23. **Slot 1 runs as #175's `igor-worker-<role>`; slot `k` of 2 and above as
+    `igor-worker-<role>-<k>`.** Workers running at once need users of their own to stay out of
+    each other's `/proc` and trees, as #175 requires, and #175 builds one user per role from the
+    unit's `%i`, which carries no slot number. So the extra users are this change's: the setup
+    that creates #175's user also creates `igor-worker-<role>-2` to `-<workers>`, #175's sudoers
+    rule names them, each slot's tree and outbox take its own user's group, and the unit gives the
+    Igor every slot's group and write access to every slot's home, where #175's unit names only
+    `igor-worker-%i`'s. Keeping slot 1 on
+    #175's name leaves a one-worker role exactly as #175 builds it, with #175's 20-character
+    limit; naming every slot `-<k>` would cut that limit to 18 for every role, one worker or
+    many. *Cheap to reverse.*
 24. **The six-hour worker ceiling stays.** #179 removed it (its decision 18, Adam's), and #241
     lists that removal among what carries over. This change no longer needs it removed: the
     sweep of slot trees reads no age. The ceiling still bounds the age at which `igor run`'s
@@ -199,10 +210,13 @@ behind it.
     the process's running workers do not hold (task 6.9). Until then the in-force *first seat in
     that list with headroom* reads as if a busy seat were chosen; role-process's seat rule governs.
     *Can wait.*
-28. **Where workers run as users of their own, a role whose worker user names would pass 32
-    characters is refused at load.** Linux
-    refuses to create such a user, so the role would otherwise fail at its first worker, after
-    it had claimed. *One good option.*
+28. **Where workers run as users of their own and `workers` is 2 or more, a role whose
+    `igor-worker-<role>-<workers>` would pass 32 characters is refused at load.** Linux refuses to
+    create such a user, so the role would otherwise fail at its first worker, after it had
+    claimed. #175's check, a role name of at most 20 characters, stays for every role; this one
+    is stricter only for several workers. `igor-worker-` takes 12 characters and `-<k>` two or
+    more, so a role name may have at most 18 characters for up to 9 workers, and 17 for 10 to 99.
+    *One good option.*
 
 ## What the model proves
 
@@ -257,7 +271,16 @@ guard, and TLC finds a violation in it:
   its workers at the same moment, but a worker changes only its own tree, because the serving
   process, not the worker, publishes; and that process checks the age before each claim,
   publication or post.
-- The lock directory is on a local filesystem, where the operating system's lock is exclusive.
+- The lock directory is on a local filesystem, where the operating system's lock is exclusive,
+  and its id is unique to it. A copied directory, as from a cloned VM or a restored volume, keeps
+  the id, but its lock is a separate operating-system lock that the original's holder does not
+  hold, so a process using the copy would take over at once beside a live one; nothing in the
+  spec compares the record's host name to rule that out.
+- A paused process's workers do nothing. When only `igor serve` is paused, as by SIGSTOP, its
+  workers, each in a process group of its own, keep running. A process from another checkout
+  then takes over after its watch and works their items again while they still spend seats,
+  since it kills only groups recorded in its own lock directory. The model does not check this
+  case; *Risks* lists it.
 - A write's age is counted from when it was sent, so a write that lands late makes its process
   stand down sooner, never later; *A serving process that cannot rewrite its record stops its
   workers* says so.
@@ -297,6 +320,14 @@ guard, and TLC finds a violation in it:
   process group of its own; under systemd or Compose they die with the unit or container, but
   by hand they survive, and the restart's fast takeover removes their trees while they spend
   seats. Task 2.5 kills them at takeover.
+- **A paused `igor serve`'s workers can run beside a process from another checkout that took
+  over**, each working the same item, until they end (*What the model assumes*).
+- **Where workers run as the Igor's own user, a worker can write the lock directory.** It could
+  forge a recorded process group, so that the next takeover kills another process running as
+  the Igor's user, such as another role's `igor serve`; or change the directory's id, so that a
+  restart from that checkout watches instead of taking over, and its old slot trees are left to
+  the age-based sweep. Worker users of their own (#175) close this; without them nothing
+  in this change does.
 
 - **A refused App credential stands every process down after 20 minutes.** Every state-branch
   write then fails, so the process stops its workers and exits, and on restart the startup guard's first
