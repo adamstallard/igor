@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type {
   Artifact,
   Candidate,
@@ -20,6 +20,17 @@ import { serve, untilSignalled, type ServeEvent } from '../src/serve.js'
 import { labelVerdictFrom } from '../src/github-adapter.js'
 import { tempDir } from './tmp.js'
 import { IGORS } from './igors.js'
+
+// The loop keeps its state on a branch of its destination, `o/lore` in `deps` below, and reads
+// and writes it over `gh api`. Unmocked, every call reaches GitHub and waits on the network to
+// learn that the repository does not exist. Each answers here as GitHub would, at once.
+vi.mock('../src/gh.js', async (actual) => {
+  const real = await actual<typeof import('../src/gh.js')>()
+  const missing = async (args: readonly string[]): Promise<never> => {
+    throw new real.GhError(`gh ${args.slice(0, 2).join(' ')} failed: gh: Not Found (HTTP 404)`, 404)
+  }
+  return { ...real, ghRaw: missing, gh: missing, ghPaginated: missing, ghGraphql: missing }
+})
 
 /**
  * Fixture times, counted back from when the suite runs. Discovery reads `updatedAt` against the
@@ -794,21 +805,30 @@ describe('a stop said while the cycle works another item', () => {
       report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m) },
     })
     const { events, onEvent } = collect()
-    await serve(d, role({ settleSeconds: 0 }), 'igor-bot', {
-      ...base,
-      maxCycles: 1,
-      onEvent,
-      // While item 1 is worked, somebody stops item 2, and the claim on item 2 comes later than
-      // its own settle window reaches back.
-      worker: async () => {
-        if (!(comments['github:o/r#2'] ?? []).some((m) => m.user.login === 'bob')) {
-          say('github:o/r#2', 'bob', 'stop')
-          // Longer than the checkpoint's one-second look back, so only the claim's scan can see it.
-          await new Promise((r) => setTimeout(r, 1500))
-        }
-        return { result: 'no change needed', total_cost_usd: 0 }
-      },
-    })
+    // Only the clock is faked, so the loop's own awaits run as they do in production while the
+    // worker moves time on.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+    try {
+      await serve(d, role({ settleSeconds: 0 }), 'igor-bot', {
+        ...base,
+        maxCycles: 1,
+        onEvent,
+        // While item 1 is worked, bob stops item 2. The claim on item 2 comes after that, and only
+        // the comments the claim reads can show it the stop.
+        worker: async () => {
+          if (!(comments['github:o/r#2'] ?? []).some((m) => m.user.login === 'bob')) {
+            say('github:o/r#2', 'bob', 'stop')
+            // A stop re-read after the claim looks back one second before the claim was made.
+            // Moving the clock 1.5s puts bob's stop out of that reach, so only the claim's own
+            // read of the comments can see it.
+            vi.setSystemTime(Date.now() + 1500)
+          }
+          return { result: 'no change needed', total_cost_usd: 0 }
+        },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
     for (const e of events) if (e.kind === 'worked') outcomes[e.item.id] = e.run.outcome
     expect(outcomes['github:o/r#2']).toBe('stopped')
     expect((comments['github:o/r#2'] ?? []).some((m) => m.body.includes("stopped at bob's request"))).toBe(true)

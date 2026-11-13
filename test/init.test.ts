@@ -19,7 +19,7 @@ import {
   WORKFLOW_FILE,
 } from '../src/init.js'
 import { loadRole, ORG_ROLE, ROLES_DIR } from '../src/role.js'
-import { tempDir } from './tmp.js'
+import { tempDir, templated } from './tmp.js'
 
 /**
  * A repository with nothing in it, which is what `init` is pointed at.
@@ -28,11 +28,8 @@ import { tempDir } from './tmp.js'
  * directory on a mac is reached through a symlink — compared unresolved, every assertion about
  * where a file landed fails for a reason that has nothing to do with `init`.
  */
-function repo(prefix = 'igor-init-'): string {
-  const dir = realpathSync(tempDir(prefix))
-  execFileSync('git', ['-C', dir, 'init', '-q'], { stdio: 'ignore' })
-  return dir
-}
+const empty = templated((dir) => execFileSync('git', ['-C', dir, 'init', '-q'], { stdio: 'ignore' }))
+const repo = (prefix = 'igor-init-'): string => realpathSync(empty(prefix))
 
 const paths = (root: string) => ({
   config: join(root, DEFAULT_CONFIG_FILENAME),

@@ -6,20 +6,22 @@ import { describe, expect, it } from 'vitest'
 import {
   blobSha, carried, ClonedTree, named, quoteName, showName, statusRecords, type BaseChange,
 } from '../src/worktree.js'
-import { tempDir } from './tmp.js'
+import { tempDir, templated } from './tmp.js'
 
 const run = promisify(execFile)
 
 /** A real repository, because what is under test is how git reports its own status. */
-async function repo(): Promise<string> {
-  const dir = tempDir('igor-tree-test-')
-  await run('git', ['-C', dir, 'init', '-q', '.'])
-  await run('git', ['-C', dir, 'config', 'user.email', 't@example.invalid'])
-  await run('git', ['-C', dir, 'config', 'user.name', 'test'])
+const based = templated((dir) => {
+  const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args])
+  git('init', '-q', '.')
+  git('config', 'user.email', 't@example.invalid')
+  git('config', 'user.name', 'test')
   writeFileSync(join(dir, 'tracked.md'), 'before\n')
-  await run('git', ['-C', dir, 'add', 'tracked.md'])
-  await run('git', ['-C', dir, 'commit', '-qm', 'base'])
-  return dir
+  git('add', 'tracked.md')
+  git('commit', '-qm', 'base')
+})
+async function repo(): Promise<string> {
+  return based('igor-tree-test-')
 }
 
 describe('what a working tree reports as changed', () => {
@@ -200,25 +202,27 @@ describe('naming a file whose name is not text', () => {
  * An origin with a branch that conflicts with its own base, cloned the way `CloneProvider`
  * clones — shallow — because the depth is exactly what makes the merge non-trivial.
  */
-async function conflicting(): Promise<{ clone: string; origin: string }> {
-  const origin = tempDir('igor-tree-origin-')
-  const git = (...args: string[]) => run('git', ['-C', origin, ...args])
-  await git('init', '-q', '-b', 'main', '.')
-  await git('config', 'user.email', 't@example.invalid')
-  await git('config', 'user.name', 'test')
+const diverged = templated((origin) => {
+  const git = (...args: string[]) => execFileSync('git', ['-C', origin, ...args])
+  git('init', '-q', '-b', 'main', '.')
+  git('config', 'user.email', 't@example.invalid')
+  git('config', 'user.name', 'test')
   writeFileSync(join(origin, 'f.txt'), 'one\n')
   writeFileSync(join(origin, 'untouched.txt'), 'quiet\n')
-  await git('add', '-A')
-  await git('commit', '-qm', 'base')
-  await git('checkout', '-qb', 'artifact')
+  git('add', '-A')
+  git('commit', '-qm', 'base')
+  git('checkout', '-qb', 'artifact')
   writeFileSync(join(origin, 'f.txt'), 'the artifact\n')
-  await git('commit', '-qam', 'artifact')
-  await git('checkout', '-q', 'main')
+  git('commit', '-qam', 'artifact')
+  git('checkout', '-q', 'main')
   writeFileSync(join(origin, 'f.txt'), 'the base moved\n')
   writeFileSync(join(origin, 'added-on-main.txt'), 'new\n')
-  await git('add', '-A')
-  await git('commit', '-qm', 'base moved')
-
+  git('add', '-A')
+  git('commit', '-qm', 'base moved')
+})
+async function conflicting(): Promise<{ clone: string; origin: string }> {
+  // A copy per call, because some tests go on to commit to the origin.
+  const origin = diverged('igor-tree-origin-')
   const clone = tempDir('igor-tree-clone-')
   await run('git', ['clone', '-q', '--depth', '1', '--branch', 'artifact', `file://${origin}`, clone])
   return { clone, origin }

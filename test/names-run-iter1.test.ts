@@ -38,9 +38,12 @@ describe('iteration 1 finder', () => {
   })
 
   it('reading a mention followed by a long run of underscores stays linear', () => {
-    const started = performance.now()
+    // CPU time rather than elapsed, so time spent waiting for a core on a loaded machine does not
+    // count.
+    const before = process.cpuUsage()
     isStop('@igor-frontend @a' + '_'.repeat(32000) + '!', FRONTEND, IGORS)
-    expect(performance.now() - started).toBeLessThan(100)
+    const { user, system } = process.cpuUsage(before)
+    expect((user + system) / 1000).toBeLessThan(100)
   })
 
   it('a stop addressed to an Igor in underscore emphasis stops it', () => {
