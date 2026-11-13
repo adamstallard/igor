@@ -104,10 +104,13 @@ const ROLE_KEYS = [
 ]
 
 /**
- * Keys a role or its org base might use to grade a condition. None is a role key, and each is
- * refused with why: a condition is counted, never graded. `conditions` is among them because in a
- * role file it can only be an attempt to set something per role: the threshold and cooldown are
- * set once for every role, in `igor.config.yaml`.
+ * Keys a role file or its org base might use to grade a condition, such as declaring one fatal.
+ * None is a role key, and each is refused with the reason, `COUNTED_NOT_GRADED`: a condition
+ * stops its scope on recurrence alone, never on a grade. `conditions` is among them because in a
+ * role file it can only be an attempt at per-role condition settings, and the condition threshold
+ * and cooldowns are set once for every role, under `conditions` in `igor.config.yaml`. A role's
+ * own `cooldown_minutes` is a different setting: how long the role leaves an item alone after a
+ * person stops it on that item.
  */
 const GRADES = ['conditions', 'condition', 'severity', 'fatal', 'degraded', 'rank', 'grade']
 

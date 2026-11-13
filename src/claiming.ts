@@ -27,12 +27,15 @@ export interface ClaimResult {
    */
   surfaceFailed?: true
   /**
-   * Set on a refusal where the tracker gave no answer: the call failed with no HTTP status, a
-   * 5xx, a 408, a 429 or a 403 rate limit. A later cycle may succeed, so `serve` and `igor run`
-   * keep the discovery watermark below the item (`passesMark`). Unset where the tracker answered
-   * and refused, with another 4xx or by `claim()` reading back false (that branch returns before
-   * the catch that sets this), and then the watermark moves past the item. `surfaceFailed` is a
-   * separate question: whether the cycle should stop, which any throw here may mean.
+   * Set where the outcome is `refused` because a tracker call failed without an answer: no HTTP
+   * status, a 5xx, a 408, a 429, or a 403 rate limit (`unanswered()` below). A later cycle may
+   * succeed, so `serve` and `igor run` keep the discovery watermark, the timestamp after which
+   * discovery reconsiders items, below this item (`passesMark`).
+   *
+   * Unset where the tracker did answer: it refused with another 4xx, or `tracker.claim()` returned
+   * false because the holder field did not record this Igor. The path where `tracker.claim()`
+   * returns false returns before the catch that sets this flag. The watermark then moves past the
+   * item. Whether the cycle should stop is a separate question, which `surfaceFailed` answers.
    */
   unanswered?: true
   /**
