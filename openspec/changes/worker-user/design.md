@@ -16,9 +16,37 @@ What the Igor holds:
 | seat token files | the paths a seat's `token_file` names (on `main`; #171 removes them) |
 | minted installation tokens | the Igor's memory, and the environment of each `gh` child |
 
-The worker runs as a separate Unix user (proposal, decision 1). This document says how.
+The worker runs as a separate Unix user on the machine `igor serve` runs on (proposal, decisions
+1 and 55). This document says how.
 
 ## Decisions
+
+### Worker guarantees are properties; the Linux worker user is how a local host meets them
+
+The requirements state what any worker must meet, whatever runs it:
+
+- no worker can read the Igor's credentials, or reach another role's worker or that worker's
+  files;
+- a worker gets only what the Igor hands it, such as its seat's token;
+- the Igor can end a run and every process the run started.
+
+A worker runs on a *local host* when it runs on the machine `igor serve` runs on. This change
+specifies workers only on a local host, so its local-host rules bind every worker it builds; a
+worker run anywhere else needs a change that says how it meets the properties. A local host meets
+them with the worker user `igor-worker-<role>`, started through `sudo` under its own sudoers line;
+with the kill by user, which ends every process that user owns; and with the role's trees under
+`/var/lib/igor/trees/<role>`. The requirements name these in sentences scoped to a local host and
+in scenarios, and the rest of this document describes that host.
+
+Igor's direction is for workers to run as cloud Claude Code sessions, coordinated by
+`igor serve`. A check of Claude Code's documentation found that a cloud session has no status or
+completion signal a caller can read, and no API to stop or cancel it. Without the signal the Igor
+could not tell when its worker had finished, and it reads and publishes the tree only after every
+model step has exited. Without the stop API it could not end a run that ran away, which the last
+guarantee needs. Cloud workers are outside this change's scope, and nothing here depends on them.
+
+*Rejected:* stating each guarantee as a rule about the worker user, which binds every rule to a
+Unix account on the Igor's host.
 
 ### The worker is started through `sudo`
 

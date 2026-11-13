@@ -13,6 +13,8 @@ Terms used below:
   commit's prose with no other context before prose signs it.
 - **Gate one** approves this specification; at **gate two** the implementation is pushed onto
   the same branch.
+- **A local host** is the machine `igor serve` runs on, when the worker runs there too. This
+  change specifies workers only on a local host (decision 55).
 
 1. **The worker runs as a separate Unix user**. *Rejected:* Claude Code's
    sandbox, whose read limits on a process an allowed command starts are unmeasured and belong to
@@ -499,6 +501,18 @@ Terms used below:
     is refused; the worker's environment is built from a fixed list, so a host that needs a mirror
     cannot use one until a later change gives it a place. *Rejected:* deleting the files before
     each run, which would silently discard what an operator put there.
+55. **The worker's guarantees are properties any worker must meet; the worker user is how a local
+    host meets them.** No worker can read the Igor's credentials or reach another role's worker or
+    that worker's files; a worker gets only what the Igor hands it; and the Igor can end a run and
+    every process the run started. This change specifies workers only on a local host, so its
+    local-host rules bind every worker it builds, and a worker run anywhere else needs a change
+    that says how it meets the properties. A local host meets them with the worker user, its
+    sudoers line, the kill by user (ending every process the worker user owns) and the per-role
+    tree directories. Igor's direction is cloud Claude Code sessions as workers, coordinated by
+    `igor serve`, but Claude Code's documentation gives a cloud session no completion signal and no
+    stop API. The Igor could then neither tell when such a worker finished, which it must before
+    reading the tree, nor end the run, which the last guarantee needs. Cloud workers are outside
+    this change's scope, and nothing here depends on them (design.md).
 
 **Still open:** the first item waits on Adam's review; the rest wait on a measurement, on another
 change, or on this change's authors.
