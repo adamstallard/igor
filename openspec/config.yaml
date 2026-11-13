@@ -19,12 +19,12 @@ schema: spec-driven
 #     tasks:
 #       - Break tasks into chunks of max 2 hours
 
-# spec-check's rules for agents that write OpenSpec artifacts through
-# OpenSpec's /opsx skills, the commands that draft a proposal, specs and a
-# design. Those skills run `openspec instructions`, which shows the agent
-# writing a proposal the `proposal:` list below, and likewise for `specs:`
-# and `design:`. OpenSpec only shows the lists; spec-check's checks and its
-# consistency read enforce them.
+# The rules below come from spec-check, a skill in adamstallard/shared-skills
+# that checks OpenSpec changes. They reach agents that write OpenSpec
+# artifacts through OpenSpec's skills, such as openspec-propose. Those skills
+# run `openspec instructions`, which shows the `proposal:` list below to the
+# agent writing a proposal, and likewise for `specs:` and `design:`. OpenSpec
+# only shows the lists; spec-check enforces them.
 #
 # This block is a hand copy of the `rules:` block in
 # .agents/skills/spec-check/opsx-rules.yaml in adamstallard/shared-skills,
