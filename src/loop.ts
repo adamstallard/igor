@@ -113,24 +113,30 @@ export interface ItemRun {
   surfaceFailed?: true
   /** Set where the claim was refused because the tracker gave no answer; see `ClaimResult`. */
   unanswered?: true
+  /** The condition that refused the item before anything was attempted (`stoppedBy`). */
+  condition?: Condition
 }
 
 /**
- * Whether the discovery watermark may move past the item this run was for.
+ * Whether the discovery watermark may move past the item a `runItem` run was for. `serve` and
+ * `igor run` keep the mark below every item this returns false for.
  *
  * The watermark is one timestamp per source, and discovery reconsiders only items updated after
- * it. It may move past this item unless the run was refused with nothing posted and the tracker
- * gave no answer (`unanswered`). Any other run either moved the item's `updatedAt`, so the next
- * cycle sees it anyway, or met a refusal the tracker answered, with a 4xx or by not recording the
- * claim. Every retry of that would meet the same refusal until the item or a permission changed,
- * and holding the mark below the item would triage every item updated after it again each cycle.
+ * it. Holding it below one item therefore makes every item updated after that one get triaged
+ * again on each cycle. So the mark is held only for a run that leaves its item owed another try:
+ * - **Refused for a condition** (`stoppedBy`): `passesMark` holds the mark, because the item was
+ *   never touched and is owed a run once the condition clears.
+ * - **Refused with nothing posted, and no answer from the tracker** (`unanswered`). The tracker
+ *   may have been down or rate-limited, so a later cycle may succeed.
  *
- * A run `stoppedBy` refuses for a condition would pass too, so neither caller hands `runItem` a
- * gate carrying a condition: `serve` stops on `gate.exhausted()` and `igor run` on
- * `gate.condition` first, and the items left keep the mark below them as untaken.
+ * Every other run lets the mark pass. A run that was not refused, or that posted on the item,
+ * changed the item's `updatedAt`, so the next cycle sees the item anyway. A claim the tracker
+ * refused, with a 4xx or by `claim()` reading back false, would be refused again on every retry
+ * until the item or a permission changed. Holding the mark for it would buy a triage of every
+ * later item on each cycle and nothing else.
  */
-export const passesMark = (run: Pick<ItemRun, 'outcome' | 'spoke' | 'unanswered'>): boolean =>
-  run.outcome !== 'refused' || run.spoke || run.unanswered !== true
+export const passesMark = (run: Pick<ItemRun, 'outcome' | 'spoke' | 'unanswered' | 'condition'>): boolean =>
+  run.condition === undefined && (run.outcome !== 'refused' || run.spoke || run.unanswered !== true)
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
 
@@ -161,7 +167,7 @@ function stoppedBy(candidate: Candidate, budget: RunOptions['budget']): ItemRun 
   if (budget?.condition === undefined) return undefined
   return {
     outcome: 'refused', candidate, reason: `stopped: ${describeCondition(budget.condition)}`,
-    costUsd: 0, spoke: false, cures: [],
+    costUsd: 0, spoke: false, cures: [], condition: budget.condition,
   }
 }
 

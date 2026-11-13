@@ -17,7 +17,7 @@ import type {
 import type { Role } from '../src/role.js'
 import { blobSha, type TreeProvider, type WorkingTree, type ChangedFile, type MergeState, type BaseChange } from '../src/worktree.js'
 import {
-  catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
+  catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, passesMark, recordDecisions, runItem,
   type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
@@ -2122,6 +2122,24 @@ describe('a role a condition stops claims nothing, whichever path the item came 
     await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, budget: stopped })
 
     expect(posts).toEqual([])
+  })
+
+  it('holds the discovery watermark below the item it refused', async () => {
+    // The condition stopped the role, not anything about this item, so the item is owed a run
+    // once the condition clears. Discovery finds it again only while the mark stays below it.
+    const { d } = deps()
+    const stopped: import('../src/budget.js').Gate = {
+      exhausted: () => true,
+      condition: {
+        key: 'role:triage:commands', scope: { kind: 'role', name: 'triage' }, count: 3,
+        first: '2030-01-01T00:00:00.000Z', last: '2030-01-01T00:10:00.000Z', state: 'open',
+      },
+      reason: 'role "triage" is stopped',
+    }
+    const run = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, budget: stopped })
+
+    expect(run.outcome).toBe('refused')
+    expect(passesMark(run)).toBe(false)
   })
 })
 
