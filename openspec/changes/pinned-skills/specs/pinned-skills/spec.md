@@ -157,11 +157,10 @@ to keep them out.
 
 ### Requirement: The worker's home is its user's, or its run's
 
-With a worker user (#175), the worker's home SHALL be that user's own, lasting across runs. With
-none, in same-user mode, which only `igor run` uses, each run SHALL have its own home for its
-tasks, named by the run's id, in Igor's state directory as #216 defines it, in *A handoff states
-what was done, what remains, and who could continue*, the requirement where the specs define it.
-Igor SHALL set the worker's `HOME` to it and remove it when the run ends.
+Each worker SHALL have a home of its own, which neither Igor's own process, nor a worker of another role, nor
+another worker running at the same time uses, and Igor SHALL set the worker's `HOME` to it for
+every call it starts in that home. A local host meets this as *A local worker's home is its worker
+user's, or its run's* states.
 
 #### Scenario: A worker user's home is its own
 
@@ -178,6 +177,26 @@ Igor SHALL set the worker's `HOME` to it and remove it when the run ends.
   where the state directory is where Igor keeps its files on each host
 - **AND** that home is reset as a worker user's is
 - **AND** each run's home is gone once that run ends
+
+### Requirement: A local worker's home is its worker user's, or its run's
+
+On a local host, with a worker user (#175), the worker's home SHALL be that user's own, lasting
+across runs. With none, in same-user mode, which only `igor run` uses, each run SHALL have its own
+home for its tasks, named by the run's id, in Igor's state directory, which #216's *A handoff states what was
+done, what remains, and who could continue* defines. Igor SHALL remove a run's home when the run ends.
+
+#### Scenario: A worker user's home lasts across runs
+
+- **WHEN** a worker running as the worker user of role `generalist` leaves `~/.gitconfig` in its
+  home, and Igor later runs another worker of `generalist` as that user
+- **THEN** the later worker's `HOME` is the same home, and `~/.gitconfig` is still there
+
+#### Scenario: A run's home is named by its id in the state directory
+
+- **WHEN** an `igor run` of the role `generalist` with run id `r1` starts a call in the worker's
+  home
+- **THEN** that call's `HOME` is a directory in Igor's state directory whose name holds `r1`;
+  `<state directory>/home/generalist-r1` is one such path
 
 ### Requirement: An igor run removes what a crashed run of its role left
 
@@ -269,10 +288,33 @@ skills or `CLAUDE.md`, and a `~/.claude.json` of `{"hasCompletedOnboarding": tru
   home from
 - **THEN** the write is refused, as #175's start check confirms
 
+### Requirement: Nothing a step left running survives into the next reset
+
+Before every reset of the worker's home, Igor SHALL end every process the worker's earlier model
+steps started, so that none writes in the home after the reset; in same-user mode, only a process
+that left the worker's process group survives, as the scenario below states; a local host with a
+worker user meets this as *A worker user's processes are killed before each reset* states.
+
+#### Scenario: A process a step left running has ended before the next reset
+
+- **WHEN** a model step in the worker's home starts a process that keeps running after the step
+  exits, and the worker does not run in same-user mode
+- **AND** Igor then resets that home for its next model step
+- **THEN** that process has ended before the reset begins
+
+#### Scenario: Same-user mode does not end a process that left the worker's group
+
+- **WHEN** an `igor run` in same-user mode runs a worker that starts a process that calls
+  `setsid()` and keeps running after the worker exits
+- **THEN** Igor does not kill that process before the next reset, since killing every process of
+  the user Igor runs as would kill Igor and the person's own processes
+
 ### Requirement: A worker user's processes are killed before each reset
 
 With a worker user, before every reset of its home, Igor SHALL kill every process that user owns, by
-user or by the user's systemd slice, whichever kills them all. A kill of the worker's process group
+user or by the user's systemd slice, whichever kills them all on the host (on Debian, only the
+kill by user does: decision 13); that kill is how a local host meets
+*Nothing a step left running survives into the next reset*. A kill of the worker's process group
 alone does not meet this, since each command a worker runs starts in a session of its own.
 
 #### Scenario: A process that escaped its group is killed before the next reset

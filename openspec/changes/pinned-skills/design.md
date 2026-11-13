@@ -598,6 +598,18 @@ So denying tools does not hide the skill list, and the check denies them (decisi
 44. **The `igor run` check's two directories are removed after the call** (one good option),
     and an `igor run` that finds them left by a crashed run removes them with that run's home
     and plugin directory, as #143 does for its probe directories.
+45. **Worker guarantees are stated as properties any worker must meet, and the local mechanism is
+    named as how a local host meets them**. Igor is meant to run workers as cloud Claude Code
+    sessions that `igor serve` coordinates. Claude Code's documentation, read on 2026-11-13,
+    gives a cloud session no status, completion signal or stop API, so Igor could neither learn
+    that such a worker finished nor end it, and no cloud mechanism can be specified. Each
+    guarantee is therefore stated as a property any worker must meet: *The worker's home is its
+    user's, or its run's* gives each worker a home of its own, and *Nothing a step left running
+    survives into the next reset* has Igor end what a step started. The first keeps the title
+    other text cites, though its text now states the property. The worker user's home,
+    `igor run`'s per-run home and the kill of every process the worker user owns are named in
+    requirements scoped to a local host. How a worker with no stop API would meet the second is
+    open (Open Questions).
 
 The reasoning behind the decisions follows.
 
@@ -979,6 +991,9 @@ whether they exist.
 
 ## Open Questions
 
+- **How a worker that offers no stop API would meet *Nothing a step left running survives into
+  the next reset*.** A cloud Claude Code session documents none, so this change specifies only
+  the local mechanism.
 - **Whether `igor run` ever runs more than one worker at once.** Each run has one home
   (decision 23), so two workers of one run at once would share it, and each one's reset would
   replace `~/.claude` under the other's running step, deleting its session log. This change
