@@ -320,12 +320,16 @@ Terms used below:
 38. **The start check reads `sudo -n -l`, and refuses with status 78 unless `!log_allowed`
     applies to the service user**, since nothing else notices the seat token
     going to the journal (decision 28).
-39. **This change gives `igor run` no lock and no run id.** Which of an earlier run's trees a
-    `run` removes is the in-force sweep's rule, *The abandoned-tree threshold derives from the
-    worker's longest possible life*, which removes a tree only once it is older than any run
-    could last, so never a live run's. The worker home and the plugin directory #174 gives each
-    run are #174's to name and remove. This change decides only the user that removes them
-    (decision 25).
+39. **This change gives `igor run` no lock and no run id, and a crashed run's trees wait for the
+    threshold.** An `igor run` removes an earlier run's trees only under the in-force sweep's
+    rule, *The abandoned-tree threshold derives from the worker's longest possible life*, which
+    removes a tree only once it is older than any run could last, so never a live run's. A crashed
+    run's trees therefore stay until they pass that threshold, rather than going at the next
+    `igor run` of their role; the disk they hold meanwhile is an accepted cost, and the point is
+    settled. The worker home and plugin directory are not trees: #174 gives each run them, and
+    removes a crashed run's at the next `igor run` of its role under a run lock #174 defines,
+    which covers only those two. This change decides only the user that removes them (decision
+    25).
 40. **The live `/usage` read, and with it `runUsage`, is removed in the first change built after
     #171's code lands** (#143's decision 37). Decision 46 builds #171's code just
     before this change's, so task 1.10 removes it here, and task 1.7, which
