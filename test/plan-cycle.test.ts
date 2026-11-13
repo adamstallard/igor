@@ -15,6 +15,7 @@ const branch = vi.hoisted(() => ({ writable: true }))
 const records = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../src/state.js', () => ({
   readState: async (_repo: string, path: string) => stored.get(path),
+  readStateForUpdate: async (_repo: string, path: string) => ({ value: stored.get(path) }),
   writeState: async (_repo: string, path: string, value: unknown) => {
     stored.set(path, value)
     return true

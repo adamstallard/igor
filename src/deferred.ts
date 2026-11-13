@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { Candidate, Comment } from './adapter.js'
-import { readState, writeState } from './state.js'
+import { readStateForUpdate, StateError, writeStateOver } from './state.js'
 
 /**
  * Why an Igor stays quiet on an item it would otherwise pick up: it handed the item back and
@@ -107,16 +107,32 @@ export function defer(
   return prune({ ...state, items: { ...state.items, [candidate.id]: entry } }, now)
 }
 
+/**
+ * A record that is not there reads as empty. Any other failure to read it throws, so the cycle
+ * fails and tries again next poll: working on without the record would claim and re-work every
+ * item that was handed back.
+ */
 export async function loadDeferrals(repo: string): Promise<DeferralState> {
-  const stored = await readState<DeferralState>(repo, STATE_PATH).catch(() => undefined)
-  if (stored?.items === undefined) return NO_DEFERRALS
-  // Projected, not spread, so a key this no longer owns does not survive the next write.
-  return { items: stored.items }
+  try {
+    return projected((await readStateForUpdate<DeferralState>(repo, STATE_PATH)).value)
+  } catch (error) {
+    throw new StateError(
+      `the deferral record could not be read, and without it this cycle would re-work items ` +
+        `that were handed back: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
 
-export async function saveDeferrals(repo: string, state: DeferralState): Promise<boolean> {
-  return writeState(repo, STATE_PATH, state, 'Update deferred items')
+/**
+ * Copies only `items`, so a stored key other than `items` is dropped by the next write. Copying the
+ * whole stored object would carry such a key forward in every write, for good.
+ */
+function projected(stored: DeferralState | undefined): DeferralState {
+  return stored?.items === undefined ? NO_DEFERRALS : { items: stored.items }
 }
+
+/** How many read-and-write attempts a handoff makes before giving up, counting the first. */
+const ATTEMPTS = 3
 
 /**
  * Which outcomes are about the item.
@@ -143,6 +159,16 @@ export async function noteHandoff(
   reason: string,
   now: number = Date.now(),
 ): Promise<void> {
-  const state = await loadDeferrals(destination)
-  await saveDeferrals(destination, defer(state, candidate, reason, now))
+  // Read and written as one versioned change. Where another write landed between this read and
+  // this write, GitHub refuses the write, and the entry is applied again to the record as it is
+  // now. Without that, two Igors handing off at once would each save the record they read plus
+  // their own entry, and the second write would drop the first entry.
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    const read = await readStateForUpdate<DeferralState>(destination, STATE_PATH)
+    const next = defer(projected(read.value), candidate, reason, now)
+    if (await writeStateOver(destination, STATE_PATH, next, 'Update deferred items', read.sha)) return
+  }
+  throw new StateError(
+    `${STATE_PATH} in ${destination} changed under each of ${ATTEMPTS} writes, so ${candidate.id} was not recorded`,
+  )
 }
