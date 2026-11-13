@@ -216,8 +216,8 @@ Grouping by author rather than by entry is deliberate. Six entries produced two 
 in the first real run, not six, and each person gets one conversation.
 
 The body carries the contract, using affordances the reviewer already knows: **delete a file**
-to reject permanently, **edit** one to amend it, **merge** to accept the rest, **close without
-merging** to defer. Rejection has to be the deliberate act of deleting something; closing a tab
+to reject it, which is remembered until its record in `rejected/` is deleted, **edit** one to
+amend it, **merge** to accept the rest, **close without merging** to defer. Rejection has to be the deliberate act of deleting something; closing a tab
 is passive and must not destroy a candidate.
 
 **Merging is approval.** GitHub will not let anyone approve their own pull request, so tying
@@ -230,6 +230,26 @@ merge-triggered workflow or by a person. It promotes what merged, records what a
 deleted, and reports pull requests that have gone quiet past a window, for escalation to the
 store-level `reviewers`. There is no daemon, so it runs at invocation: where the workflow is
 installed that is every merge, and where it is not, whenever someone next uses the tool.
+
+**A quiet proposal is told so on its own pull request**, because in the workflow the report
+goes to the log of a run that succeeded, which nobody opens. The comment notifies the
+assignees, who are already subscribed. It is posted once per quiet spell, and the comment is
+the record: reconciliation reads the pull request's comments back rather than keeping a note.
+Two things make that hold.
+
+- **It recognizes its nudge by a marker in the body, not by author.** The job comments as its
+  actor and a local run as whoever ran it, so an author test would nudge twice.
+- **The nudge does not count as activity.** Posting it moves `updated_at`, so a rule asking
+  "anything since?" would nudge once a window forever. A second nudge needs `updatedAtInstant`
+  strictly later than the last nudge, and GitHub sets `updated_at` to a comment's `created_at`
+  exactly, so the nudge alone never qualifies. The day the proposal went quiet travels in the
+  marker, since the pull request's own date is now the nudge's.
+
+A recently nudged proposal therefore looks active by its date. One read of the destination's
+comments since the earliest last activity among the open pull requests inside the window finds
+such proposals; it is skipped when none is inside. The window is measured from that instant,
+never from the start of its day. A nudge that cannot be posted fails the run once the promotions and
+rejections are written: a green log is the surface this replaces.
 
 A second promoter was retired rather than kept beside it. A merge-triggered job diffing the
 push for changed entry files cannot see a rejection at all — the deletion happens on the

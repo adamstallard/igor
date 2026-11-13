@@ -89,7 +89,7 @@ describe('pullRequestBody', () => {
 
   it('states the review contract', () => {
     expect(body).toContain('Delete a file')
-    expect(body).toContain('permanent')
+    expect(body).toContain('remembered')
     expect(body).toContain('Merge')
     expect(body).toContain('Close without merging')
   })
@@ -100,7 +100,9 @@ describe('pullRequestBody', () => {
     expect(close).toMatch(/nothing is rejected/i)
 
     const del = body.split('\n').find((l) => l.includes('Delete a file'))!
-    expect(del).toMatch(/permanent/i)
+    expect(del).toMatch(/remembered/i)
+    // Rejection is undone by deleting the record, and the reviewer is told where it lives.
+    expect(del).toContain('`rejected/`')
   })
 
   it('carries the claim, conditions, and every provenance link', () => {

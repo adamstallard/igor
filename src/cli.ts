@@ -249,6 +249,9 @@ program
     const r = await reconcile(config, { staleAfterDays: Number(opts.staleAfter) })
 
     process.stdout.write(renderReconciliation(r, config.reviewers))
+    // A nudge that could not be posted fails the run. Reported only to the log of a run that
+    // succeeded, it would reach nobody, which is the failure the nudge exists to replace.
+    if (r.unnudged.length > 0) process.exitCode = 1
   })
 
 program
