@@ -7,6 +7,7 @@ import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } f
 import {
   AMBIENT_TOKENS, credentialCure, credentialFingerprint, resolveToken, type TokenSource, type Window,
 } from './budget.js'
+import { rememberSecret, rememberUrlCredentials } from './redact.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import {
@@ -807,8 +808,8 @@ export function watchWorker(limits: Limits, kill: (why: ExecutionError) => void)
 }
 
 /**
- * Forwarded when the host sets them. None is a credential: each is how this host reaches the
- * network, and dropping one fails as a connection error that looks like anything but a missing
+ * Forwarded when the host sets them. None is a login the worker needs: each is how this host
+ * reaches the network, and dropping one fails as a connection error that looks like anything but a missing
  * variable. Measured: a worker given a proxy address nothing listens on reports
  * `API Error: Connection refused`, naming no proxy.
  */
@@ -823,6 +824,14 @@ const FORWARDED = [
   'SSL_CERT_FILE',
   'SSL_CERT_DIR',
 ] as const
+
+/**
+ * The `FORWARDED` variables that set a proxy. A proxy's URL can carry the proxy's own user name
+ * and password, so each of these is passed to `rememberUrlCredentials` before the worker gets
+ * it. `NO_PROXY` holds a list of hosts, which registers nothing unless an entry holds an `@`; it
+ * is passed too in case one does.
+ */
+const PROXIES = new Set<string>(['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'])
 
 /**
  * The worker's whole environment, built from a list rather than inherited: `PATH`, `HOME`, the
@@ -846,7 +855,11 @@ export async function workerEnv(
   const out: NodeJS.ProcessEnv = {}
   for (const name of ['PATH', 'HOME', ...FORWARDED]) {
     const value = env[name]
-    if (value !== undefined && value !== '') out[name] = value
+    if (value === undefined || value === '') continue
+    // A proxy URL can carry a user name and password. They are registered before the worker is
+    // handed them, so redaction knows them.
+    if (PROXIES.has(name)) rememberUrlCredentials(value)
+    out[name] = value
   }
 
   let token: string | undefined
@@ -869,7 +882,10 @@ export async function workerEnv(
   if (token === undefined) {
     for (const name of AMBIENT_TOKENS) {
       const value = env[name]
-      if (value !== undefined && value !== '') out[name] = value
+      if (value !== undefined && value !== '') {
+        rememberSecret(value)
+        out[name] = value
+      }
     }
     return out
   }
@@ -2089,9 +2105,12 @@ export async function complete(
  *   small enough to read whole.
  * - The transcript, one file per item: why the worker did what it did. Far larger, and only
  *   wanted for one item at a time.
- * - A refusal envelope in `refusals/`, where the run's envelope named a usage limit: kept whole,
- *   because no pattern has yet been fitted to a real one.
+ * - A refusal envelope in `refusals/`, where the run's envelope named a usage limit: kept whole
+ *   but for credentials, because the patterns that detect a limit have not yet been checked
+ *   against a real envelope.
  * - A capacity observation, on a budget stop that has a seat.
+ *
+ * Each passes through credential redaction (`redact.ts`) in `writeState` or `appendRecord`.
  */
 export async function recordExecution(
   destination: string,
@@ -2111,25 +2130,25 @@ export async function recordExecution(
   const wroteTranscript = result.transcript.trim() !== ''
 
   // **The only write that is caught**, and it goes first. The other writes are ordered so the
-  // most valuable lands before one fails (see the observation at the end); this one is caught
-  // instead, because if it threw it would take the run's ledger row, transcript and capacity
-  // observation with it. It goes first because nobody has yet seen what this provider returns
+  // most valuable lands before one fails (see the comment on the capacity observation, written
+  // last); this one is caught instead, because if it threw it would take the run's ledger row,
+  // transcript and capacity observation with it. It goes first because nobody has yet seen what this provider returns
   // when it refuses a run for a spent window: `usageLimit`'s patterns, `resetFrom`'s, and where
   // the reset phrase sits are all guesses, and this envelope is the first chance to check them.
   // A lost ledger row is one run nobody can account for; a lost envelope means waiting for the
   // next exhausted window, hours or a week away.
   //
-  // Nothing is redacted. `envelope.result` is worker prose about an item and could say
-  // anything, but it is also where the reset phrase is believed to be, so redacting it removes
-  // the thing being captured. The transcript below writes the same text to the same branch,
-  // except on the path where the worker threw, which has no transcript.
+  // Kept whole apart from credentials, which `writeState` redacts from every state-branch
+  // write. `envelope.result` is worker prose about an item and could say anything, but it is
+  // also where the reset phrase is believed to be, so nothing beyond credential redaction may
+  // cut it: that would remove the thing being captured.
   //
   // Captured on any run whose envelope named a limit in a field the provider fills, not only a
   // budget stop: a seat can refuse after the worker has edited files, and that run publishes as
   // `produced`. A limit named only in the worker's prose is captured only on a budget stop,
   // where the run's outcome already says it was refused. On any other run that prose is as
-  // likely a crash on an item about rate limits, and those would bury the refusals this
-  // directory is for.
+  // likely to come from a worker that crashed while working an item about rate limits, and
+  // those would bury the refusals this directory is for.
   const captured = result.limitEnvelope
   if (captured !== undefined && (result.outcome === 'budget' || structuralLimit(captured))) {
     await writeState(

@@ -1,4 +1,5 @@
 import { gh, GhError } from './gh.js'
+import { redact, stringifyRedacted } from './redact.js'
 
 /**
  * Machine output gets a machine venue. State lives on an orphan branch so `main` stays
@@ -113,6 +114,9 @@ async function currentSha(repo: string, path: string, branch: string): Promise<s
 /**
  * Writes only when the content actually differs. Discovery runs on an interval and most
  * cycles change nothing; writing regardless would fill the branch with empty commits.
+ *
+ * Every string in `value`, and the commit message, passes through credential redaction
+ * (`redact.ts`) on the way out: the state branch is as visible as its repository.
  */
 export async function writeState(
   repo: string,
@@ -122,7 +126,7 @@ export async function writeState(
   branch = STATE_BRANCH,
 ): Promise<boolean> {
   await ensureStateBranch(repo, branch)
-  const next = `${JSON.stringify(value, null, 2)}\n`
+  const next = `${stringifyRedacted(value, 2)}\n`
   const existing = await readState<unknown>(repo, path, branch)
   if (existing !== undefined && `${JSON.stringify(existing, null, 2)}\n` === next) return false
 
@@ -130,7 +134,7 @@ export async function writeState(
   await ghJson(
     ['api', `repos/${repo}/contents/${path}`, '--method', 'PUT', '--input', '-'],
     JSON.stringify({
-      message,
+      message: redact(message),
       branch,
       content: Buffer.from(next, 'utf8').toString('base64'),
       ...(sha === undefined ? {} : { sha }),
@@ -220,6 +224,9 @@ export async function readLog(
  * The Contents API has no append, so the day's partition is downloaded and re-uploaded with
  * the line on the end. Partitioning is what bounds that: the file being rewritten is one
  * day's, not the log's whole history. Read the log back with `readLog`, never by path.
+ *
+ * Every string in `record`, and the commit message, passes through credential redaction
+ * (`redact.ts`), as in `writeState`.
  */
 export async function appendRecord(
   repo: string,
@@ -231,7 +238,7 @@ export async function appendRecord(
   await ensureStateBranch(repo, branch)
   // One clock read: a write straddling midnight must not stamp a record outside its partition.
   const at = new Date().toISOString()
-  const line = `${JSON.stringify({ at, ...record })}\n`
+  const line = `${stringifyRedacted({ at, ...record })}\n`
   const target = partitionPath(path, at)
 
   let existing = ''
@@ -252,7 +259,7 @@ export async function appendRecord(
   await ghJson(
     ['api', `repos/${repo}/contents/${target}`, '--method', 'PUT', '--input', '-'],
     JSON.stringify({
-      message,
+      message: redact(message),
       branch,
       content: Buffer.from(existing + line, 'utf8').toString('base64'),
       ...(sha === undefined ? {} : { sha }),
