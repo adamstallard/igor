@@ -157,9 +157,9 @@ Inheritance SHALL merge each field by kind:
 
 #### Scenario: An action outside the vocabulary is refused
 
-- **WHEN** a role's `allow` lists a word outside its closed set, such as `unassign`
-- **THEN** the role is refused at load, naming the valid actions: `comment`, `review-comment`,
-  `draft-pr`, `pr`, `label`, `merge` and `send`, the closed set `allow` takes
+- **WHEN** a role's `allow` lists a word outside the closed set `allow` takes, such as `unassign`
+- **THEN** validation fails as the role loads, and the refusal names the valid actions:
+  `comment`, `review-comment`, `draft-pr`, `pr` and `label`
 
 #### Scenario: Setting overridden
 
