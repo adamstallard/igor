@@ -10,8 +10,14 @@ reason (the item names nothing, or a reason the two-gate requirements add).
 
 #### Scenario: An item that names nothing
 
-- **WHEN** an issue's title and body name no path, directory, glob, capability or change
+- **WHEN** a role not under the two-gate workflow works an issue whose title and body name no
+  path, directory, glob, capability or change
 - **THEN** the pull request states that scope was not checked, and lists no path as outside
+
+#### Scenario: The same item and artifact always give the same result
+
+- **WHEN** the same item and the same artifact are compared twice
+- **THEN** both comparisons give the same result, and neither makes a model call
 
 #### Scenario: The run's record carries the result
 
@@ -21,11 +27,22 @@ reason (the item names nothing, or a reason the two-gate requirements add).
 
 ### Requirement: What an item names
 
-A path SHALL be treated as **named** when the item's title or body names it as a file, or names a
-directory (written with a trailing `/`) or glob that the path falls under, or when the next two
-requirements name it. A directory or glob whose first segment is not literal, such as `**/*.ts` or
-`/` (whose first segment is empty), names nothing. Nor do the item's comments or the role's
-`lane.paths.under` name anything.
+A path SHALL be treated as **named** when the item's title or body names it as a file (a token
+with a `/` that ends in an extension, so `README.md` alone names nothing), or names a directory
+(written with a trailing `/`) or glob the path falls under, or when the next two requirements name
+it. A directory or glob whose first segment is not literal, such as `**/*.ts` or `/` (an empty
+first segment), names nothing. Nor do the item's comments or the role's `lane.paths.under`.
+
+#### Scenario: A named directory covers the paths under it
+
+- **WHEN** an issue's body names `src/api/` and the artifact changes `src/api/users.ts`
+- **THEN** `src/api/users.ts` is in scope
+
+#### Scenario: A file name with no slash names nothing
+
+- **WHEN** a role not under the two-gate workflow works an issue whose body names `README.md` and
+  nothing else, and the artifact changes `README.md`
+- **THEN** scope is not checked, because the item names nothing
 
 #### Scenario: A glob that would cover everything
 
@@ -43,16 +60,29 @@ requirements name it. A directory or glob whose first segment is not literal, su
 ### Requirement: Naming a capability or change names what its files name
 
 A path SHALL be treated as named when the item's title or body contains, as a whole word, the
-directory name of an OpenSpec capability under `openspec/specs/` or of an open change under
-`openspec/changes/` (not `archive`), in the working tree as it was before the worker ran, and the
-path is in that directory, or any file in that directory names the path by the file, directory and
-glob rules of *What an item names*.
+directory name of a capability under `openspec/specs/` or an open change under `openspec/changes/`
+(not `archive`), as the tree was before the worker ran, and the path is in that directory or is
+named, by *What an item names*'s rules, in its scope files: a capability's `spec.md` and
+`decisions.md`; a change's `proposal.md`, `tasks.md`, `design.md` and files under `specs/`.
 
 #### Scenario: An item that names an OpenSpec change
 
 - **WHEN** an issue names the change `budget-pacing`, whose `tasks.md` names `src/budget.ts`, and
   the artifact changes `openspec/changes/budget-pacing/tasks.md` and `src/budget.ts`
 - **THEN** both paths are in scope
+
+#### Scenario: A capability's decision record names source paths
+
+- **WHEN** an issue names the capability `task-execution`, whose `decisions.md` has an entry with
+  `Paths: src/execute.ts`, and the artifact changes `src/execute.ts`
+- **THEN** `src/execute.ts` is in scope
+
+#### Scenario: The worker cannot widen scope by editing a named change
+
+- **WHEN** an issue names the change `budget-pacing`, and the worker adds `src/auth.ts` to that
+  change's `tasks.md` and also changes `src/auth.ts`
+- **THEN** `src/auth.ts` is outside, because the change's files are read as they were before the
+  worker ran
 
 ### Requirement: A file sharing a named file's stem is named
 
@@ -66,6 +96,13 @@ because a named directory holds it brings no file sharing its stem into scope.
 - **WHEN** an issue names `src/api/users.ts` and the artifact changes `src/api/users.ts` and
   `test/users.test.ts`
 - **THEN** the pull request states that every changed path is in scope
+
+#### Scenario: A file held by a named directory brings in no stem
+
+- **WHEN** an issue names `src/api/`, and the artifact changes `src/api/users.ts` and
+  `test/users.test.ts`
+- **THEN** `test/users.test.ts` is outside, because `src/api/users.ts` is in scope only through
+  the directory
 
 ### Requirement: The scope result is stated in the evidence table's Files changed row
 
@@ -95,8 +132,8 @@ to review it.
 ### Requirement: A push that is not checked keeps the last scope result
 
 Of pushes onto a pull request, only gate two's implementation push SHALL be checked. Any other,
-such as a resolution or a revision answering a change request at either gate, records no scope
-result, leaving the last in force. The evidence table built after it states the pull request's last
+such as a resolution (a push that merges the base branch in) or a revision answering a change
+request at either gate, records no scope result, leaving the last in force. The evidence table built after it states the pull request's last
 recorded result, marked as an earlier push's, or, where none is recorded, what *With no scope
 result recorded, the table says so* requires.
 
@@ -130,12 +167,12 @@ checked, because it cannot tell those two causes apart.
 
 ### Requirement: Under the two-gate workflow, scope follows the gate
 
-For a role whose `workflow` setting, after inheritance from its base, is `two-gate` (added by
-`follow-the-two-gate-workflow`, #150), each gate SHALL be checked against what it is expected to
-change. At gate one, this replaces the named set. Only paths in the pull request's own change are
-named: the one directory directly under `openspec/changes/`, other than `archive`, that the
-artifact adds and the base lacks. With none or several, scope SHALL be not checked, and the result
-says which.
+For a role whose effective `workflow` setting is `two-gate` (#150's
+`follow-the-two-gate-workflow`), each gate SHALL be checked against what it is expected to
+change. At gate one, only paths in the pull request's own change are named, whatever the item
+names: the one directory directly under `openspec/changes/`, other than
+`archive`, that the artifact adds and the base lacks. With none or several, scope SHALL
+be not checked, and the result says which.
 
 #### Scenario: Gate one's own change is in scope
 
@@ -149,13 +186,24 @@ says which.
   `openspec/changes/budget-pacing/tasks.md`, which the issue names
 - **THEN** `openspec/changes/budget-pacing/tasks.md` is outside
 
+#### Scenario: Gate one checks its own change even when the item names nothing
+
+- **WHEN** an issue names nothing, and a gate-one artifact adds
+  `openspec/changes/rate-limits/proposal.md` and changes `src/auth.ts`
+- **THEN** the proposal is in scope and `src/auth.ts` is outside
+
+#### Scenario: Gate one with no change directory, or several
+
+- **WHEN** a gate-one artifact adds no directory under `openspec/changes/`, or adds two
+- **THEN** scope is not checked, and the result says whether none or several were added
+
 ### Requirement: Gate two is checked against the item and the approved change
 
 Gate two's push SHALL be checked before it is published, comparing every path it carries with what
-the item and the approved change name. The approved change is whatever change directories the pull
-request's diff held before gate two's worker ran. Each names: every path in it; every path its
-`proposal.md`, `tasks.md`, `design.md` or a file under its `specs/` names, by the file, directory
-and glob rules of *What an item names*; and every file sharing a stem with a file so named.
+the item and the approved change name. The approved change is every change directory the pull
+request's diff held before gate two's worker ran, all of them where there are several. Each names:
+every path in it; every path its scope files name, as *Naming a capability or change names what its
+files name* defines them; and every file sharing a stem with a file its scope files name as a file.
 
 #### Scenario: Gate two is checked against the approved change
 
@@ -168,8 +216,7 @@ and glob rules of *What an item names*; and every file sharing a stem with a fil
 At gate two, an item that names nothing SHALL NOT make the result not checked, because the approved
 change is still compared. Where the pull request's diff held no change directory before gate two's
 worker ran, so the approved change names nothing, and the item names nothing too, the result is not
-checked, because nothing is named. Gate two's result is stated and recorded as for a new pull
-request.
+checked. Gate two's result is stated and recorded as for a new pull request.
 
 #### Scenario: Gate two with an item that names nothing
 
@@ -183,3 +230,20 @@ request.
 - **WHEN** an issue names nothing, and the pull request's diff held no change directory before
   gate two's worker ran, so the approved change names nothing
 - **THEN** gate two's push is reported as not checked, because nothing is named
+
+#### Scenario: Gate two's result is recorded like a new pull request's
+
+- **WHEN** gate two's push is checked and finds `src/auth.ts` outside
+- **THEN** the run's row in `executions.ndjson` records that scope was checked and that
+  `src/auth.ts` is outside, and the Files changed row states it
+
+### Requirement: Files read for scope follow no link
+
+The Igor SHALL read each scope file of a capability or change as #175's *Every file read from the
+worker is a regular file with one link* requires: opened without following a symbolic link, and read
+only if it is a regular file with one link. A file that fails is not read, and names nothing.
+
+#### Scenario: A symbolic link in a change directory is not followed
+
+- **WHEN** the approved change's `tasks.md` is a symbolic link to a file outside the tree
+- **THEN** the Igor does not follow it, and that file names nothing

@@ -31,15 +31,19 @@
    the base brought in. A push that is not checked leaves the last checked result in force, and a
    body written after it says that result came from an earlier push. Rejected: stating "not
    checked" after every resolution, which would discard a result that still describes the pull
-   request's own changes.
+   request's own changes, and which #190 would turn into `review: read` on every resolved pull
+   request. The result carried forward may itself say "not checked", as when the issue named
+   nothing.
 7. **A capability or change points only at what its own files say.** Naming `task-execution`
    puts `openspec/specs/task-execution/` in scope, plus any file, directory or glob its files name.
    A capability those files mention adds nothing more, and `openspec/changes/archive/` is no
-   change. The files are read before the worker runs, so a worker cannot widen its own scope by
-   editing them. No spec here names
-   a source file today, so a source edit on an issue that names only a capability is flagged.
-   Rejected: a table mapping each capability to source paths. Nothing would keep it current, and a
-   stale table hides exactly the paths it forgot.
+   change. The files read are a capability's `spec.md` and `decisions.md`, and a change's
+   `proposal.md`, `tasks.md`, `design.md` and spec deltas, the same set at gate two. They are read
+   before the worker runs, so a worker cannot widen its own scope by editing them. Specs rarely
+   name a source file, but a decision record's `Paths:` lines do, so naming a capability brings
+   in the source its record governs. spec-check fails on a `Paths:` entry the tree lacks, which
+   keeps those lines current. Rejected: a separate table mapping each capability to source paths. Nothing would keep it
+   current, and a stale table hides exactly the paths it forgot.
 
 **Decided: the check understands both gates of the two-gate workflow**
 (`follow-the-two-gate-workflow`, #150; this part applies only once that change ships):
@@ -51,11 +55,10 @@
   no issue can name a change directory before it exists.
 - **Gate two's** push onto that pull request is checked against what the issue names plus what
   the approved change names. The approved change is the specification a reviewer approved at
-  gate one. It names its directory, the paths its `proposal.md`, `tasks.md`, `design.md` and spec
-  deltas name, and files sharing those named files' stems. Gate two's push is the one push onto
-  an existing pull request that is checked; a resolution and a revision answering a change request are not.
-  *Rejected:* leaving gate two unchecked, which leaves the implementation, the push most likely
-  to stray, with no scope check at all.
+  gate one. It names its directory, the paths its files name (decision 7), and files sharing
+  those named files' stems. Decision 6 says which other pushes are checked. *Rejected:* leaving
+  gate two unchecked, which leaves the implementation, the push most likely to stray, with no
+  scope check at all.
 
 **Also decided:**
 
@@ -63,12 +66,6 @@
   that adds none, or more than one, is reported as not checked rather than guessed at.
   *Rejected:* taking every change directory the artifact touches as its own, which would never
   flag a spec pull request that edits someone else's change.
-- A push that is not checked keeps the last result recorded by a push that ran the check,
-  marked as from an earlier push (decision 6). That result may itself say "not checked", as
-  when the issue named nothing; it carries forward all the same. *Rejected:* stating "not
-  checked" after every such push, for the reason decision 6 gives, and because #190 labels any
-  pull request whose result is "not checked" `review: read`, so every resolution would demote
-  it.
 - Where the record of earlier results is missing, as when the state branch holding
   `executions.ndjson` has been lost or reset, the result reads "not checked", never "no push has
   been checked". *Rejected:* "no push has been checked", which the loop cannot know once the
@@ -81,7 +78,8 @@ Nothing tells a reviewer when an Igor's pull request changes files its issue nev
 one that misread the item, produces a draft that "quietly does the wrong thing", and
 `docs/architecture.md:1097-1101` leaves catching that to review. The loop already holds both sides
 of the comparison: `Candidate.paths`, read from the item's text by `extractPaths`
-(`src/adapter.ts:337`), and the artifact's paths, split by `carried` (`src/execute.ts:1818`).
+(`src/adapter.ts:337`), and the artifact's paths, which `carried` splits into written and removed
+(`src/worktree.ts:58`, called at `src/execute.ts:1863`).
 
 ## What Changes
 
@@ -103,28 +101,32 @@ None.
 
 ### Modified Capabilities
 
-- `task-execution`: eleven added requirements:
+- `task-execution`: twelve added requirements:
   - the comparison itself, *A pull request states which changed paths its item does not name*;
   - three for what counts as named: by the item's text, through a named capability or change, and
     by stem;
   - where the result is stated, and that it never blocks publishing;
   - two for pushes onto a pull request: which are checked, and what #190's evidence table states
     when no result is recorded;
-  - three for the two-gate workflow: gate one, gate two, and when gate two is not checked.
+  - three for the two-gate workflow: gate one, gate two, and when gate two is not checked;
+  - that the files read for scope follow no link, as #175 requires of files the worker wrote.
 
 ## Overlaps
 
 - **Which paths an artifact carries** is governed by open changes `carry-only-what-happened`
   (PR #125) and `carry-what-a-tree-holds` (PR #137). This check compares whatever paths the artifact
-  carries; with those two changes, those are exactly the paths the worker changed.
+  carries. A new pull request and gate two's push carry only what the worker changed, since only
+  a resolution merges the base in. A resolution can also carry what the base changed, such as a submodule the base
+  moved (#137's *A submodule carried through a resolution*), and this change never checks a
+  resolution.
 - **Where the result appears** is `review-evidence` (PR #190): this result fills the scope part of
   its table's Files changed row, in its wording. #190's label needs a checked result with no
   path outside for `review: skim`, so a path outside makes it `review: read`; #190 builds that,
   and this change only supplies the result. This change writes nothing else into the body.
-- **Build order: `keep-action-log` (#188), then `review-evidence` (#190), then this change and
-  `loop-verifies-commands` (#189) in either order.** Archive order follows the same sequence, so
-  the row this change fills exists in code before this change merges, and in the in-force specs
-  before it is archived.
+- **Build after `review-evidence` (#190), which follows `keep-action-log` (#188); archive after
+  #190.** The row this change fills then exists in code before this change merges, and in the
+  in-force specs before it is archived. Issue #204 holds the whole archive order, and has not yet
+  placed this change.
 - **`signed-publishing`** (PR #153) has a model step write and sign the description. The result
   is assembled by the code, so it sits in #190's evidence section, after the marker
   `<!-- igor:evidence -->` that ends the signed description.
