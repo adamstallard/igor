@@ -5,34 +5,34 @@
 
 - [x] 0.1 Run `claude -p --plugin-dir <dir>` against a plugin and ask the model to use
       `igor:<name>`. Record in `design.md` whether the skill runs, and which directory Claude
-      Code reports to the model. **If the skill does not run, stop: the choice of flag goes back
-      to Adam.** Done 2026-10-11 with a seat's setup-token rather than an API key: in normal mode
+      Code reports to the model. **If the skill does not run, stop: the choice of flag is
+      revisited.** Done 2026-10-11 with a seat's setup-token rather than an API key: in normal mode
       the model invokes `igor:<name>` through the Skill tool and the skill runs, with the
       plugin's base directory. Under `--bare` the token runs as an API key, not as a seat, so
       Igor never passes `--bare`. Whether a linked skill gets the same base directory is task
       0.3's. See `design.md`, *Measured with a model, 2026-10-11*
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
-      (`caller-result.sh`), prose's `check`, `sign`, `verify-staged` and `verify-post`, and
-      `--goals-file` on prose's `sign` as well as `check`. #153 needs it on `sign`, and drops
+      (`caller-result.sh`) and its `mint-trailer.sh`, prose's `check`, `sign`, `verify-staged` and
+      `verify-post`, prose's `--message-goals-file`, and `--goals-file` on prose's `sign` as well
+      as `check`. #153 needs it on `sign`, and drops
       `prose start`, the call that opened prose's editing hook in a worker's session. Shared-skills
       #27 added `--goals-file` to `sign` and merged on 2026-10-21; pin a commit at or after that
       merge
-- [x] 0.3 Before building, measure on the Claude Code version the server runs, and record in
-      `design.md`. Done 2026-10-18 on Claude Code 2.1.303. The version the server runs is not
-      known, so it was not measured on, and `design.md` gives the results for 2.1.303 alone.
-      Each result is in `design.md`, *Measured before building, 2026-10-18 (task 0.3)*:
+- [x] 0.3 Before building, measure on Claude Code 2.1.303, and record in `design.md`. Done
+      2026-10-18; task 0.5 repeats it on the version the server runs. Each result is in
+      `design.md`, *Measured before building, 2026-10-18 (task 0.3)*:
       - the base directory a skill is given when its entry under `<skills_dir>/skills/` is the
-        manager's link into a clone. **If it is the clone's path, stop: the choice of flag goes
-        back to Adam.** It is the link's path under the plugin; the flag stands;
+        manager's link into a clone. **If it is the clone's path, stop: the choice of flag is
+        revisited.** It is the link's path under the plugin; the flag stands;
       - whether a worker started with `--plugin-dir <skills_dir>` under `acceptEdits` can write
-        a file under `skills_dir`. **If it can, stop: the choice of flag goes back to Adam.** It
+        a file under `skills_dir`. **If it can, stop: the choice of flag is revisited.** It
         cannot, and cannot Read there either; the flag stands;
       - whether `--setting-sources user` and `--strict-mcp-config` keep the working directory's
         `.claude/settings.json`, `.mcp.json`, skills and `CLAUDE.md` out of a call, including
         with `--add-dir <its tree>`. All four stay out, with local and nested files too;
       - that the startup check's call still prints `system/init` with those two flags. It does;
-        with no `--model` it ran on sonnet at about twenty times haiku's cost, so Adam pinned it
-        to haiku (task 3.1);
+        with no `--model` it ran on sonnet at about twenty times haiku's cost, so the check runs
+        on haiku (task 3.1);
       - that a seat's token is the only credential a call uses: in a home just reset from the
         template, beside another account's stored login in `HOME` or the Keychain, and with an
         invalid token beside a stored login. It is, in all three. `apiKeySource` reads `none`
@@ -47,6 +47,26 @@
       setup-token under `env -i`, from an empty directory with an empty `HOME`, against a plugin
       with one skill, and record in design.md whether the `system/init` event lists the skill.
       Decision 42 rests on a call made on a login, without `--setting-sources user` and `--strict-mcp-config`. If the event does not list the skill, stop: revisit decision 42 before building task 3.1
+- [ ] 0.5 Once the Claude Code version the server runs is known, repeat each measurement of task
+      0.3 on it, and record in `design.md` any result that differs from 2.1.303's. Where one of
+      task 0.3's stop conditions then holds, stop as that task says
+- [ ] 0.6 With `--plugin-dir <skills_dir>` holding `prose`, and a different `prose` in `HOME`'s
+      `.claude/skills/`, run a call with the flags every call carries, read the skill listing
+      Claude Code sends the model (for example through a local server set as
+      `ANTHROPIC_BASE_URL`), and record in `design.md` whether `igor:prose` carries the pinned
+      skill's description. In the same run, record whether a skill's `SKILL.md` can declare hooks
+      that load. If another copy's text reaches `igor:prose`, or a `SKILL.md` hook loads, stop:
+      decision 6 is revisited
+- [ ] 0.7 Run a worker in a home just reset from the template, and list every file Claude Code
+      writes under `HOME` outside `~/.claude` and `~/.claude.json`; record the list in
+      `design.md`. If one of those files is read by a later call, stop: the reset's two paths are
+      revisited
+- [ ] 0.8 Run a model step that resumes its session with `claude -p --resume`, and a worker that
+      starts a subagent, and record in `design.md` every file each session writes under
+      `~/.claude/projects/`. If a step's session is more than one file, task 2.8 copies each of
+      them. In the same runs, record whether Claude Code keeps a project's memory under
+      `~/.claude/projects/` and loads it into a later call in that project; if it does not,
+      decision 26's reason for resetting `projects/` is revisited
 
 ## 1. Where the skills are
 
@@ -59,8 +79,8 @@
       IGOR_SKILLS_DIR must be an absolute path: <value>
       ```
 - [ ] 1.2 Tests: no `IGOR_SKILLS_DIR` gives `/opt/igor/skills`; `IGOR_SKILLS_DIR` overrides
-      it; a relative one refuses the start; `skills_dir` in `igor.config.yaml` is refused as an
-      unknown key
+      it; a relative one refuses the start; `skills_dir` in `igor.config.yaml`, a role file or a
+      seat file (#171) is refused as an unknown key
 - [ ] 1.3 Where `skills_dir` does not exist, `igor serve` refuses to start, exiting 78. `igor
       run` instead reads the entries holding a `SKILL.md` in `~/.claude/skills` of the `HOME` it
       started with, before it sets the worker's `HOME`, and assembles a plugin directory for the
@@ -90,37 +110,36 @@
 
       Tests: `serve` refuses with that path named and exits 78; `run` with a person's
       `~/.claude/skills` holding two linked skills the role lists assembles a directory whose `skills/` links
-      to their resolved paths, every call but the usage read carries `--plugin-dir` naming it,
+      to their resolved paths, every call carries `--plugin-dir` naming it,
       the startup check runs against it, and it is gone once the run ends; `run` with neither
       prints the second fenced line above, and no call's arguments carry `--plugin-dir`
 
 ## 2. The flag on every call
 
 - [ ] 2.1 One function that builds the arguments Igor's `claude -p` calls share: for every
-      call `--setting-sources user` and `--strict-mcp-config`, and for every call but
-      `runUsage` `--plugin-dir <skills_dir>`. Use it in `claudeWorker` (`src/execute.ts`),
-      `runClaude` (`src/triage.ts`), `runUsage` (`src/budget.ts`) and the startup check (3.1).
-      #143's seat probe and #153's steps, built in those changes, call it as well. Under `igor
-      run` where `skills_dir` does not exist, it names the run's assembled directory, and where
-      neither exists it gives no call `--plugin-dir` (1.3). Where #143's
-      removal of the usage read (#143's decision 37) has been built, `runUsage` is gone and
-      needs no change
-- [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>`; the
-      usage read's never carry it; every
+      call `--setting-sources user`, `--strict-mcp-config` and `--plugin-dir <skills_dir>`. Use
+      it in `claudeWorker` (`src/execute.ts`), `runClaude` (`src/triage.ts`) and the startup
+      check (3.1). #143's seat probe and #153's steps, built in those changes, call it as well.
+      Under `igor run` where `skills_dir` does not exist, it names the run's assembled directory,
+      and where neither exists it gives no call `--plugin-dir` (1.3)
+- [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>`; every
       call's arguments, the startup check's included, carry `--setting-sources user` and
-      `--strict-mcp-config`; no call's arguments include `--bare`
+      `--strict-mcp-config`; no call's arguments include `--bare`; under `igor serve`, a worker of
+      a role whose `skills` list names one of three installed skills gets all three listed in its
+      `system/init` event
 - [ ] 2.3 The worker's home: with #175's worker user, that user's own home; without one, a
       home for the `igor run`, under Igor's state directory, named by the run's id, such as
       `<state directory>/home/<role>-<run>`. It is created when the run first needs it, passed
       as the worker's `HOME`, and removed when the run ends, whether it ends normally or on an
       error Igor catches. A run that crashes leaves its home behind, so each `igor run` picks a
       run id and, while it runs, holds an exclusive lock on its own file, `<role>-<run id>.lock`,
-      in Igor's state directory. At its start, before its first cycle, it removes the home, the
-      plugin directory task 1.3 assembled and the startup check's two directories of each
-      earlier run of its role whose lock it can take, and the lock file with them; it leaves
-      those of a run whose lock it cannot take. `igor run --plan` removes nothing. Tests: of two
-      earlier runs' homes and plugin directories, the one
-      whose lock is free is removed and the other kept; `--plan` removes neither
+      in Igor's state directory. At its start, before its first cycle, it removes the run
+      directories (the home, the plugin directory task 1.3 assembled, and the startup check's and
+      task 2.10's triage directories) of each earlier run of its role whose lock it can take, and
+      the lock file with them; it leaves those of a run whose lock it cannot take. `igor run
+      --plan` removes nothing. Tests: of two earlier runs' run directories, triage directories
+      included, the ones whose lock is free are removed and the others kept; `--plan` removes
+      none
 - [ ] 2.4 The template, shipped in Igor's installation, holding exactly these two files (not to
       be reworded), and no skills and no `CLAUDE.md`. Task 0.3's measurements of a home just reset from the template ran on them:
 
@@ -142,14 +161,11 @@
       there, `~/.claude/.credentials.json` included. Reset nothing else in the home. With a
       worker user, the reset runs as that user, through #175's `sudo` spawn. #153 wires each of
       its model steps to call this reset first, as it calls 2.1's argument builder
-- [ ] 2.6 With a worker user, before every reset, kill every
-      process that user owns, by user or by the user's systemd slice, whichever the
-      implementer finds kills them all in the tests below (Adam left the means open). Decision
-      13 in `design.md` records #175's measurement that a kill by slice misses a process `sudo`
-      starts. Not by
-      process group: each command a worker runs starts in a session of its own, as #175's
-      measurement 6.2 found. #175 is built before this change, so its `sudo` spawn exists by
-      then
+- [ ] 2.6 With a worker user, before every reset, run the kill #175 builds for *A kill reaches
+      the worker's whole process tree*: its `sudo -n -u <worker user> true` check, then the kill of
+      every process the worker user owns. Where #175 skips the kill, fail the run as it does, and
+      do not reset. #175 is built before this change, so its kill exists by then. In same-user
+      mode, kill nothing before a reset
 - [ ] 2.7 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude`, and an MCP
       server it wrote into `~/.claude.json`, are gone before the next worker and before a model
       step after the worker; so is a `~/.claude/.credentials.json`; `~/.gitconfig` and a file
@@ -159,22 +175,25 @@
       every reset, including the one before #153's first step after the worker; a step's
       `claude -p --resume` runs with no reset before it and finds the step's session
 - [ ] 2.8 When each model step in the worker's home exits (the worker, #153's later steps, and
-      #189's second worker run), copy its session log, the file under `~/.claude/projects/` for
+      a second worker run on the same item), copy its session log, the file under `~/.claude/projects/` for
       its session id, into Igor's state directory before the next reset of that home (decision
       33), mode `0600`. The state directory is the one #216's `graceful-handoff` requirement
       *A handoff states what was done, what remains, and who could continue* defines (decision
       32). With a worker
-      user, read it as that user through #175's spawn, opened without following a link and only
-      where `fstat` shows a regular file whose hard-link count is 1. The run's record in `executions.ndjson`
-      names each copy's path, where Igor wrote it, beside its step's session id, or says the log
-      was not copied. Where #216 later fails to move a copy, the record's path is still right
+      user, read it as that user through #175's spawn: `lstat` it first, open it with `O_NOFOLLOW`
+      and `O_NONBLOCK`, and copy only where `fstat` on the open file shows a regular file whose
+      hard-link count is 1. The run's record in the execution log names each copy by its path
+      relative to the state directory, where Igor wrote it, beside its step's session id, or says
+      the log was not copied. Where #216 later fails to move a copy, the record's path is still right
       (decision 34). Redact the
       log as it is copied, with `redact` from #217's `src/redact.ts` (design.md, decision 29).
       Tests: each of the worker's, the bug hunt's and the prose pass's logs is copied and named in
       the record; a seat token the worker printed reads `[redacted]` in the copy; after
       the worker exits and a later call resets the home, the record names a file that still
-      exists and holds the log; a log replaced by a link to a file only Igor can read is not
-      copied, and the record says so
+      exists and holds the log, and the record's path holds no home directory or user name; a log
+      replaced by a symbolic or hard link to another file the worker user can read is not
+      copied, and the record says so; a log replaced by a named pipe is not copied, the copy does
+      not wait on it, and the record says so
 - [ ] 2.9 When any execution of a work item ends, flagged or not, delete in this host's state
       directory the session log copies of every execution of the item that started before it,
       has ended or whose process has stopped, and left no #216 flagged hold, so never one still
@@ -190,7 +209,30 @@
       running when a later one ends, the earlier one's copies remain; with a later execution
       ending after a flagged one stops working and before its hold is recorded, which the test
       arranges by holding back #216's hold write, the flagged one's copies remain; a link put in
-      place of an earlier execution's copy is not followed
+      place of an earlier execution's copy is not followed.
+      How a host knows which executions of an item left copies in its state directory, their
+      start order, and whether each ended or its process stopped is this task's to choose: keep,
+      beside each execution's copies in the state directory, a file naming its item, its start
+      time, the Igor process running it (its process id and that process's start time), and
+      whether it ended; judge an execution's process stopped when no live process matches both.
+      This works under `igor serve`, which has no run lock, as under `igor run`. The TLA+ model proves the deletion rule over these per-execution facts (item, start order,
+      ended or stopped) whatever the
+      mechanism, so only the rule above binds the choice
+- [ ] 2.10 Under `igor run`, run each triage call with `HOME` set to a new, empty directory under
+      the state directory, named with the run's id, such as `<state directory>/triage/<role>-<run>-<n>`,
+      and remove it once the call ends; task 2.3's start-of-run removal also removes those a
+      crashed run left. Tests: with a hook and a `CLAUDE.md` in the person's `~/.claude`, a
+      triage call under `igor run` runs with the new directory as `HOME`, the hook does not run,
+      and the directory is gone after the call
+- [ ] 2.11 Replace `~/.claude` and `~/.claude.json` in each reset, and remove every run
+      directory (the home, the assembled plugin directory, the startup check's and triage's
+      directories), without following a link in them: a link is removed, never its target. Write
+      each session
+      log copy with `O_CREAT | O_EXCL | O_NOFOLLOW`, recording the log as not copied where that
+      open fails. Tests: a link in a run's home to a file outside it is removed and its target is
+      unchanged; in same-user mode, a `~/.claude` replaced by a link to the person's directory is
+      removed by the reset, which writes a fresh one, and the directory is unchanged; a link already at a copy's path is not written through, and the record says the
+      log was not copied
 
 ## 3. Startup check
 
@@ -210,7 +252,7 @@ check exits 78 wherever it runs.
       fails #143's check or cannot be created, refuse to start, exiting 78, naming the directory
       and what is wrong with it (design.md, decision 41). Under `igor run`, remove the check's two
       directories once its call ends, and have the next `igor run` remove those of a run whose
-      process is gone (decision 44). Message (may be reworded):
+      process is gone (decision 39). Message (may be reworded):
 
       ```
       the startup check is the first probe of seat <seat>, and #143 refused to start it because <dir> <what is wrong>; fix the directory and start Igor again
@@ -218,7 +260,7 @@ check exits 78 wherever it runs.
 
       Where no
       seat may be probed, because none is due or #143's hourly limit or back-off holds off every
-      seat that is due, spend the seat the budget gate chose (design.md, decision 36). Under `igor run`, spend the
+      seat that is due, spend the seat the budget gate chose (design.md, decision 28). Under `igor run`, spend the
       implicit local seat, with the token in `IGOR_RUN_TOKEN`, from two new directories under
       Igor's state directory (design.md, decisions 28 and 39). Let the call run to its `result` event and record its
       cost against that seat as any call's is. Where no seat can be probed and the gate names
@@ -226,8 +268,11 @@ check exits 78 wherever it runs.
       probed or the gate names one. Read
       the `system/init` event's `skills`. Refuse to start when
       `igor:<name>` is missing for a skill under `<skills_dir>/skills/`, or when no init event
-      arrives. Each refusal exits with status 78, as #82's *A process that refuses to start
-      exits with status 78* requires. Messages (may be reworded):
+      arrives though the model provider answered. Each refusal exits with status 78. Where no
+      init event arrives and the provider did not answer, that is, the stream holds no
+      `rate_limit_event`, no model reply and no error the provider returned, and the call ended on
+      a connection failure, exit with status 1 instead. Both follow #82's *A process that refuses
+      to start exits with status 78*. Messages (may be reworded):
 
       ```
       skill <name> is installed in <skills_dir>/skills, but claude -p --plugin-dir <skills_dir> does not load it as igor:<name>
@@ -237,8 +282,12 @@ check exits 78 wherever it runs.
       claude -p --plugin-dir <skills_dir> printed no system/init event, so Igor cannot confirm its skills load
       ```
 
+      ```
+      the model provider did not answer the startup check, so Igor cannot confirm its skills load yet
+      ```
+
       Before the call, refuse to start, exiting 78, when `<skills_dir>/skills/` is missing or
-      empty, when `skills_dir` holds an entry besides `.claude-plugin/` and `skills/`, or when
+      holds no skill (an entry whose top level holds a `SKILL.md`; any other entry is ignored), when `skills_dir` holds an entry besides `.claude-plugin/` and `skills/`, or when
       `.claude-plugin/` holds anything but a `plugin.json` whose only keys are `name`, `version`
       and `description`. Messages (may be reworded):
 
@@ -249,15 +298,21 @@ check exits 78 wherever it runs.
       ```
       <skills_dir> holds <entry>, but Igor's plugin directory may hold only .claude-plugin/plugin.json and skills/
       ```
+
+      ```
+      <skills_dir>/.claude-plugin holds <entry>, but it may hold only plugin.json
+      ```
 - [ ] 3.2 Report each skill and the commit its files come from, one startup line per skill.
       `<resolved dir>` is the directory the skill's entry under `<skills_dir>/skills/` resolves
       to. `<clone root>` is the nearest directory at or above `<resolved dir>`
-      that holds `.git`. Where root owns `<clone root>`, the commit is
+      that holds `.git`. Every commit read passes `-c core.fsmonitor=false`. Where root owns
+      `<clone root>`, the commit is
       `git -c safe.directory=<clone root> -c core.fsmonitor=false -C <resolved dir> rev-parse HEAD`.
-      The clone is root-owned (5.1), and without the option git refuses it as the service user
-      with `detected dubious ownership` (task 0.3). Pass both options on this command only, and
-      never write them to the service user's `~/.gitconfig`. Where the user Igor runs as owns it,
-      run the command without them. Where any other user owns it, run no git command and report
+      The clone is root-owned (5.1), and without the `safe.directory` option git refuses it as the
+      service user with `detected dubious ownership` (task 0.3). Pass both options on this command
+      only, and never write them to the service user's `~/.gitconfig`. Where the user Igor runs as
+      owns it, run `git -c core.fsmonitor=false -C <resolved dir> rev-parse HEAD`, with no
+      `safe.directory`. Where any other user owns it, run no git command and report
       the commit as not checked:
 
       ```
@@ -270,7 +325,11 @@ check exits 78 wherever it runs.
       ```
       skill igor:<name>: commit not checked (<resolved dir>): <git's error, or the clone's owner>
       ```
-- [ ] 3.3 Tests: each refusal above with its message; a passing check starts; the check's
+- [ ] 3.3 Tests: each refusal above with its message, a `hooks.json` in `.claude-plugin/` and an
+      `mcpServers` key in `plugin.json` among them; under `igor run`, a linked skill missing from
+      the event refuses with 78; a relative `IGOR_SKILLS_DIR` exits 78; a clone owned by the user
+      Igor runs as is read with no `safe.directory` option; a check whose call ends on a connection failure with no init event exits 1, not 78; a
+      passing check starts; the check's
       arguments carry `--model haiku` and `--tools ""`; a startup check whose probe #143 refuses
       for a directory other users can write exits 78 naming that directory; the commit read carries `-c safe.directory=<clone root>`
       and `-c core.fsmonitor=false` for a root-owned clone; a clone another user owns runs no

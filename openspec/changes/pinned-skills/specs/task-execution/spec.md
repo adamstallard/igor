@@ -6,8 +6,8 @@ Execution SHALL obtain its working tree through a single provisioning seam, SHAL
 disposable, assuming no checkout persists between tasks or is shared with another task, and
 SHALL release it when the task ends, whatever its outcome. Nothing a worker writes SHALL reach a
 later task, except what the reset leaves in its home, what the user it runs as writes outside the
-home, and, in same-user mode, what a process it started that left its process group writes in the
-home after a reset.
+home, and, in same-user mode, what a process it started that is still running writes in the home
+after a reset.
 
 #### Scenario: Working tree provisioned for a task that needs one
 
@@ -23,8 +23,8 @@ home after a reset.
   in the worker's home that the reset of `pinned-skills`' *Every model step in the worker's home
   starts from Igor's template* leaves alone; files the user the worker runs as (the worker user,
   or in same-user mode the user Igor runs as) writes outside the worker's home, wherever it can
-  write; and, in same-user mode, where no worker user exists, files written in
-  the home after a reset by a process the worker started that left the worker's process group
+  write; and, in same-user mode, where no worker user exists, files written in the home after a
+  reset by a process the worker started that is still running
 - **AND** Igor does not cause the third kind, and nothing stops it
 
 #### Scenario: The tree is released on failure as well as success
