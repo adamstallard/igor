@@ -108,8 +108,8 @@ item's or a person's words, in code spans.
 
 ### Requirement: Igor reads every goals file, and a commit message goes through prose check
 
-Igor SHALL read every goals file a model step writes, for a post or a commit, as #175's *The Igor
-reads no file on the worker's behalf through a link* requires of every file the worker user
+Igor SHALL read every goals file a model step writes, for a post or a commit, as #175's *Every file
+read from the worker is a regular file with one link* requires of every file the worker user
 wrote, and SHALL count a missing or empty goals file as a failed attempt. Which step a commit's
 failed goals file goes back to is open (proposal, *For Adam* 2). A commit message goes through
 prose's two calls with `prose check` in place of `prose sign`, as `task-execution` requires.

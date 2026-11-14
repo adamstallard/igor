@@ -31,8 +31,10 @@ whole change before any hunt. The *state branch* is where Igor records each item
    and posts nothing that fails. *Rejected:* relying on prose's posting hook, which guards only
    posts made from a Claude Code session, not Igor's own code.
 4. **A role lists the skills its worker uses.** `skills: [<name>, …]` names
-   pinned skills from #174's `igor` plugin. The list decides which steps Igor runs and checks,
-   not what loads: #174 loads every installed skill for every role. The org base may set it for
+   pinned skills from #174's `igor` plugin. The list decides which steps Igor runs and checks.
+   Where #174's `skills_dir`, the server's skills directory, exists, the list does not decide
+   what loads, since #174 loads every skill in it for every role. Without it, `igor run` loads
+   only the listed skills and those Igor's code runs for every role. The org base may set it for
    every role and a role may add to it, never remove. An unknown name is refused by any command
    that runs a model step (decision 29). Igor's code checks per listed skill: for `prose`, a
    valid footer on every model-written post and a matching `Prose:` trailer on every commit; for
@@ -122,8 +124,10 @@ whole change before any hunt. The *state branch* is where Igor records each item
 13. **No second prose pass after the extra bug-hunter iteration.** Comments
     that iteration writes reach the tree after the prose pass's rewrite. The cold read of step 5
     reads them, and the prose pass, answering it, fixes what it names; that is the only way the
-    prose pass reaches them. Such comments get no full pass: the prose pass
-    is not meant to change code, so a prose diff that needs another hunt is an edge case.
+    prose pass reaches them. Such comments get no full pass, which would mean running the whole
+    pass again after every extra iteration. How often the prose pass's diff needs another hunt
+    on real items is unknown: on seven sample diffs in measurement 0.11, haiku and sonnet would
+    each hunt two, and task 4.1 records it per item.
     *Rejected:* a second prose pass after that iteration, and narrowing the `task-execution`
     rule that the prose pass rewrites the docs and comments the change touches, so that it
     excludes those comments.
@@ -169,7 +173,7 @@ whole change before any hunt. The *state branch* is where Igor records each item
 
 20. **Bug-hunter's triage uses bug-hunter's own line.** Besides comments and
     docs, it skips a diff of tests, specs, lockfiles, generated or vendored files, formatting or
-    renames (task 0.11). Decision 12's narrower line, comments or docs only, goes. *Rejected:* a
+    renames (task 0.11). *Rejected:* a
     line of Igor's own, which would drift from the skill's.
 21. **The triage runs on sonnet.** On the seven measured diffs sonnet drew
     bug-hunter's line on every one (task 0.11). *Rejected:* haiku, which reviewed a spec-only
@@ -335,8 +339,19 @@ whole change before any hunt. The *state branch* is where Igor records each item
 - **#188** and **#190** each label a logged model call `worker`, `bug-hunter` or `prose`, in
   #188's action log and #190's Commands run row. The cold reader's, the answers' and the
   triages' calls, which this change adds, fit none of the three; both are to add labels.
-- **#190** still refuses an unknown skill name at load, which decision 29 narrows to a command
-  that runs a model step.
+- **#190** is to remove this change's *Until review-evidence is built, the opening block links
+  the item* when it archives, since issue #204 archives this change first and #190's delta,
+  which only adds, would otherwise leave two definitions of the opening block in force.
+- **#143** (`read-seat-windows-from-the-stream`) lists the five `allow` actions in its copy of
+  *Merge semantics differ by field kind*'s scenario *An action outside the vocabulary is
+  refused*, restating *A role's `allow` names only actions from a closed vocabulary*. This
+  change's copy names that requirement instead, so the list cannot drift when
+  `lore-from-corrections` adds `propose-lore`.
+- **#140** (`directed-interaction`) modifies *A role declares its sources, lane, behaviour,
+  permissions, and reviewers* and *Merge semantics differ by field kind* too. Whichever of #140
+  and this change archives second must rewrite its copies from the text then in force, as task
+  5.1 does here. Where #140 falls in issue #204's archive order is for Adam to decide, and #204
+  has not yet placed it.
 - **#150**'s reply after a revision is to carry what changed, where a model writes it, as signed
   text, and the code-assembled list of answered requests unsigned (decision 43). Where the signed text sits in the reply, so that
   `prose verify-post` runs on exactly that span, is #150's to say, as decision 9 says it for a
@@ -437,10 +452,7 @@ whole change before any hunt. The *state branch* is where Igor records each item
     - The staging rule restates #175's checks without its exited-steps and nested-repository
       conditions.
     - *Service user*, *worker user* and `skills_dir` are defined only in unarchived changes.
-    - #216 counts every model step after the worker as a worker run that must send a completed
-      report. These steps send none, so #216 would treat every run of a role listing `prose` as
-      having met a sensitive question, and withhold its transcript and description. That is
-      reported to #216.
+    - The completed report #216 asks of the steps after the worker: *For Adam*, item 4.
   - *Understood line* and *answers file* are defined only in `design.md`. Three SHALLs lack a
     scenario: a second call refusing a doc as a failed attempt, the claim check before each
     model step, and a post's cold reader having no tool but Read on the skills directory.
@@ -463,14 +475,12 @@ whole change before any hunt. The *state branch* is where Igor records each item
   - The rule for when #189's second worker run makes its second commit is stated here and in
     #189.
   - The items reported to #174 and #175 below are out of date.
-  - From the 2026-11-01 consistency read: this change's MODIFIED text of `role-config`'s *A
-    role declares its sources, lane, behaviour, permissions, and reviewers*, carried since
-    decision 49, says `commands` "is the only thing that lets one run anything at all". It
-    drops #216's qualifier "but for one command below", so it contradicts the `igor
-    lore-search` exception two sentences later. The same text restates #216's rule that the
-    Igor's process, not the worker, runs the search that `igor lore-search` asks for, and
-    leaves out the `questions` branch that #216's rule searches; #216's own copy of the
-    requirement cites #216's *An Igor runs its worker's lore searches* instead of restating it.
+  - This change's MODIFIED text of `role-config`'s *A role declares its sources, lane,
+    behaviour, permissions, and reviewers*, in its scenario *Every worker may run the search
+    command*, restates #216's rule that the Igor's process, not the worker, runs the search that
+    `igor lore-search` asks for, and leaves out the `questions` branch that #216's rule
+    searches; #216's own copy of the requirement cites #216's *An Igor runs its worker's lore
+    searches* instead of restating it.
   - Nothing requires prose's reads of the tree to follow no link.
   - The closing-keyword definition does not say whether case is ignored, or cover `Fixes:`,
     `owner/repo#9` or an issue URL.
@@ -498,6 +508,13 @@ whole change before any hunt. The *state branch* is where Igor records each item
    model calls after the worker, and nothing says what happens when the gate names no seat, or
    the provider refuses, partway through them: a failed attempt, a handoff, or an unsigned
    draft as after a lost claim.
+4. **Which change specifies the completed report of the steps after the worker?** #216
+   (`lore-search`) counts every model step after the worker as a worker run that must end by
+   sending a completed report, #216's message saying the run met no question it must not
+   publish. A run without one is treated as having met such a question, so #216 withholds its
+   transcript and description. #216 says adding that report to these steps is this change's
+   job, and this change reported it to #216. As both stand, every run of a role listing
+   `prose` has its transcript and description withheld.
 
 ## Why
 

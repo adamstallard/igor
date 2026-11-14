@@ -8,16 +8,10 @@ for a commit `produce()` makes and for one that #150's head push (built on `comm
 pushes: gate two's implementation, or a revision at either gate. A role that lists neither commits as it does without this
 capability.
 
-#### Scenario: Gate two's commit is signed and closes the item
+#### Scenario: Gate two's commit goes through the steps
 
 - **WHEN** gate two pushes its implementation onto the pull request through #150's head push
-- **THEN** the commit is signed and verified as one `produce()` makes, and its body ends with
-  `Closes #N`
-#### Scenario: A gate-two description cannot close another issue
-
-- **WHEN** the prose pass returns a gate-two description for item #40 that says `Fixes #999`
-- **THEN** it goes back to the prose pass, and no description is published until `Fixes #999`
-  is gone
+- **THEN** bug-hunter and the prose pass run on it as on a commit `produce()` makes
 
 ### Requirement: A commit carries the trailers of the steps that ran
 
@@ -60,6 +54,12 @@ reference that links without closing, in the form #150's tracker adapter supplie
   `Fixes #12`, and the item is issue #40
 - **THEN** the subject is the title without `Fixes #12`, and the body ends with the adapter's
   reference to #40 that does not close it
+
+#### Scenario: Gate two's commit is signed and closes the item
+
+- **WHEN** gate two pushes its implementation onto the pull request through #150's head push
+- **THEN** the commit is signed and verified as one `produce()` makes, and its body ends with
+  `Closes #N`
 
 ### Requirement: A commit message breaking its gate's rules goes back to the prose pass
 
@@ -205,7 +205,7 @@ stop publishes nothing.
 Where the claim is lost, Igor SHALL run no further model step, and SHALL offer the worker's
 change as *Work finished before a claim is lost is offered, not discarded* requires, with a body
 its code writes, no signed text, and no `Bug-hunter:`, `Bug-hunter-Tree:` or `Prose:` trailer on
-its commit. Which tree the offered change carries is open (proposal, *Still open*).
+the commit holding the unsigned work. Which tree the offered change carries is open (proposal, *Still open*).
 
 #### Scenario: A lost claim publishes an unsigned draft
 
@@ -271,8 +271,8 @@ the token as one argument, with no shell.
 ### Requirement: Igor checks what each step hands back before using it
 
 Igor SHALL read every file a model step hands it, the message, a description, a reply, a
-cold-read report and its answers, as #175's *The Igor reads no file on the worker's behalf
-through a link* requires, and SHALL pass prose only copies it read that way. A `Bug-hunter:`
+cold-read report and its answers, as #175's *Every file read from the worker is a regular file
+with one link* requires, and SHALL pass prose only copies it read that way. A `Bug-hunter:`
 value holding a line break or any closing keyword, even one for the item, or an open decision
 Igor places in the body holding a closing keyword, SHALL go back to the bug-hunter step with the
 reason, as a failed check.
@@ -349,6 +349,24 @@ a conflict resolution, its commit SHALL go on top of the merge commit, which car
   and the cold read have run on that commit's diff alone
 - **AND** that commit carries its own trailers, and the merge commit carries none
 
+### Requirement: A second commit that fails or loses its claim leaves the first one signed
+
+Where the second commit's signing fails both attempts, Igor SHALL publish the first run's signed
+commit alone, as #189 requires, and record the failure. Where the claim is lost during the second
+commit's steps, the offered change SHALL keep the first commit with its trailers, and put the
+second run's edits in an unsigned commit on top.
+
+#### Scenario: A second commit that fails twice leaves the first published alone
+
+- **WHEN** the worker's second run's commit fails its signing on both attempts
+- **THEN** Igor publishes the first run's signed commit alone, and records the failure
+
+#### Scenario: A claim lost during the second commit's steps keeps the first commit signed
+
+- **WHEN** Igor finds, during the second commit's signing steps, that it no longer holds the claim
+- **THEN** the offered change holds the first commit with its trailers, and the second run's
+  edits in a commit on top with no skill trailer
+
 ### Requirement: Igor's own bookkeeping commits carry no skill trailers
 
 Merge commits SHALL carry none of the `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:` trailers,
@@ -395,6 +413,12 @@ verification does.
 
 - **WHEN** the prose pass returns a gate-one description that holds a closing keyword
 - **THEN** it goes back to the prose pass, and no description is published until it holds none
+
+#### Scenario: A gate-two description cannot close another issue
+
+- **WHEN** the prose pass returns a gate-two description for item #40 that says `Fixes #999`
+- **THEN** it goes back to the prose pass, and no description is published until `Fixes #999`
+  is gone
 
 ### Requirement: The description is the signed span between the opening block and the evidence
 

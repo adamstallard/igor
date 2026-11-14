@@ -2,11 +2,12 @@
 
 ### Requirement: A role declares the skills its worker uses
 
-A role MAY declare `skills: [<name>, …]`, the pinned skills its worker uses, named from the
-skills a command loads (#174). The list decides which skills' steps Igor runs and which checks
-Igor's code makes on what it publishes; a listed skill other than `prose` and `bug-hunter` gets
-none from `signed-publishing`, and another capability may give it a use of its own. The list
-SHALL NOT decide what loads: #174 loads every installed skill, as `igor:<name>`, for every role.
+A role MAY declare `skills: [<name>, …]`, the pinned skills (#174) its worker uses. The list
+decides which skills' steps Igor runs and which checks its code makes before publishing; a
+listed skill other than `prose` and `bug-hunter` gets no step or check from
+`signed-publishing`. Where #174's `skills_dir` exists, the list SHALL NOT decide what loads:
+#174 loads every skill in it for every role. Without it, `igor run` loads only the listed
+skills and those Igor's code runs for every role (#174).
 
 #### Scenario: The org base sets the list for every role
 
@@ -119,12 +120,12 @@ role and nowhere else.
 
 ### Requirement: Merge semantics differ by field kind
 
-Inheritance SHALL merge each field by kind:
+Inheritance SHALL merge by kind:
 
-- **Monotonic** for permissions and limits (`allow`, `commands`, `budget_share`, `reserve`, repositories
-  and surfaces in reach): a role MAY narrow any, `reserve` by raising it, and MUST NOT widen them.
-  `igor lore-search` is outside this rule.
-- **Override** for settings (`seat`, poll, settle and cooldown intervals): the most specific wins.
+- **Monotonic** for permissions (`allow`, from its closed set only, `commands`, `budget_share`,
+  `reserve`, repositories and surfaces in reach): a role MAY narrow them, `reserve` by raising
+  it, and MUST NOT widen them. `igor lore-search` is allowed to all, never a widening.
+- **Override** for settings (`seat`, poll, settle and cooldown intervals): most specific wins.
 - **Append** for `instructions`, `lane` and `skills`: levels accumulate, lanes conjoined.
 
 #### Scenario: Role narrows a permission
@@ -158,8 +159,8 @@ Inheritance SHALL merge each field by kind:
 #### Scenario: An action outside the vocabulary is refused
 
 - **WHEN** a role's `allow` lists a word outside the closed set `allow` takes, such as `unassign`
-- **THEN** validation fails as the role loads, and the refusal names the valid actions:
-  `comment`, `review-comment`, `draft-pr`, `pr` and `label`
+- **THEN** validation fails as the role loads, and the refusal names the valid actions, the
+  closed set *A role's `allow` names only actions from a closed vocabulary* lists
 
 #### Scenario: Setting overridden
 

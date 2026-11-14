@@ -142,8 +142,10 @@ also tests, specs, lockfiles, generated or vendored files, formatting and rename
 iteration writes reach the tree after the prose pass, which never rewrites them. The cold read
 in step 5 does read them, since it reads every comment in the staged change, and the prose
 pass fixes what it names. The extra iteration runs only when the prose pass's diff needs a
-hunt, which is rare, since the prose pass is not meant to change code. So a full second prose
-pass over that iteration's comments is not worth its cost.
+hunt. How often that happens on real items is unknown. On seven sample prose-pass diffs in
+measurement 0.11, haiku and sonnet would each hunt two, a thrown error's message and a CLI help
+string. Task 4.1 records each step's cost per item, which shows how often the extra iteration
+runs.
 
 Three failures can still refuse a commit, and none goes back to a step, because each is Igor's
 own. The tree the trailers name can differ from the tree the Git Data API builds (*Decided
@@ -247,8 +249,7 @@ code spans, because @-mentions and markup take no effect there.
   in the repository it is working, so an allowlist read from there is one the worker can widen
   for itself.
 - **`allow` is a closed set**, so that a typo fails validation instead of silently granting
-  nothing. An org base is best shipped with `[draft-pr, comment]`: everything reversible,
-  nothing final.
+  nothing.
 
 ## Decided questions
 
@@ -291,9 +292,8 @@ had to run as the worker user, where #175 lets no prose script run.
 
 **Proposal, decision 16:** Igor's code runs every prose and
 bug-hunter script, so a role that lists `prose` or `bug-hunter` is granted none of them.
-*Rejected:* granting the worker `prose.py check` and `… sign` by path into
-the pinned skills directory, so that the model step could run prose's first call. A step that
-runs the first call needs a token store it can write, and could then forge a token.
+Why the worker is not granted prose's scripts is the Rationale entry for *No model step runs a
+prose script or posts* in `openspec/specs/signed-publishing/decisions.md`.
 
 | Step | Run by | Why |
 | --- | --- | --- |
@@ -306,8 +306,8 @@ runs the first call needs a token store it can write, and could then forge a tok
 
 The regression tests bug-hunter writes are expected to run under the `npm test` and `npx vitest
 run` entries the role's `commands` list already holds. Task 0.15 measures it. If they do not,
-Adam decides before building which commands to grant for them, with the recommendation to
-grant the role exactly the commands the tests need.
+the change's author lists the commands the tests need before building starts, and the role is
+granted exactly those.
 
 ### 3. Igor's staged tree is measured against the API's tree before either is trusted
 
@@ -365,9 +365,10 @@ design.
   the worker's group. It was not adopted, because a token is a plain JSON file, so a worker that
   can write that directory can forge one without running the first call. The run also showed
   that the token records the per-file goals the first call saw, and that the second call needs a
-  cold-read report and a dispositions file. Adam's decision 16 answers the token store, the
-  goals and the cold read: Igor runs the first call, on its own staged index, and runs the cold
-  read as a step.
+  cold-read report and a dispositions file. Decision 16 settles all three. Igor runs the first
+  call itself, on its own staged index, so the worker needs no write access to the token store
+  and Igor passes the goals files the worker wrote. Igor also runs the cold read as a step of
+  its own.
 - **0.10, minting as a separate call.** `bug-hunter/scripts/mint-trailer.sh`, run by the
   service user after bug-hunter's run had ended, printed `Bug-hunter-Tree:` with the
   `git write-tree` of Igor's index. It needs the full shared-skills clone beside it, which
@@ -393,7 +394,7 @@ design.
   Under decision 16 Igor runs those calls, so the goals would sit on Igor's command line.
   Shared-skills PR #27 adds a file form for each: `--goals-file` for `prose sign`, and
   `--message-goals-file` for the commit message's own goals in `prose check` (proposal, decision
-  41). Adam merged it on 2026-10-21 (proposal, decision 47).
+  41). It is merged (proposal, decision 47).
 - **0.14, caller-commits mode as the worker user.** With nothing staged, `caller-result.sh`
   minted HEAD's tree, not the change; after the worker wrote to the copy of the index that #175
   keeps in the worker's outbox (a directory the worker shares with Igor, for `git rm` and `git

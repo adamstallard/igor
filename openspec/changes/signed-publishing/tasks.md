@@ -201,7 +201,8 @@
       between the opening block and `<!-- igor:evidence -->`, or to the end of the body where
       there is no marker; `prose verify-post` runs on exactly that span; neither the opening
       block nor the evidence section after the marker (`review-evidence`, #190) is verified as
-      part of it; a follow-up commit replaces the description with a newly signed one
+      part of it; gate two's implementation push and a revision each replace the description with
+      a newly signed one, while a catch-up resolution leaves it
 - [ ] 3.4 Test: at gate one (#150), a signed description holding a closing keyword is returned
       to the prose pass, since #150 keeps closing keywords out of a gate-one body and the code
       cannot strip one without breaking the signature
@@ -216,11 +217,14 @@
 - [ ] 5.1 Before archiving, rewrite this change's MODIFIED text of *A role declares its sources,
       lane, behaviour, permissions, and reviewers* and *Merge semantics differ by field kind*
       from the requirements as they are in force then, adding only `skills`.
-      `read-seat-windows-from-the-stream` (#143) modifies both, adding `reserve`; it archives
-      first in the archive order issue #204 sets, and this change's copies already carry its
-      text. `lore-search` (#216) modifies both too, adding the `igor lore-search` exception, and
-      also archives first; this change's copies carry its text as well (proposal, decision 49).
-      `lore-from-corrections` modifies *Merge semantics differ by field kind* too, adding
-      `propose-lore` to the `allow` vocabulary. If it has archived by then, the text in force
-      already holds its addition, so rewriting from that text keeps it. If it has not,
-      `lore-from-corrections` rewrites its own copy from the text in force when it archives.
+      `read-seat-windows-from-the-stream` (#143) modifies both, adding `reserve` and the refusal
+      of an `allow` action outside the closed set; it archives first in the archive order issue
+      #204 sets, and this change's copies already carry both. `lore-search` (#216) modifies both
+      too, adding the `igor lore-search` exception, and also archives first; this change's
+      copies carry its text as well (proposal, decision 49). `directed-interaction` (#140)
+      modifies both as well, and #204 has not yet placed it: if it has archived by then, the
+      rewrite keeps its text; if not, #140 rewrites its own copies when it archives.
+      `lore-from-corrections` adds `propose-lore` to *A role's `allow` names only actions from
+      a closed vocabulary*, which this change does not modify; this change's scenario *An action
+      outside the vocabulary is refused* names that requirement rather than listing the
+      actions, so it stays true either way.
