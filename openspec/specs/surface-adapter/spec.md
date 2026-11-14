@@ -60,15 +60,11 @@ consistent.
 
 ### Requirement: Claim verification also reports a stop
 
-A tracker adapter's claim verification SHALL return one of **held**, **lost**, or **stopped**,
-so that a stop directed at an Igor has a defined path in. Stop was pulled forward from the
-conversational layer, and an obligation to honour it is unimplementable without an input.
-
-Detection reuses the re-read the Igor already performs, rather than adding an operation. It
-follows that **"immediately" means on detection and without further condition** — not
-instantaneously. Long-running execution SHALL therefore re-check at checkpoints rather than
-only once per cycle, since a cycle interval is far longer than someone watching an Igor go
-wrong will tolerate.
+A tracker adapter's claim verification SHALL return one of **held**, **lost**, or **stopped**.
+A stop is detected by the claim re-read the Igor already performs. Where a requirement says a
+stop takes effect **"immediately"**, that means on detection and without further condition, not
+instantaneously. Long-running execution SHALL also re-read the claim at checkpoints while it
+runs, not only once per cycle, so that a stop is seen during it.
 
 #### Scenario: Verification reports a held claim
 
@@ -128,18 +124,12 @@ supported.
 ### Requirement: On GitHub, every call an Igor makes acts as its App
 
 Every request to GitHub made by `igor run` or `igor serve`, through `gh` or `git`, SHALL
-authenticate as the installation of the Igor's App that covers the repository. That covers
-discovery, claiming, comments, label reads and writes, issue events, the Git Data API commits
-that publish work, pull requests, merges, the state branch, and cloning and fetching a working
-tree. No such request SHALL use an ambient `GH_TOKEN` or `GITHUB_TOKEN`, a host's `gh` login, or
-a credential helper from a git config file.
+authenticate as the Igor's App installation covering the repository, never with an ambient
+`GH_TOKEN` or `GITHUB_TOKEN`, a host's `gh` login, or a git config's credential helper.
 
-A token SHALL reach only the process making the call: it is set in that child's environment and
-nowhere else. It SHALL NOT be written to the Igor's own environment, to disk, or to any git
-config, and a working tree SHALL hold no credential after it is cloned.
-
-Commands that take no role (`propose`, `reconcile`, `init`, `promote`, `observe`, `budget`) are
-a person's, and keep the person's own `gh` login.
+A token SHALL reach only the child process making the call, in its environment. It SHALL NOT be
+written to the Igor's own environment, to disk, or to any git config, and a cloned working tree
+SHALL hold no credential.
 
 #### Scenario: A gh call acts as the App
 
@@ -158,10 +148,15 @@ a person's, and keep the person's own `gh` login.
 - **AND** neither the tree's git config nor any global git config holds a credential or a
   credential helper afterwards
 
+### Requirement: A command that takes no role is a person's
+
+Commands that take no role (`propose`, `reconcile`, `init`, `promote`, `observe`, `budget`) are
+a person's, and SHALL keep the person's own `gh` login.
+
 #### Scenario: A person's command is unchanged
 
 - **WHEN** a person runs `igor propose`
-- **THEN** it acts as that person's `gh` login, as before
+- **THEN** it acts as that person's own `gh` login
 
 ### Requirement: An App token is minted on demand and used only in the first half of its life
 
@@ -183,9 +178,8 @@ and SHALL NOT start a call with a token past that point. Each process mints its 
 
 At startup, before discovery, an Igor SHALL read its App's bot login, `<slug>[bot]`, and that
 account's numeric user id from GitHub, and hold both for the life of the process. Every
-comparison of an actor or author with the Igor itself SHALL use them: who added or removed a
-label, who wrote a claim comment, who opened a pull request. Where a read reports the actor's
-numeric id, the comparison SHALL use the id.
+comparison of an actor or author with the Igor itself SHALL use them. Where a read reports the
+actor's numeric id, the comparison SHALL use the id.
 
 The Igor SHALL NOT read its identity from `GET /user`, which describes a user and not an App.
 
@@ -212,24 +206,11 @@ The Igor SHALL NOT read its identity from `GET /user`, which describes a user an
 every repository the role works and on the lore repository, and SHALL refuse to start otherwise,
 naming the reason:
 
-- missing or incomplete credential variables in its environment, naming each missing variable;
-- both `GITHUB_APP_PRIVATE_KEY_FILE` and `GITHUB_APP_PRIVATE_KEY` set, naming both;
+- missing or incomplete credential variables, naming each missing one;
 - a private key that cannot sign;
 - GitHub refusing the App's credentials;
-- the App not installed on the account holding a repository, naming the repository;
 - a repository the installation does not reach, naming it;
-- repositories on more than one account, naming the accounts;
-- a missing permission, naming each: Contents, Issues and Pull requests read and write.
-
-The Igor's access SHALL be read from its installation's permissions, never from a collaborator
-record, which reports an App's bot account as having no write access.
-
-A missing Workflows write permission SHALL NOT stop the Igor. It is reported at startup, and a
-publish that touches `.github/workflows/` without it SHALL fail naming the permission.
-
-Where GitHub refuses the App's credentials while the Igor runs, the Igor SHALL take no new item
-and SHALL say which identity was refused. It SHALL resume once a token mints again, without
-waiting for an item to probe it.
+- repositories on more than one account, naming the accounts.
 
 #### Scenario: Missing credentials refuse the start
 
@@ -250,6 +231,20 @@ waiting for an item to probe it.
 - **WHEN** the role works a repository on an account where the App is not installed
 - **THEN** the Igor refuses to start, naming the repository and the App
 
+#### Scenario: A credential refused mid-run stops new work and recovers
+
+- **WHEN** GitHub stops accepting the App's credentials while the Igor serves
+- **THEN** the Igor claims nothing new and says which identity was refused
+- **AND** it takes work again once a token mints, without spending an item to find out
+
+### Requirement: An Igor's access is its installation's permissions
+
+Before discovery, `igor run` and `igor serve` SHALL refuse to start unless the App's installation
+has Contents, Issues and Pull requests read and write, naming each missing permission. The Igor's
+access SHALL be read from its installation's permissions, never from a collaborator record. A
+missing Workflows write permission SHALL NOT stop the Igor. It is reported at startup, and a
+publish that touches `.github/workflows/` without it SHALL fail naming the permission.
+
 #### Scenario: A missing permission refuses the start
 
 - **WHEN** the App's installation lacks Issues write
@@ -261,29 +256,13 @@ waiting for an item to probe it.
   its installation can write
 - **THEN** the Igor treats the repository as writable
 
-#### Scenario: A credential refused mid-run stops new work and recovers
-
-- **WHEN** GitHub stops accepting the App's credentials while the Igor serves
-- **THEN** the Igor claims nothing new and says which identity was refused
-- **AND** it takes work again once a token mints, without spending an item to find out
-
 ### Requirement: An adapter declares how a claim is expressed
 
-A tracker adapter SHALL declare its native **holder field**, a field naming who has the item.
-This declaration determines how a claim is *expressed*, not how it is resolved.
-
-Which field that is belongs to the adapter, not to the loop. Linear's is `delegate`, because an
-app identity there may hold the latter and not the former. GitHub's is the `igor:<role>` label,
-because an Igor on GitHub is a GitHub App, whose bot user cannot be an assignee. Naming
-"assignee" above the adapter would make one surface's vocabulary into everyone's.
-
-An adapter declaring a holder field SHALL also declare whether it holds a **single value** or a
-**list**, and whether it is distinct from the item's assignee. GitHub's `igor:` labels are a
-list, and are distinct from the assignee. Linear's
-delegate is a single value, and is distinct from the assignee. Where the two are distinct, the
-holder field names the Igor and the assignee names the person accountable. The loop reads these
-declarations to resolve claims and to decide which items it may claim, and never the field's
-name.
+A tracker adapter SHALL declare its native **holder field**, naming who has the item, which is how a
+claim is *expressed*. It SHALL also declare whether the field holds a **single value** or a
+**list**, and whether it is distinct from the assignee; where distinct, the holder field names the
+Igor and the assignee the person accountable. The loop resolves claims and decides which items it
+may claim from these declarations, never from the field's name.
 
 #### Scenario: Native holder field declared
 
@@ -299,7 +278,8 @@ name.
 
 #### Scenario: Single-valued and list holder fields resolve differently
 
-- **WHEN** one adapter declares a single-valued holder field and another a list
+- **WHEN** one adapter declares a single-valued holder field, as Linear's adapter declares
+  `delegate`, and another a list, as GitHub's adapter declares its `igor:<role>` labels
 - **THEN** on the first, the later write holds the item
 - **AND** on the second, any other holder present after the settle interval means the claim is lost
 

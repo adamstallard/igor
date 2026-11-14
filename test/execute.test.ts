@@ -258,7 +258,7 @@ describe('the working-tree seam', () => {
 describe('the action space is enforced at the loop', () => {
   it('permits only what the role lists', () => {
     expect(permits(role(), 'draft-pr')).toBe(true)
-    expect(permits(role(), 'merge')).toBe(false)
+    expect(permits(role(), 'pr')).toBe(false)
   })
 
   it('tells the worker what is available without relying on it to comply', () => {

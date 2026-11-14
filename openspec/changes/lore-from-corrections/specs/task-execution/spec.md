@@ -5,15 +5,6 @@
 Where a role permits it, an Igor corrected while working SHALL be able to propose a lore
 candidate, and that candidate SHALL take the ordinary review path rather than entering the store.
 
-The richest source of lore an organization has is somebody correcting an agent, and it is the
-only source the agent itself witnesses. An Igor that learns something and has no way to say so
-loses it, and the same correction is made again next week.
-
-Proposing is safe by construction rather than by trust. A candidate is `provisional` until a
-person merges it, so an Igor can only ask; nothing it proposes reaches a worker unreviewed. A
-candidate rejected once is never proposed again, so a bad suggestion costs one review rather
-than a recurring one.
-
 #### Scenario: A correction becomes a candidate
 
 - **WHEN** a party with authority corrects an Igor on an item it is working
@@ -39,13 +30,6 @@ than a recurring one.
 
 A candidate an Igor proposes SHALL carry the correcting party as its provenance author, not the
 Igor.
-
-They asserted the lesson; the Igor only noticed. Attribution decides who reviews it, because
-candidates are grouped by dominant author — so naming the person routes it back to the one who
-can confirm they meant it, and naming the Igor would route it to an account that cannot.
-
-It also keeps support honest: an entry's weight comes from how many independent people assert
-it, and an Igor is not an independent assertion.
 
 #### Scenario: The corrector is the author
 
