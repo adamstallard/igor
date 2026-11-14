@@ -3,6 +3,38 @@
 The requirement says an artifact carries a changed path as the tree holds it. Four things about
 *how* have more than one defensible answer.
 
+## Accuracy, stated over what the tree holds
+
+Two requirements in force bound what the artifact carries.
+*The artifact carries every change the worker made, including removals* says nothing may be absent,
+and *no removal is published for a path the base does not hold* says nothing may be invented.
+Neither says that what is carried must be **accurate**. Four filed defects fall in that gap:
+
+- a submodule is read as a deletion;
+- a rename whose new path is a symbolic link to a missing file cannot read that path, so the
+  artifact publishes the old path's removal and nothing in its place;
+- a binary file is published with replacement characters in place of its bytes;
+- when the base branch changes one of these paths, every conflict resolution is refused, because
+  the tree that publishing builds cannot hold that kind of entry.
+
+Execution checks the requirements in force against the changes it read. `readFile` throws on such
+a path, so execution never reads it, and neither requirement sees it. This requirement is
+therefore stated over what the git tree holds, not over what execution managed to read.
+
+A git tree can already hold every one of these kinds. Mode `100644` is a regular file, `100755` an
+executable, `120000` a symbolic link whose content is its target, and `160000` a submodule naming a
+commit. The publishing code does not turn them into plain text files; the read does.
+
+A file under a filter belongs with these kinds, although it looks ordinary: its mode is `100644`,
+it is valid text, and `git status` shows nothing. Git runs a clean filter when it stores a file,
+and the matching smudge filter when it checks one out. `core.autocrlf` on the host, an `eol=` or
+`text=auto` attribute in the repository, an `ident` attribute on the path, or any configured
+filter does this, so the checked-out bytes differ from the blob the commit names. Publishing the
+checked-out bytes puts the smudged copy in the artifact, and a file nobody edited arrives with
+every line changed. Every case above is the same mistake: taking the checkout for what the tree
+holds. The completed change `guard-silent-reverts` closes the same mistake in its own check, which
+had compared a digest of the checkout with a blob name.
+
 ## Carrying, not merely refusing
 
 The cheaper requirement is *never misrepresent*: refuse where a path cannot be carried, and leave
