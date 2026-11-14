@@ -20,8 +20,8 @@ Igor's own code SHALL NOT count, save a clone or its token mint the code host di
 
 #### Scenario: A rate limit is a surface failure
 
-- **WHEN** two runs in a row fail because the tracker answered a call with a 429, or with a 403
-  that says it is a rate limit
+- **WHEN** two runs in a row fail because a tracker call returned a 429, or a 403 that says it is
+  a rate limit
 - **THEN** the cycle is recorded as failed and the remaining items are not attempted
 
 #### Scenario: A refusal is not an outage
@@ -169,7 +169,7 @@ only to the Igor process's own log.
 
 #### Scenario: A claim-window refusal is named in plain words
 
-- **WHEN** a run's claim-window failure, the first for its item, is a tracker call that answered
+- **WHEN** a run's claim-window failure, the first for its item, is a tracker call that failed
   with HTTP 500
 - **THEN** the withdrawal it posts says the tracker failed, with HTTP 500, and that it will try
   again next cycle
@@ -321,14 +321,27 @@ redacted text.
 
 - **WHEN** an item's clone fails before the worker with a message that holds a seat's token, the
   model-subscription credential the Igor gives its worker
-- **THEN** the row the failure appends to the execution log holds its fields and fingerprint, and
-  no part of the message
+- **THEN** the row the failure appends to the execution log, of kind `pre-worker`, holds its fields
+  and fingerprint, and no part of the message
 - **AND** the Igor process's own log holds the message, with `[redacted]` where the token was
 
 #### Scenario: The masks run after redaction
 
 - **WHEN** two failures of an item hold different seat tokens in otherwise identical messages
 - **THEN** both tokens are redacted before masking, and the two failures are identical
+
+### Requirement: A failure's run row and deferral record hold no message text
+
+The run row and `deferred.json` record of a failure before the worker SHALL carry the plain words
+its post uses, never the error message, because the state branch may be public and credential
+redaction does not strip a private repository's text.
+
+#### Scenario: The run row and deferral record hold no message text
+
+- **WHEN** an item's clone fails before the worker with a message that names a private
+  repository's file
+- **THEN** the run row and, if the item is set down, its `deferred.json` record say the working
+  tree failed and give the exit code, and hold no part of the message
 
 ### Requirement: An outage is not the item's failure
 
@@ -440,6 +453,12 @@ edit's author can be told.
   yet be told
 - **THEN** the first role's set-down lifts
 
+#### Scenario: An Igor's edit does not lift a set-down once an edit's author can be told
+
+- **WHEN** one role has set an item down, another role adds its label, and an edit's author can
+  be told
+- **THEN** the first role's set-down stays
+
 #### Scenario: Another role's post does not lift a set-down
 
 - **WHEN** one role has set an item down, and another role posts its own set-down or a comment on
@@ -448,7 +467,8 @@ edit's author can be told.
 
 #### Scenario: Another role's successful run lifts a set-down
 
-- **WHEN** one role has set an item down, and another role's run on the item opens a pull request
+- **WHEN** one role has set an item down, a role can tell another role's successful run from that
+  role's other posts, and another role's run on the item opens a pull request
 - **THEN** the first role's set-down lifts
 
 ### Requirement: Two identical failures before the worker on different items end the cycle
@@ -516,8 +536,9 @@ tracker or code-host call outside the working tree answered and refused, SHALL N
 
 ### Requirement: Two runs in a row that the surface failed stop a cycle
 
-Where a run ends because a tracker or code host did not answer, that SHALL be distinguishable
-from a refusal about the item. Two such runs in a row SHALL stop the cycle from attempting its
+Where a run ends because a tracker or code host did not answer, as *Only a tracker or code host
+failing counts as the surface failing* defines, that SHALL be distinguishable from a refusal about
+the item. Two such runs in a row SHALL stop the cycle from attempting its
 remaining items, counting runs in the order they end, each toward the cycle running when it ends
 or, where none is, the next; a run that records a cure key is neither one of the two nor between
 them. A cycle that met one such run, then one ending otherwise without a cure key, SHALL NOT be

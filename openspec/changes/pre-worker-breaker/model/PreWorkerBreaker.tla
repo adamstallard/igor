@@ -483,10 +483,12 @@ NoSetDownForCure ==
     \A k \in DOMAIN downs : ~downs[k].cure
 
 \* *Two identical failures before the worker on different items end the
-\* cycle*: "a failure whose call was answered and refused SHALL NOT be one of
-\* the two runs": no cycle ends on a pair whose second run is a refused call.
-\* A pair's two signatures are equal unless both are surface failures, so
-\* checking the second run's signature also checks the first's.
+\* cycle*: a refused call, one outside the working tree that was answered and
+\* refused and whose run records no cure key, "SHALL NOT be one of the two".
+\* The invariant checks that no cycle ends on a pair whose second run is a
+\* refused call. That covers the first run too: a pair's two signatures are
+\* equal unless both are surface failures, and a surface failure is never a
+\* refused call.
 NoCycleEndOnRefusal ==
     \A i \in Items : \A k \in DOMAIN hist[i] : hist[i][k].endsOn \notin RefusalSigs
 

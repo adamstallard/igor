@@ -230,10 +230,11 @@ run without waiting for the write, so the row of the failure that ended the cycl
 the outage row. `igor run` has its own start id, so an outage row of a served cycle never excuses
 its failures, nor the other way round.
 
-An outage row that never lands lets that cycle's failures count. The cost is a set-down that a
-reply lifts, so the row gets no retry of its own, beyond what #242's retry of a refused state write covers
-(task 0.3). The same holds
-for any row that lands late or never (the proposal's decision 19).
+An outage row that lands late or never lets its cycle's failures count, so an item can be set
+down early; `work-claiming`'s decision record accepts that cost under *The breaker's count is
+rebuilt from the execution log* (the proposal's decision 19). Task 0.3 checks whether #242's
+retry of a refused state write retries a refused append of the row; if it does not, a refused
+append loses the row, with the same cost.
 
 **The set-down does not wait for the outage row**. A third identical failure
 sets its item down during its own run. If the next run's failure then ends the cycle, the
@@ -447,8 +448,8 @@ These settle what the proposal's decisions leave open. Each is cheap to reverse.
   would let a second role's set-down replace the first's, and one set-down per deferral checks
   the item's record for its own role.
 - **A3. The run row and deferral record of a failure before the worker carry the plain words its
-  post uses, not the error message.** Decision 15 keeps message text off the state branch for the
-  `pre-worker` row; the run row's `reason` and the deferral record are on the same branch, and
+  post uses, not the error message.** `work-claiming`'s *A failure's run row and deferral record
+  hold no message text* states it; the reason is that those records are on the state branch, which may be public, and
   credential redaction does not strip a private repository's text.
 - **A4. The run row a thrown failure that records a cure key writes is marked `workerless`.**
   Without the mark, *Counting* would read it as a worker start. #101 still reads it as the run
@@ -477,3 +478,22 @@ These settle what the proposal's decisions leave open. Each is cheap to reverse.
   item, still hold and are why the copy keeps both lifts and states a test.
 - **A12. The role's App-permission cure key is scoped to the role**, for the reason
   `work-claiming`'s decision record gives.
+
+## Open Questions
+
+Both are for gate two, the implementation, which is pushed onto this change's branch once the
+specification, gate one, is approved; neither needs an answer before then.
+
+- **Three is unmeasured.** Decision 1 fixes the breaker's threshold at three identical failures in
+  a row, by reasoning (one trips on a blip, two can be coincidence), not by a measurement of how
+  often a real transient failure repeats. Task 0.1's capture of real failures can show whether
+  three sets down items a retry would have cured.
+- **Until an edit's author can be told, other roles' label changes lift a set-down.** A set-down
+  removes the role's label (decision 23), and another role's claim adds its own. Each label
+  change is an edit to the item, and until task 3.7 can tell who made an edit, any edit lifts a
+  set-down. So each role's claim or set-down lifts another role's set-down on the same item,
+  although under decision 8 another role's posts lift nothing. Two roles that meet one failure
+  can then lift each other's set-downs every cycle, the unbounded loop decision 8 exists to
+  prevent. The model leaves the role's label out (*What else the model includes, and what it
+  leaves out*), so `NoSetDownWithoutAnswer` does not check this case. Gate two
+  either waits on task 3.7 or ships with this loop possible.

@@ -26,8 +26,7 @@ Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
 4. **Only a tracker or code host that did not answer counts toward the surface-failure rule**,
    which ends a cycle on two such failures in a row and which the spec calls the *outage rule*. Which surface failed is known from which surface's call threw. Whether it
    answered is read from the response's status, as `unanswered` in `src/claiming.ts` reads it: a refused call, such as a 404 for an item deleted since discovery, is not an outage, and
-   counts toward its item's breaker like any other failure before the worker. Nor is a refused
-   call one of the two runs that end a cycle under the identical-failure rule (decision 5). *Rejected:*
+   counts toward its item's breaker like any other failure before the worker (decision 31). *Rejected:*
    reading the surface from the error's wording; and counting every tracker or code-host
    failure, which would end a cycle on two refusals and conflict with the in-force rule that a
    surface not answering "SHALL be distinguishable from a refusal about the item itself".
@@ -193,7 +192,9 @@ Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
     characters, so a short secret in a failure's message, such as a 6-character proxy password,
     stays in the masked text, and anyone reading a public state branch can recover it from the
     row's unkeyed SHA-256 by trying every short string. *Rejected:* a keyed hash, such as an
-    HMAC under a key every process of the role holds and the state branch does not.
+    HMAC. It needs a key that the role's serving process and every `igor run` of the role hold
+    and the state branch does not: a secret to provision and rotate. Rotating it changes every
+    fingerprint, and so resets every item's count.
 
 **Still open.** Each item names who answers it.
 
@@ -225,9 +226,9 @@ Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
   whether the process's log line meets that, with no message text on the state branch, is #99's
   to say.
 - **#242's design, for #242.** It says this change (#173) modifies none of #242's requirements; this change
-  modifies two, *Two runs in a row that the surface failed stop a cycle* and *Watermarks reduce
-  reconsideration without governing it*.
-- **The keyed hash, for Adam.** Decision 33 rejects a keyed fingerprint without a recorded reason.
+  modifies three: *Two runs in a row that the surface failed stop a cycle*, *A claim that cannot
+  be kept is given back, out loud* and *Watermarks reduce reconsideration without governing it*.
+  #242's design should name all three.
 - **#106 (`role-keyed-watermark`), for #106.** It archives after this change and modifies
   *Watermarks reduce reconsideration without governing it*, so its copy must keep what this change's copy adds: the two cycles it holds the watermark back
   for, those either two-in-a-row rule ended, the cure-key exception and three scenarios.
@@ -313,7 +314,7 @@ None.
 - `work-discovery`: the watermark does not pass an item a cycle ended by either two-in-a-row rule
   never reached (decision 12).
 - `work-triage`: a set-down lifts as `work-claiming` says, and only a run that records a cure
-  key, or exhausted budget, is a fact about the Igor that suppresses nothing (decision 11).
+  key, exhausted budget, or a seat whose usage could not be read is a fact about the Igor that suppresses nothing (decision 11).
 - `graceful-handoff`: the in-force scenario *Busy is not a reason* no longer names budget as the
   only reason to defer, since a set-down defers too.
 

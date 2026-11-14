@@ -50,3 +50,9 @@ records a cure key, the item SHALL NOT be suppressed. A refused run is not hande
 
 - **WHEN** an item was handed back after a failure whose run recorded a cure key
 - **THEN** it is not suppressed, and it is worked again once the condition clears
+
+#### Scenario: A refused run is not handed back
+
+- **WHEN** a run fails before the worker, releases its claim, and does not set the item down
+- **THEN** no deferral is recorded for the item in `deferred.json`, and the next cycle may work it
+  again
