@@ -3,32 +3,28 @@
 - [x] 1.1 One modified `work-discovery` requirement, *Watermarks reduce reconsideration without
       governing it*: a watermark records how far one role has considered a source, keyed by role
       as well as source (#104)
-- [x] 1.2 Modified rather than added beside it (Adam, 2026-10-11): the block carries the in-force
-      text, since `MODIFIED` replaces the whole body on archive. `condition-backoff` (#101) also
-      modifies the requirement, which task 1.6 settles
-- [x] 1.3 The three consequences settled in the requirement rather than left to the code: every
+- [x] 1.2 Modified rather than added beside it: the block carries the text before it, since
+      `MODIFIED` replaces the whole body on archive (task 1.6)
+- [x] 1.3 The three consequences settled in *A role's watermark is its own* rather than left to the code: every
       source cold-starts once, the role is its name so a rename cold-starts, and an unresolvable
       mark is left in place
 - [x] 1.4 Checked for a name collision against the nine in-force `work-discovery` requirements,
       `concurrent-instances`' two, `preview-persists-nothing`'s two, `structured-failure-record`'s
       two (PR #99), `triage-needs-a-seat`'s four (PR #70) and `guard-silent-reverts`' one (PR
       #103), plus every other requirement outside `openspec/changes/archive/`, on 2026-10-11.
-      Since then #70 and #103 have merged, and #179's four added `work-discovery` requirements
-      were checked on 2026-10-18; none shares this requirement's title
-- [x] 1.5 Each rank of a role may keep its own mark per source, and discovery combines them by
-      `concurrent-instances`' (#179) rule; no mark is kept per run (Adam, 2026-10-18)
-- [ ] 1.6 At archive, after `condition-backoff` (#101) has archived: rewrite this change's block
-      of *Watermarks reduce reconsideration without governing it* by hand to carry the rest of
-      #101's text, its paragraphs on an item chosen and never taken and on a claim the tracker
-      refused, with their scenarios. This change's wording survives: one mark per role, rank and
-      source, never one per run, so #101's "one timestamp per source" becomes one per role, rank
-      and source (Adam, 2026-10-18). #179 archives before this change and carries a `MODIFIED`
-      block on the same requirement, adding a stand-down to the reasons a cycle does not take an
-      item, and so holds its mark back: "or its process stood down for missed heartbeats (`work-claiming`'s *A retired rank
-      does not hold its items forever*, #179)", with a scenario. The block rewritten here carries
-      that reason and scenario too, as #179 left them
-- [ ] 1.7 Archive after `concurrent-instances` (#179), whose *Processes saving one source keep the
-      lower watermark* this change's requirement cites (Adam, 2026-10-18)
+      #70 and #103 have since merged, which moved their requirements into force under the same
+      names, so the check still holds. #242 and #173 modify *Watermarks reduce
+      reconsideration without governing it*, and this block carries their copies (task 1.6)
+- [x] 1.5 One mark per role and source; no mark is kept per process start or per seat
+- [x] 1.6 This change's block is #173's copy of *Watermarks reduce reconsideration without
+      governing it*, itself on #242's and #101's, with "per source" made "per role and source",
+      lane skips named beside triage's, its terms pointed at `stuck-conditions`, every scenario of
+      #173's copy with the seat case added to the slot scenario, and this change's own scenarios
+- [ ] 1.7 Before archive, compare this block with the archived text of #242's and #173's copies,
+      and carry any change either made to its copy after 2026-11-13
+- [x] 1.8 *A role's watermark is its own* states what identifies a mark, the first run of a role
+      and source with no mark, and that a cycle changes no other role's mark and keeps one no
+      configured role and source resolves to
 
 ## 2. Documentation
 
@@ -38,17 +34,13 @@
 ## 3. The key
 
 - [ ] 3.1 `sourceKey` takes the role's name and carries it in the key, so `discovery.json` holds
-      one mark per role, rank and source; every process is rank 1 until #179's implementation
-      lands. Once it has, `discovery.json` is a log of mark lines, each naming its role and rank,
-      and #179's fold, the read that collapses those lines into one mark per role and source,
-      keys its result by this key, which carries the role but not the rank (#179's task 5.11)
+      one mark per role and source
 - [ ] 3.2 `discoverSource` and `discover` take the role's name and pass it through; `planCycle`
       already holds `role.name`
-- [ ] 3.3 Nothing prunes an entry the running role's sources do not resolve to: `advance`, or
-      #179's fold where #179's implementation has landed, keeps every stored mark rather than rebuilding from the
+- [ ] 3.3 Nothing prunes an entry the running role's sources do not resolve to: `advance` keeps every stored mark rather than rebuilding from the
       running role's sources
 - [ ] 3.4 The watermark block left alone — it maps `result.key` to a watermark and does not read
-      what the key is made of (`src/loop.ts:1104-1119`)
+      what the key is made of (`src/loop.ts:1200-1222`)
 
 ## 4. Tests
 
@@ -66,6 +58,11 @@
 - [ ] 4.7 The existing key tests in `test/discovery.test.ts` updated rather than deleted: stable
       across runs, independent of declaration order, and different for a different query — each
       now also different for a different role
-- [ ] 4.8 Where #179's implementation has landed: two ranks of one role each save a mark for one
-      source, neither write replaces the other's, and the process running a cycle reads one mark
-      combined by #179's rule; a restarted rank continues its own rank's mark
+- [ ] 4.8 A destination whose stored marks predate the role key: each role and source is a first
+      run bounded by the look-back window, and the record it writes shows a cold start
+- [ ] 4.9 A renamed role is a first run for that role, and every other role's marks on those
+      sources are unchanged
+- [ ] 4.10 Each test in this section names the scenario it checks with
+      `@scenario work-discovery: <Scenario name>`, as `AGENTS.md` requires
+- [ ] 4.11 A role's cycle that acted, whose lane rejects an item, advances that role's mark past
+      the item, as past one triage skipped (*An item a role's lane skipped is passed*)
