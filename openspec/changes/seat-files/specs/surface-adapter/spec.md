@@ -2,24 +2,20 @@
 
 ### Requirement: On GitHub, every call an Igor makes acts as its App
 
-Every request to GitHub made by `igor run` or `igor serve`, through `gh` or `git`, SHALL
-authenticate as the installation of the Igor's App that covers the repository. That covers
-discovery, claiming, comments, label reads and writes, issue events, the Git Data API commits
-that publish work, pull requests, merges, the state branch, and cloning and fetching a working
-tree. No such request SHALL use an ambient `GH_TOKEN` or `GITHUB_TOKEN`, a host's `gh` login, or
-a credential helper from a git config file.
-
-A token SHALL reach only the process making the call: it is set in that child's environment and
-nowhere else. It SHALL NOT be written to the Igor's own environment, to disk, or to any git
-config, and a working tree SHALL hold no credential after it is cloned.
-
-Commands that take no role (`propose`, `reconcile`, `init`, `promote`, `budget`, `doctor`, `seat`) are a
-person's, and keep the person's own `gh` login.
+Every GitHub request by `igor run` or `igor serve`, through `gh` or `git`, SHALL authenticate as
+the Igor's App installation covering the repository; none SHALL use an ambient `GH_TOKEN` or
+`GITHUB_TOKEN`, a host's `gh` login, or a git config's credential helper. Its token SHALL reach
+only the calling child's environment, never the Igor's, disk or git config; a cloned tree SHALL
+hold no credential. Commands taking no role, such as `budget`, `doctor` and `seat`, keep the
+person's `gh` login.
 
 #### Scenario: A gh call acts as the App
 
-- **WHEN** an Igor claims, comments, labels or opens a pull request
-- **THEN** GitHub records the action as the App's bot account
+- **WHEN** an Igor discovers or claims work, comments, reads or writes labels, reads issue events,
+  commits through the Git Data API, opens or merges a pull request, or reads or writes the state
+  branch
+- **THEN** the request authenticates as the App
+- **AND** GitHub records a claim, comment, label or pull request as the App's bot account
 
 #### Scenario: An ambient token is not used
 
@@ -40,5 +36,6 @@ person's, and keep the person's own `gh` login.
 
 #### Scenario: A person's command is unchanged
 
-- **WHEN** a person runs `igor propose`
+- **WHEN** a person runs `igor propose`, `reconcile`, `init`, `promote`, `budget` or `doctor`,
+  which take no role
 - **THEN** it acts as that person's own `gh` login

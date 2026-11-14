@@ -1,18 +1,17 @@
-Build after four changes:
-- `condition-backoff` (#101);
+Build after the changes issue #204 builds before this one, among them:
+- `condition-backoff` (#101) and `probe-claim` (#228);
 - `read-seat-windows-from-the-stream` (#143);
-- `check-a-lore-repository` (#113), which adds `igor doctor`;
-- `redact-state-branch` (#217), whose `rememberSecret` tasks 3.3a and 3.3b call.
+- `triage-refusal-calibrates` (#75), `rename-arrives-whole` (#120) and `carry-what-a-tree-holds` (#137), which #204 places earlier though this change needs nothing from them;
+- `redact-state-branch` (#217), whose `rememberSecret` tasks 3.3a and 3.3b call;
+- `check-a-lore-repository` (#113), which adds `igor doctor`.
 
-`worker-user` (#175) is built after this change (Adam, 2026-10-21, decision 11). Task 8.4
-extends #175's start-up probe, so it is built with #175 and ticked then; gate two of this change
-does not wait for it. `worker-user`'s `GIT_INDEX_FILE` rule, which this change's task-execution
-spec keeps, is #175's to build too. `pinned-skills` (#174) is built after #175 (Adam,
-2026-10-21, #174's decision 30). Task
+`worker-user` (#175) is built after this change (proposal, decision 11). Task 8.4
+extends #175's start-up probe, so it is built with #175 and ticked then; gate two of this change, the review of its implementation, does not wait for it. `worker-user`'s `GIT_INDEX_FILE` rule, which this change's task-execution
+spec keeps, is #175's to build too. `pinned-skills` (#174) is built after #175 (#174's decision 30). Task
 3.10 is built with this change, and the part of its test that covers #174's startup skills
 check is added once #174 is built, before task 3.10 is ticked.
 
-Line numbers below are a rough guide: they are `main`'s from before those four changes, which
+Line numbers below are a rough guide: they are `main`'s from before those changes, which
 move them. The names are what to find. *Gate two* is the review of the implementation, after Adam approves this
 specification. Where a task quotes text in a fenced block, that text is the deliverable: unless the
 task itself says who may reword it, it may be reworded only where a measurement in section 1
@@ -50,7 +49,7 @@ contradicts it, and then `design.md` records the measurement.
       seats/<file>: the filename is the seat's id, so a seat file does not declare `id`
       seats/<file>: a seat's id is lowercase letters, digits and hyphens, starting with a letter or digit
       seats/<id>.yaml: `roles` is required: the list of roles this seat serves, which may be empty
-      seats/<id>.yaml lists role "<role>", which has no file under roles/. Roles: <names>
+      seats/<id>.yaml lists a role, entry <n> of `roles`, that has no file under roles/. Roles: <names>
       seats/<id>.yaml lists "<role>", the org base, which is not a role a seat serves. Roles: <names>
       ```
 
@@ -83,7 +82,11 @@ contradicts it, and then `design.md` records the measurement.
 - [ ] 2.4 `Config.budget` is filled from the seat files at load, so callers of `config.budget` keep
       working
 - [ ] 2.5 Tests in `test/config.test.ts` and `test/budget.test.ts`: each scenario of *A seat is a
-      file under `seats/`*; no `seats/` refuses each role at load (4.1's third refusal);
+      file under `seats/`, and its filename is its id*, *A malformed seat file takes only its own
+      seat out*, *A malformed seat file's condition quotes nothing from it*, *A role a malformed
+      seat file may serve hands off*, *A seat file accepts only `owner`,
+      `reserve`, `roles` and a token key* and *A seat file's `roles` lists role files other than
+      the org base*; no `seats/` refuses each role at load (4.1's third refusal);
       `recipient.txt` is not read as a seat
 
 
@@ -100,13 +103,13 @@ contradicts it, and then `design.md` records the measurement.
       seats/<id>.yaml names `token_file`. A seat file names its token only with encrypted_token, the token encrypted to seats/recipient.txt, or token_env: IGOR_SEAT_<ID>, a variable in the server's environment.
       seats/<id>.yaml names no token. A seat file names its token with encrypted_token, the token encrypted to seats/recipient.txt, or token_env: IGOR_SEAT_<ID>, a variable in the server's environment.
       seats/<id>.yaml names both encrypted_token and token_env. Keep one.
-      seats/<id>.yaml names token_env: <given>. A seat's token variable is IGOR_SEAT_ plus its id: IGOR_SEAT_<ID>.
+      seats/<id>.yaml names a token_env other than IGOR_SEAT_<ID>. A seat's token variable is IGOR_SEAT_ plus its id.
       seats/<id>.yaml: encrypted_token is not an age ciphertext. If it is a token, it is now in this repository's history: revoke it at Anthropic, then run `igor seat add <id>` with a new one.
       ```
 
 - [ ] 3.3 Add the `age-encryption` dependency. Decrypt each seat's `encryptedToken` with the
-      identity at `seatKey` on each lore read, at start and at each cycle start (the reread
-      `concurrent-instances` (#179) adds, and `lore-pull` (#208)'s once built), and hold the plaintext in memory until the next lore read; `resolveToken` returns the held value and
+      identity at `seatKey` on each lore read, at start and at each cycle start where
+      `lore-pull` (#208) makes its lore read, and hold the plaintext in memory until the next lore read; `resolveToken` returns the held value and
       never decrypts. Nothing is decrypted when a worker or a probe starts (proposal, decision 37).
       The plaintext is `<id>:<token>`: split it at the first colon, and fail decryption where
       there is no colon or the id is not the file's own; the seat's token is the part after the
@@ -151,7 +154,8 @@ contradicts it, and then `design.md` records the measurement.
 - [ ] 3.5 #101's credential digest is taken of the decrypted token, without the seat id before it.
       Test: the same token encrypted twice yields one digest
 - [ ] 3.6 Tests: each scenario of *A seat file names its token only by ciphertext or its own
-      variable* and *A seat's token travels as ciphertext in its file*; the plaintext appears in
+      variable*, *A seat's `token_env` is fixed by its id*, *A seat's token travels as ciphertext
+      in its file* and the requirements split from it, every requirement in `seat-budget` from *A plain token in a seat file fails the configuration* to *A command a person runs checks seat files without a lore read*; the plaintext appears in
       no record, transcript or handoff; the existing `token_file` and `token_command` tests in
       `test/budget.test.ts` are removed with the code they test
 - [ ] 3.7 `src/execute.ts`'s worker environment: a lent seat's worker gets the plaintext held
@@ -174,8 +178,7 @@ contradicts it, and then `design.md` records the measurement.
       `lore-pull` (#208) builds, and #208 archives after this change, so before this change
       archives, file an issue for this task and tick it with a pointer to the issue
 - [ ] 3.8 Under `igor run`, the only seat is the implicit local seat `_run`, whose token is
-      `IGOR_RUN_TOKEN`'s value, with reserve 0 and no role reserve applied (proposal, decision
-      39; Adam confirmed the id, the reserve and the unapplied role reserve on 2026-10-19). No seat file's seat is drawn on, and no `encrypted_token` is decrypted. No seat file
+      `IGOR_RUN_TOKEN`'s value, with reserve 0 and no role reserve applied (proposal, decision 39). No seat file's seat is drawn on, and no `encrypted_token` is decrypted. No seat file
       needs to list the role. At start Igor prints, worded so:
 
       ```
@@ -211,7 +214,7 @@ contradicts it, and then `design.md` records the measurement.
       a seat, so the tests of decryption under `serve`, such as task 3.9's, stand in a fake
       worker-user setup for #175's, passed to the code under test.
 - [ ] 3.9 A seat whose file Igor fails to decrypt, for any reason, on a lore read, opens a condition on the seat, and a later read that decrypts it
-      clears the condition (Adam, 2026-10-17). The seat is ineligible, #143's probe skips it,
+      clears the condition. The seat is ineligible, #143's probe skips it,
       and its condition stops no role: a role with no other
       usable seat hands off rather than stops, with a condition handoff naming the condition and
       its cure and stating no return time (proposal, decision 63). Where the key is read but the
@@ -238,7 +241,7 @@ contradicts it, and then `design.md` records the measurement.
 
 - [ ] 3.9a Where the gate would choose a lent seat for which the process holds no plaintext,
       because another process's passing read cleared the condition this process's read opened,
-      the process first makes a lore read of that seat's file, from the commit it last applied
+      the process first reads that seat's file again, not as a lore read, from the commit it last applied
       (proposal, decisions 60 and 71), at most once a cycle. A pass gives it the plaintext; a
       failure passes the seat over for this process only and appends no condition row. Test: *A process with no token for an
       eligible seat reads its file first*
@@ -262,11 +265,11 @@ contradicts it, and then `design.md` records the measurement.
       is not probed* and *`igor run` probes no seat*
 - [ ] 3.12 Confirm, on a server set up by the operator guide, that the service user's home holds
       no stored Claude login, so that under `igor serve` none exists (proposal, decisions 45 and
-      68). Do it before gate two (Adam, 2026-10-19). If one can exist there, that goes back to Adam
+      68). Do it before gate two. If one can exist there, that goes back to Adam
 
 ## 4. Which seats a role draws on
 
-- [ ] 4.1 `src/role.ts` `checkSeat` (`:517`): a role's seats are the seat files listing it;
+- [ ] 4.1 `src/role.ts` `checkSeat` (`:533`): a role's seats are the seat files listing it;
       `seat:` narrows to one, which must list the role. Refusals, worded so:
 
       ```
@@ -277,13 +280,13 @@ contradicts it, and then `design.md` records the measurement.
       ```
 
 - [ ] 4.2 `poolFor` is replaced by a function returning the seats serving a role, and `budgetGate`
-      (`src/budget.ts:870-900`) uses it. The fallback to `org.pools[0]` goes
+      (`src/budget.ts:1024`) uses it. The fallback to `org.pools[0]` (`:1042`) goes
 - [ ] 4.3 `igor role explain` shows the seats a role draws on, each with the file that lists it
 - [ ] 4.4 Tests: each scenario of *A role's seats are the seats whose files list it*
 
 ## 5. Choosing a seat by headroom
 
-- [ ] 5.1 `chooseSeat` (`src/budget.ts:597-735`): compute eligibility with the existing rules, then
+- [ ] 5.1 `chooseSeat` (`src/budget.ts:732`): compute eligibility with the existing rules, then
       rank by headroom, the soonest week reset, then id, as *A role draws on the seat with the most
       headroom* states. Its doc comment describes ranking, not pool order
 - [ ] 5.2 `poolVerdict` and `derivedReset` take the seats serving the role, not a pool. Every
@@ -296,7 +299,9 @@ contradicts it, and then `design.md` records the measurement.
       <seat> and <seat2> both have <n> points of headroom; <seat>'s week resets sooner
       ```
 
-- [ ] 5.4 Tests: each scenario of the requirement. The pool-order tests in `test/budget.test.ts`
+- [ ] 5.4 Tests: each scenario of the requirement, and of *A role with no eligible seat stops
+      only on conditions no read clears* and *A handoff with every seat under a condition is a
+      condition handoff*. The pool-order tests in `test/budget.test.ts`
       ('pool order is the allocation mechanism' and the tests #143's task 7.8 names) are rewritten
       against ranking
 
@@ -420,7 +425,7 @@ contradicts it, and then `design.md` records the measurement.
 ## 8. `igor doctor`
 
 Adds to the `igor doctor` command that `check-a-lore-repository` (#113) builds, which is built
-first (Adam, 2026-10-17).
+first.
 
 - [ ] 8.1 The key match, per *The check says whether the server's key matches the committed one*,
       with a test for each of its scenarios. A key file the person running the check cannot read
@@ -529,13 +534,16 @@ leaks.
       trust the server's operator, who can use your token within your subscription and can edit
       your seat file after it merges; what the operator does to protect the token (the server's
       private key; it travels encrypted in a file anyone may be able to read, and only that key
-      opens it); what bounds that trust (a `setup-token` only makes model requests, the reserve
-      limits Igor's share, you can watch your usage at claude.ai); that you are mentioned on each
+      opens it); what bounds that trust (a `setup-token` only makes model requests (task 9.4a measures this first); the reserve limits Igor's share; you can watch your usage at claude.ai); that you are mentioned on each
       push to a pull request that changes your seat file, as long as `owner` is your GitHub login;
       and **revoking the token at Anthropic, through the claude.ai web interface, is how you
       withdraw or object to anything: it stops the seat, whatever any file says**. The guide
       promises no speed for it, and names no page more exact than claude.ai, since Adam gave none
       (task 1.2)
+- [ ] 9.4a Measure what a `setup-token` can do besides model requests: try it against the claude.ai
+      account and organization endpoints a person's login reaches, and record in `design.md` what
+      each returned. Where it reaches more than model requests, report it to Adam and say so in
+      9.4's guide in place of "only makes model requests"
 - [ ] 9.5 `docs/seats.md`, **getting the token:** the steps, numbered: run `claude setup-token`
       once, in your own terminal; sign in with the Claude account whose subscription you lend;
       copy the token it prints, which is shown once; and paste it when `igor seat add` asks,
@@ -697,22 +705,21 @@ leaks.
       `github.event.pull_request.head`
 - [ ] 10.4 Tests of the script, run under bash with `gh` faked and a local repository standing in
       for GitHub's: each scenario of *A pull request that changes a seat file mentions that seat's
-      owner*; and a path such as `seats/$(touch x).yaml` or one containing a space, a newline or
+      owner* and of the notice requirements split from it (the four whose titles begin *The seat-notice workflow* or *A seat-file notice*); and a path such as `seats/$(touch x).yaml` or one containing a space, a newline or
       `*`, which is neither run nor expanded; a pull request of 3,101 files whose seat file sorts
       after the first 3,000; a push whose earlier head cannot be fetched, which falls back to the
       base; and an earlier comment shaped like the notice, from any author, which changes nothing
 - [ ] 10.5 In `adamstallard/igor-lore`, with task 6.1: add `.github/workflows/seat-notice.yml`
       from the template
 - [x] 10.6 ~~Measure whether a push through the Actions bypass runs `seat-notice.yml`~~ Moot:
-      the workflow's `push` trigger is dropped (proposal, decision 26; Adam, 2026-10-17), so no
+      the workflow's `push` trigger is dropped (proposal, decision 26), so no
       push runs it
 - [x] 10.7 Measure whether GitHub starts a `pull_request_target` workflow filtered on
       `seats/**` for a pull request that changes more than 300 files, one of them a seat file.
       Measured 2026-10-19: it ran at 351 files, and at 3,101 files missed a seat file sorting after
       the first 3,000. `design.md`, *The lender hears about a change to their seat file*, records
       it. Adam dropped the filter (decision 46)
-- [x] 10.8 ~~Run the shipped `seat-notice.yml` on a 3,101-file pull request~~ Dropped (Adam,
-      2026-10-19; proposal, decision 62): `git diff --name-only` with a `seats/` pathspec never
+- [x] 10.8 ~~Run the shipped `seat-notice.yml` on a 3,101-file pull request~~ Dropped (proposal, decision 62): `git diff --name-only` with a `seats/` pathspec never
       pages through the pull request's files, and the 3,000-file limit belongs only to GitHub's
       `paths:` filter and files API. 10.4's local test covers *A seat file in a very large pull
       request is still noticed*
@@ -736,18 +743,18 @@ of its requirements. Build each against #101's code:
       private key file that `seatKey` names, never a token file path
 - [ ] 11.3 *A condition's scope is its cure's scope*: an unreadable seat, including one whose token
       cannot be decrypted, is taken out of every role's choice, and a role stops where every seat
-      serving it is under an open condition that is not read-cleared (Adam, 2026-10-17); a seat
+      serving it is under an open condition that is not read-cleared; a seat
       whose file Igor could not decrypt, or whose file is malformed, stops no role (3.9, 2.2a). A role with no eligible seat
       where only some seats are under conditions, and the rest are at their lines, hands off
-      rather than stops, naming each condition in the handoff (Adam, 2026-10-17). Test each of its seat scenarios
+      rather than stops, naming each condition in the handoff. Test each of its seat scenarios
 
 - [ ] 11.4 *A condition that recurs stops the affected scope from taking new work*, in the
       exception to recurrence it states: a seat file Igor fails to decrypt opens the seat's
       condition on its first occurrence, and a later read
       that decrypts the file clears it, with no cooldown and no probe item (proposal, decision
       31; task 3.9). It is a read-cleared condition, built once as *A read-cleared condition opens
-      on a failing read and clears on a passing one* states, so the conditions #179 and #208 open
-      on a refused configuration reuse the same code (proposal, decision 38). The code takes, from the rule using
+      on a failing read and clears on a passing one* states, so the condition #208 opens
+      on a refused configuration reuses the same code (proposal, decision 38). The code takes, from the rule using
       it, how many failing reads in a row open it, one by default. Tests: the first failed read
       opens it; with a count of three, the third failed read in a row opens it and the first two
       do not; a good read clears it; no probe item is ever taken for it; it stops no scope by
@@ -771,8 +778,8 @@ of its requirements. Build each against #101's code:
       Add `engines`, set to `node >= 26`
 - [ ] 12.2a A licence check, run by 12.3 before publishing: the package's own `license` field and
       every dependency's licence are each on an allowlist kept in the repository, and any that is
-      not fails the release, naming the package and its licence (Adam, 2026-10-17). The
-      allowlist holds exactly these SPDX identifiers (Adam, 2026-10-17); any other, copyleft
+      not fails the release, naming the package and its licence. The
+      allowlist holds exactly these SPDX identifiers; any other, copyleft
       included, fails until someone adds it on purpose:
 
       ```
@@ -789,7 +796,7 @@ of its requirements. Build each against #101's code:
 - [ ] 12.3 A release workflow under `.github/workflows/`, triggered by pushing a version tag, on
       GitHub-hosted runners: it builds, runs the licence check, and publishes through npm trusted
       publishing (OIDC), with `id-token: write` in its permissions and no npm token stored
-      anywhere (Adam, 2026-10-17). Configure `igor-agent` on npm to trust this workflow. Trusted
+      anywhere. Configure `igor-agent` on npm to trust this workflow. Trusted
       publishing adds provenance to each version. `igor-agent` does not exist on npm yet: first
       measure whether a trusted publisher can be configured for a package that has never been
       published. If trusted publishing cannot make the first publish, Adam makes that one publish
@@ -807,7 +814,9 @@ of its requirements. Build each against #101's code:
       `work-triage`'s *A candidate left untriaged is not a candidate triage decided about*,
       "what becomes of it is #78". Whichever of the two archives second merges the two texts by
       hand
-- [ ] 13.3 If #196 (spec-trace) has merged by the time this change archives, its CI fails each new
-      scenario with no tagged test. Tag a test for each scenario this change adds. For a scenario
+- [ ] 13.3 spec-trace is in force on main (`.github/workflows/spec-trace.yml`), and its CI fails
+      each scenario with neither a tagged test nor a line in `openspec/spec-trace-baseline.txt`.
+      Tag a test for each scenario this change adds, and remove the baseline lines for scenarios
+      it removes or renames. For a scenario
       no test in this repository can run, such as *A pull request from a fork is noticed too*,
-      do what #196 provides for such a scenario, or ask Adam if it provides nothing
+      do what spec-trace provides for such a scenario, or ask Adam if it provides nothing

@@ -1,25 +1,28 @@
+Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
+Builds on: check-a-lore-repository (adamstallard/igor#113)
+
 ## Decisions
 
-1. **One file per seat, `seats/<id>.yaml`, and pools are dropped** (Adam, 2026-09-28). The
+1. **One file per seat, `seats/<id>.yaml`, and pools are dropped**. The
    lender's own pull request adds the file, naming the roles the seat serves and its reserve.
 2. **A lent token travels as age ciphertext in the seat file**, encrypted to
-   `seats/recipient.txt` and decrypted with the private key `seatKey` names (Adam, 2026-10-11).
+   `seats/recipient.txt` and decrypted with the private key `seatKey` names.
    *Rejected:* GitHub secrets delivered by a deploy workflow on a self-hosted runner, the
    2026-09-28 model: on a public repository a fork's pull request can run its own self-hosted
    workflow on the server. `design.md` lists the other options and why each was rejected.
-3. **The lender's control is their token** (Adam, 2026-10-11). Revoking it at Anthropic stops the
+3. **The lender's control is their token**. Revoking it at Anthropic stops the
    seat, and that is their veto over anything the operator does with it. *Rejected:* a
    CODEOWNERS line per seat file with code-owner review required, which needs administrator
    settings, checks that they stay on, and a stand-in for a lender with no GitHub account.
 4. **An operator's own seat may name `token_env`, fixed to `IGOR_SEAT_<ID>`; `token_command` and
-   `token_file` are refused in a seat file** (Adam, 2026-10-04 and 2026-10-11). A free variable
+   `token_file` are refused in a seat file**. A free variable
    name could hand `claude` the GitHub token, or spend another seat under this one's id.
 5. **A role draws on the seat with the most headroom**; ties go to the soonest week reset, then
-   the seat id (Adam, 2026-10-04, #147). A role naming `seat: x` is refused unless `seats/x.yaml`
+   the seat id (#147). A role naming `seat: x` is refused unless `seats/x.yaml`
    lists it. *Rejected:* keeping pools or an `order` key, which brings back an ordering the
    lender never stated.
 6. **A pull request changing a seat file @-mentions its owner**, through
-   `templates/seat-notice.yml`, which `igor init` installs (Adam, 2026-10-11). It runs only on
+   `templates/seat-notice.yml`, which `igor init` installs. It runs only on
    `pull_request_target` (decision 26), on every pull request (decision 46), on GitHub-hosted
    runners, and takes nothing from the pull request's head but the names of the paths it changes.
    *Rejected:* a pull request template line, CODEOWNERS
@@ -27,25 +30,23 @@
    lore pull requests (`design.md`). The before-merge comment is the workflow's; Igor posts its
    own notice only after a seat-file change lands and Igor pulls it (`lore-pull`, #208, for #176).
 7. **`igor doctor` reports a missing `seat-notice.yml`, and a server private key (`seatKey`) whose
-   public half does not match `seats/recipient.txt`** (Adam, 2026-10-11). A change to
+   public half does not match `seats/recipient.txt`**. A change to
    `recipient.txt` notifies no lender, because it changes no token already on the server; each
    lender meets the new key when they next rotate.
-8. **Smaller choices, which Adam accepted as `design.md` proposed them** (2026-10-11): the
+8. **Smaller choices, as `design.md` proposed them**: the
    ciphertext is base64 on one line, made with the `age-encryption` package, so a lender needs no
    `age` binary; a seat id is lowercase letters, digits and hyphens; `roles` is required and may be
    empty; a role name with no role file is refused; the config key is `seatKey`; a role's own
    `reserve` key, which #143 adds, stays on the role; `work-triage` says "the seats serving a role"
    in place of "pool".
-9. **No code handles a configuration written before seat files** (Adam, 2026-10-11): no migration,
+9. **No code handles a configuration written before seat files**: no migration,
    and no message for a leftover `budget` or `pools`, since Igor has no users yet. `igor-lore`'s
    one seat is moved by hand (task 6.1).
 
-10. **A seat file must name its token** (Adam, 2026-10-17). One naming neither `encrypted_token`
-    nor `token_env` is refused; since decision 67 that takes its seat out rather than failing the
-    configuration. *Rejected:* allowing it behind a flag the operator sets.
+10. **A seat file must name its token**. One naming neither `encrypted_token`
+    nor `token_env` is refused; decision 67 makes that refusal take only its seat out, not fail the configuration. *Rejected:* allowing it behind a flag the operator sets.
     Such a file would spend whatever login the server holds, which can be a pay-per-use API key.
-11. **This change's code is built before worker-user's (#175)** (Adam, 2026-10-21; on
-    2026-10-17 he had placed #175 first). The reason is the GitHub App's key. On `main`, a seat's
+11. **This change's code is built before worker-user's (#175)**. The reason is the GitHub App's key. On `main`, a seat's
     token sources (`token_env` with any variable name, `token_file` and `token_command`) could
     name the App's key, or a variable holding it, as a seat's token, which would hand the key to
     a worker. This change removes all but `token_env: IGOR_SEAT_<ID>` (decision 4), so building
@@ -54,15 +55,15 @@
     decrypts no lent seat until then (decision 78); `igor-lore`'s one seat names `token_env`
     (task 6.1). Once #175
     is built, its start-up probe checks, as the worker user, that the worker cannot read the
-    Igor's credentials, and task 8.4 adds the file `seatKey` names to what it checks.
+    Igor's credentials. #175's task 0.1 already lists the file `seatKey` names among them, so task
+    8.4 is the test that the check covers it.
 12. **`igor seat add` and `igor doctor` check that `owner` is a GitHub login**, with
-    `gh api users/<owner>` (Adam, 2026-10-17), because the notice workflow can mention only a
+    `gh api users/<owner>`, because the notice workflow can mention only a
     GitHub login.
 13. **A plain token pasted into a pull request is public before Igor can refuse it, and that is
-    accepted** (Adam, 2026-10-17). The notice workflow must not read the pull request's head, so
+    accepted**. The notice workflow must not read the pull request's head, so
     nothing can catch it there. The lender guide says so (task 9.5).
-14. **The lore repository's default branch requires a pull request before merging** (Adam,
-    2026-10-17), so the lender is told of a change to their seat file made through a pull
+14. **The lore repository's default branch requires a pull request before merging**, so the lender is told of a change to their seat file made through a pull
     request before it lands. `check-a-lore-repository` (#113) reports a default branch that does
     not require one. GitHub Actions may still push past the rule, so that the reconciliation
     workflow can commit merged lore. A seat-file change can arrive that way only if a workflow
@@ -72,66 +73,60 @@
     added file (decision 75); one deleted or renamed that way reaches the lender through nothing,
     since #208 gives those no notice. Where branch protection does not bind administrators, an
     administrator can push past the rule too, and #113 reports that (decision 76).
-15. **An undecryptable seat is passed over where the role has another usable seat** (Adam,
-    2026-10-17). Under #101 it would otherwise stop every role its file lists. This decision states
+15. **An undecryptable seat is passed over where the role has another usable seat**. Under #101 it would otherwise stop every role its file lists. This decision states
     the whole rule for a role with no eligible seat, as it and decisions 25, 31 and 33 settle it: the
     role stops, as #101 says (task 11.3), only when every seat serving it is under an open
     condition and none of those is a read-cleared condition, such as a seat whose file Igor could
     not decrypt. In every other case it hands off each item, naming each condition. A stopped
     role's process keeps running (decision 33).
-16. **The `dedicated` seat key is dropped** (Adam, 2026-10-17). After #143 any seat may keep a
+16. **The `dedicated` seat key is dropped**. After #143 any seat may keep a
     reserve, and choice by most headroom already spends a reserve-0 seat first. This change
     restates #143's *A role may hold back more of a seat than the seat does* to say "a seat at
-    reserve 0" where #143 says "a dedicated seat". Its scenario keeps the title *A role reserve
+    reserve 0" where #143 says "a seat no person uses". Its scenario keeps the title *A role reserve
     with a dedicated seat is valid*, because openspec will not rename an in-force scenario, and
     reads "dedicated" as plain English for a seat no person uses.
-17. **Nothing keeps running on a seat holder's machine** (Adam, 2026-10-17): no runner, daemon or
+17. **Nothing keeps running on a seat holder's machine**: no runner, daemon or
     scheduled job. This rules out a runner per lender, which `design.md` rejects for delivering
     the token, and allows `igor seat add`, a one-off command the lender chooses to run.
-18. **Revocation speed is not measured** (Adam, 2026-10-17). The lender guide says revoking the
+18. **Revocation speed is not measured**. The lender guide says revoking the
     token is how a lender withdraws, and promises no speed.
-19. **Igor is published to npm in this change** (Adam, 2026-10-17): package `igor-agent`, `bin`
+19. **Igor is published to npm in this change**: package `igor-agent`, `bin`
     `igor`, its description the README's opening line verbatim (#27). `package.json` declares
     `files` and `engines: node >= 26`. Publishing is a tag-triggered workflow on GitHub-hosted
     runners using **npm trusted publishing (OIDC)**, so no npm token is stored anywhere and
-    provenance is built in (Adam, 2026-10-17). *Rejected:* an npm token held as a repository
+    provenance is built in. *Rejected:* an npm token held as a repository
     secret, which any writer could read and use to publish `igor-agent`, which lenders run
     through `npx`. Before publishing, a **licence check covers both the package's own licence
-    field and every dependency's licence**, against an allowlist, and fails the release otherwise
-    (Adam, 2026-10-17). Section 12 of `tasks.md` holds the work.
-20. **The keys are X25519 keys in age's format** (Adam, 2026-10-17).
+    field and every dependency's licence**, against an allowlist, and fails the release otherwise. Section 12 of `tasks.md` holds the work.
+20. **The keys are X25519 keys in age's format**.
 21. **The lender guide documents one path, `npx igor-agent seat add`**, with Node and a
-    signed-in `gh` as the prerequisites (Adam, 2026-10-17; the `gh` prerequisite is decision 22). It has no manual `age` section and no route through a clone.
+    signed-in `gh` as the prerequisites (the `gh` prerequisite is decision 22). It has no manual `age` section and no route through a clone.
 22. **`igor seat add` requires `gh`, installed and signed in, and opens the pull request
-    through it** (Adam, 2026-10-17). Without `gh` it refuses. Igor never holds the lender's GitHub
+    through it**. Without `gh` it refuses. Igor never holds the lender's GitHub
     credentials: `gh` keeps its own login. *Rejected:* opening GitHub's prefilled new-file link
     where `gh` is missing, which still needed `gh` or a clone to find the lore repository, the
     holder's login and the public key, and could not replace an existing file for a rotation.
-23. **Igor refuses to decrypt a lent seat where the worker runs as the Igor's own user** (Adam,
-    2026-10-17). Under `igor run`, the one command where #175 runs the worker as the Igor's own user, a worker could read
+23. **Igor refuses to decrypt a lent seat where the worker runs as the Igor's own user**. Under `igor run`, the one command where #175 runs the worker as the Igor's own user, a worker could read
     `seatKey` and so every lent token. Lending requires the worker-user setup of #175. Decision
     39 has `igor run` spend only its own token, so today no lent seat reaches `igor run` anyway;
     this decision stays as the rule for any future command where the worker runs as the Igor's
     own user: Igor decrypts no lent seat there.
-24. **A lender needs a GitHub account to lend for themselves, and that is accepted** (Adam,
-    2026-10-17). Someone without one lends through the operator, whose login is then the seat
+24. **A lender needs a GitHub account to lend for themselves, and that is accepted**. Someone without one lends through the operator, whose login is then the seat
     file's `owner`. That `gh api users/<owner>` proves a login exists, not that it is the
     holder's, is accepted too.
 25. **A role with no eligible seat, where some seats are under an open condition and the rest are
-    at their reserve lines, hands off, naming the condition in the handoff** (Adam, 2026-10-17).
+    at their reserve lines, hands off, naming the condition in the handoff**.
     Decision 15 states the whole rule.
 26. **The notice workflow has no `push` trigger; `seat-notice.yml` runs on `pull_request_target`
-    only** (Adam, 2026-10-17). The only notice after a
+    only**. The only notice after a
     change lands comes from Igor, when it pulls the lore change (`lore-pull`, #208). *Rejected:* a push trigger
-    as well, which would mention a lender twice for one change, and which GitHub does not start
-    for a push made with a workflow's own `GITHUB_TOKEN`, the commit it was meant to catch.
-27. **`igor doctor` (#113, `check-a-lore-repository`) is built before this change** (Adam,
-    2026-10-17). Decisions 12 and 14 and section 8 of `tasks.md` add to the command #113 builds.
+    as well, which would mention a lender twice for one change, and which GitHub does not start for a push made with a workflow's own `GITHUB_TOKEN`, though such a push is the very commit a push trigger was meant to catch.
+27. **`igor doctor` (#113, `check-a-lore-repository`) is built before this change**. Decisions 12 and 14 and section 8 of `tasks.md` add to the command #113 builds.
 28. **`igor seat add` takes `--lore <owner/repo>`, required outside a clone and inferred inside
-    one** (Adam, 2026-10-17). Outside a clone it commits the seat file and opens the pull request
+    one**. Outside a clone it commits the seat file and opens the pull request
     through the GitHub API with `gh`, with no local clone. Inside a clone it commits on a new
     branch and opens the pull request with `gh`. Either way `gh` is required (decision 22).
-29. **A lent seat whose file the server cannot decrypt is ineligible** (Adam, 2026-10-17): seat
+29. **A lent seat whose file the server cannot decrypt is ineligible**: seat
     choice never picks it, and #143's probe skips it. It is under a condition on the seat, as
     every seat whose token cannot be read is. For a wrong key or a corrupt file, that
     condition names the seat and says its lender re-lends it, and `igor budget` names the lender
@@ -142,11 +137,11 @@
     raises no condition. Since decision 39, `igor run` spends no seat file's seat, so no role
     under `igor run` hands off for want of one.
 30. **The licence allowlist of decision 19 is MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0,
-    0BSD, CC0-1.0, Unlicense and BlueOak-1.0.0** (Adam, 2026-10-17). Any other licence, copyleft
+    0BSD, CC0-1.0, Unlicense and BlueOak-1.0.0**. Any other licence, copyleft
     included, fails the release until someone adds it to the list on purpose.
-31. **An undecryptable seat's condition is tied to reading seat files** (Adam, 2026-10-17). Igor
-    opens the condition when it fails to decrypt a seat file, at start and at each cycle start, where #179
-    rereads the configuration and #208 makes its lore read, and clears it when a later read decrypts the file.
+31. **An undecryptable seat's condition is tied to reading seat files**. Igor
+    opens the condition when it fails to decrypt a seat file, at start and at each cycle start where
+    #208 makes its lore read, and clears it when a later read decrypts the file.
     A role with no other usable seat hands off rather than stops, and the handoff names the
     condition. It states no moment when the seat's reserve line will cross its usage reading,
     since the seat may have no reading (decision 63). Being read-cleared, such a condition never
@@ -154,7 +149,7 @@
     *Rejected:* #101's way of opening and clearing a seat condition, from recurring handoffs and
     from #143's probe, which never reach a seat that is never picked or probed.
 
-32. **This change amends #101 (`condition-backoff`) through its own delta** (Adam, 2026-10-17).
+32. **This change amends #101 (`condition-backoff`) through its own delta**.
     #101 merges as it is, and this change archives after it, in the order issue #204 holds,
     the one place the archive order across the open changes is stated. This change's `stuck-conditions` delta therefore carries a `MODIFIED` block on
     #101's *A condition that recurs stops the affected scope from taking new work*, written from
@@ -163,17 +158,17 @@
     second, which clears on a good read of the seat file rather than on a probe item.
     *Rejected:* editing #101's own branch, which already carries #101's implementation and is
     to merge as it is.
-33. **`igor serve` never exits at runtime because of a condition** (Adam, 2026-10-18), whether it
+33. **`igor serve` never exits at runtime because of a condition**, whether it
     is on a seat, on the role (such as a command the role's `commands` refused, under #101), or
     on the Igor's GitHub App credential. #82 (`stopped-scope-visible`) specifies this. A role
-    whose seats are all under open conditions takes no work; decisions 15 and 25 and #101 call
-    this stopping. Its process keeps polling, probes on #101's cooldown and reports what is
-    stopped. A role whose only seats are undecryptable keeps polling and hands off each item
+    whose seats are all under open conditions, none of them read-cleared, takes no work;
+    decisions 15 and 25 and #101 call this stopping. Where any of those conditions is read-cleared, the role hands off instead (decision 73). Its process keeps polling, probes on #101's cooldown and reports what is
+    stopped. A role whose only seats are undecryptable keeps polling and hands off each item it holds
     (decisions 31 and 63).
 
-34. **A removed seat file always takes effect** (Adam, 2026-10-18). When a lore pull removes a
+34. **A removed seat file always takes effect**. When a lore pull removes a
     seat file, the removal applies even if the rest of the pull is refused for failing the
-    startup checks, a refusal Adam decided the same day and #176's body records. Igor drops the
+    startup checks, a refusal #176's body records. Igor drops the
     seat's decrypted token from memory, gives the seat to no new worker, and kills any worker
     using it, the `claude -p` child and every process its worker user owns, handing off each
     item. The Igor process keeps running. Igor cannot recall copies: a worker that held the
@@ -181,14 +176,12 @@
     lender guide says that revoking the token is the only real withdrawal. The removal applies at
     the next cycle start's read. Until `lore-pull` (#208) pulls the checkout, a seat file leaves
     the checkout only when someone updates it by hand. Decision 36 covers removing the last seat file.
-35. **A decrypted seat token never touches the server's disk** (Adam, 2026-10-18). It is held in
+35. **A decrypted seat token never touches the server's disk**. It is held in
     Igor's memory only, and reaches a worker only through that worker's environment; no log,
     state-branch file, condition report, error message or crash output carries it.
 
-36. **Every seat has a Claude token, and Igor never uses a stored Claude login** (Adam,
-    2026-10-18), under `igor serve` and `igor run` alike. A stored login is the credentials
-    `claude` keeps in a home directory. Adam's words: "Creating a token is trivial and clear
-    steps should be in the docs. The agent can also prompt the user through the steps." So the
+36. **Every seat has a Claude token, and Igor never uses a stored Claude login**, under `igor serve` and `igor run` alike. A stored login is the credentials
+    `claude` keeps in a home directory. Creating a token is trivial given clear steps, so the
     guides give the steps for creating a token with `claude setup-token` (tasks 9.3 and 9.5),
     `igor seat add` prints those steps before it reads the token (task 7.2), and an
     organization with no lenders declares one seat from its own token (task 9.3). A
@@ -202,12 +195,11 @@
     (`worker-user`) carry that on their own branches.
     *Rejected:* exempting an organization that declares no seats, which ran on whatever login
     the server held.
-37. **Seat files are decrypted only when Igor reads its lore checkout** (Adam, 2026-10-18): at
-    start, and at each cycle start (#179's reread, and #208's lore read). Starting a worker or a probe decrypts
+37. **Seat files are decrypted only when Igor reads its lore checkout**: at
+    start, and at each cycle start where #208 makes its lore read. Starting a worker or a probe decrypts
     nothing; it is given the plaintext Igor holds from its last read, so no decryption can fail
     when a worker is spawned.
-38. **Decision 31's condition is the first of a kind, the read-cleared condition** (Adam,
-    2026-10-18): opened by a read that fails, cleared by a later read that passes, never by a
+38. **Decision 31's condition is the first of a kind, the read-cleared condition**: opened by a read that fails, cleared by a later read that passes, never by a
     probe item, and stopping nothing by itself. The `stuck-conditions` delta defines the kind
     once, in *A read-cleared condition opens on a failing read and clears on a passing one*.
     `lore-pull` (#208) cites it for a configuration that fails the startup checks on a running
@@ -215,72 +207,67 @@
     condition clears. This change's block on #101's *A condition clears by not recurring, and a
     probe is what observes that* exempts the kind from the probe item. Decision 31's condition,
     on a seat, has the cure key `seat:<id>:decrypt`. Each rule that uses the kind says how many
-    failing reads in a row open its condition (Adam, 2026-10-20). A decrypt failure opens it on
+    failing reads in a row open its condition. A decrypt failure opens it on
     the first. #208's lore read that fails on one server, from a git lock or a full disk rather
     than from what the commit holds, opens its own condition on the third in a row, since such a
     fault often clears by itself. *Rejected:* each
     change restating how its condition opens and clears.
 39. **`igor run` spends a token from its own environment, `IGOR_RUN_TOKEN`, as an implicit local
-    seat** (Adam, 2026-10-18). Nothing about it goes in the lore repository, no seat file needs
+    seat**. Nothing about it goes in the lore repository, no seat file needs
     to list the role, and lent seats are never used. Without the variable, `igor run` refuses to
     start, naming it. Requirement *`igor run` spends its own token as an implicit
     local seat*; task 3.8.
-    Three details are not in Adam's words of 2026-10-18; this change inferred them, and Adam
-    confirmed them on 2026-10-19: `igor run` draws on
+    Three details follow from the rule rather than being stated in it: `igor run` draws on
     no `token_env` seat either; the implicit seat's id is `_run`, which no seat file can have;
     and its reserve is 0, with no role's `reserve` applied under `igor run`.
     *Rejected:* a `token_env` seat file of the developer's own, either in the shared lore
     repository, where every reader sees it, or in a lore repository of the developer's own, which
     the developer would have to keep in step with the team's.
-40. **A lent ciphertext is bound to its seat** (Adam, 2026-10-18). `igor seat add` encrypts
+40. **A lent ciphertext is bound to its seat**. `igor seat add` encrypts
     `<seat-id>:<token>`. On decrypting, Igor refuses a seat whose plaintext names an id other
     than its file's, or none, and raises the read-cleared condition `seat:<id>:decrypt`, as for
     any seat it cannot decrypt. Ciphertext copied into another seat file, with other roles and
-    `reserve: 0`, then spends nothing. *A seat's token travels as ciphertext in its file* and
-    *`igor seat add` lends a seat in one step*; tasks 3.3 and 7.2. *Rejected:* refusing two seats
+    `reserve: 0`, then spends nothing. Carried by *A seat's token travels as ciphertext in its file* and *`igor seat add` lends a seat in one step*; tasks 3.3 and 7.2. *Rejected:* refusing two seats
     whose tokens decrypt equal, which catches a copy only while the original file still exists.
-41. **This change carries #143's probe exclusions** (Adam, 2026-10-18), as a `MODIFIED` block on
-    #143's *A seat nothing has read is probed on the Igor server with its own token*, copied
-    from #143's latest text (9fc23a8) with its scenarios kept. It also adds two scenarios that
-    #143 chose to leave to this block rather than add itself: a probe's environment holds only the seat's token, and a probe that exits
-    with an error is not retried at once. The probe skips a seat Igor could not decrypt,
-    and `igor run` makes no probe. This change archives after #143 (decision 32), so the block
-    applies to #143's requirement once it is in force. Task 3.11.
+41. **This change carries #143's probe exclusions**, as `MODIFIED` blocks on #143's four probe
+    requirements (#143's decision 18 names them), copied from #143's text at `f30e0ae` with
+    their scenarios kept. It also adds two scenarios #143 left to these blocks: a probe's
+    environment holds no credential but the seat's token (in *A seat probe is one minimal call on
+    the seat's own token alone*), and a probe that exits with an error is not retried at once (in
+    *A seat is probed at most once an hour, and not for five hours after a probe got no event*). The probe skips a seat Igor could not decrypt,
+    and `igor run` makes no probe. This change archives after #143 (decision 32), so the blocks
+    apply to #143's requirements once they are in force. Task 3.11.
 42. **#174's startup skills check is charged like a probe when it is one, and otherwise spends a
-    seat through the gate** (Adam, 2026-10-18; amended 2026-10-21 in #174's decision 28). The
+    seat through the gate**. The
     gate is the budget check that chooses which seat a model call is charged to. Under `igor
     serve`, where a seat is due a probe when Igor starts, the check's call is that first probe:
     it is charged to the seat it reads, as every probe is, and its `rate_limit_event` is that
     seat's first reading. Where no seat is due a probe, and always under `igor run`, which makes
     no probe, the check goes through the gate like any other call. So the only calls the gate
     does not choose a seat for stay the seat probe and #143's live `/usage` read, each charged
-    to the seat it reads; the `/usage` read goes in the first change built after this one's code
-    (decision 64). *A spend with no seat behind it is not made*; task 3.10. *Rejected:* letting
+    to the seat it reads; the `/usage` read is removed in the first change built after this one's code (decision 64). *A spend with no seat behind it is not made*; task 3.10. *Rejected:* letting
     the check skip the gate even when it is no probe, an exception of its own.
 43. **`igor doctor` invokes the configuration's validation, which reads no secret, and reports
-    its findings, each named with its source** (Adam, 2026-10-18). Among them is a seat file
+    its findings, each named with its source**. Among them is a seat file
     carrying `encrypted_token` where no `seatKey` is declared, which the validation reports and
     `doctor` no longer checks itself. #113 records that `doctor` may invoke an existing check and
-    never re-implements one. *A seat's token travels as ciphertext in its file*; the
+    never re-implements one. *Ciphertext with no `seatKey` is a validation finding, not a
+    failure*; the
     `setup-check` delta; task 8.3.
-44. **Two rules confirmed** (Adam, 2026-10-18): the notice workflow does not mention a lender on
+44. **Two rules confirmed**: the notice workflow does not mention a lender on
     a seat-file pull request they opened themselves, for their own opening or push, since they
     know of their own change; and an `encrypted_token` that is not age
     ciphertext, such as a plain token pasted there, is refused at load, telling the holder to
     revoke it. *A pull request that changes a seat file mentions that seat's owner* and *A seat's
     token travels as ciphertext in its file*.
-45. **Under `igor run`, Claude Code's own preference for a stored login is accepted** (Adam,
-    2026-10-18): had Claude Code preferred a stored login on the developer's machine over the
+45. **Under `igor run`, Claude Code's own preference for a stored login is accepted**: had Claude Code preferred a stored login on the developer's machine over the
     token Igor passes, the call would spend the developer's own login and quota, and Igor would
     neither hide the login with `HOME` nor refuse. #174's task 0.3 measured it on Claude Code
     2.1.303 (#174's `design.md`, *Measured before building, 2026-10-18 (task 0.3)*): a valid token
     beside a stored login spends the token's seat, and an invalid one fails rather than reaching
-    the login, so the case does not arise. Under `igor serve` the operator guide signs no `claude`
-    in as the service user, so no stored login exists there; task 3.12 confirms it before gate two
-    (decision 68). *A spend with no seat
+    the login, so the case does not arise. Under `igor serve` the operator guide never has anyone sign `claude` in as the service user, so no stored login exists there; task 3.12 confirms it before gate two, the review of the implementation (decision 68). *A spend with no seat
     behind it is not made*; tasks 3.10 and 3.12.
-46. **The notice workflow runs on every pull request, with no `paths` filter** (Adam,
-    2026-10-18). It lists the seat files a pull request changes with `git diff --name-only`
+46. **The notice workflow runs on every pull request, with no `paths` filter**. It lists the seat files a pull request changes with `git diff --name-only`
     between the pull request's base and head, after fetching the pull request's commits as git
     data, and runs nothing from them, so `pull_request_target` stays safe. Task 10.7 measured
     that GitHub's path filter misses a seat file sorting after a pull request's first 3,000
@@ -288,7 +275,7 @@
     *The lender hears about a change to their seat file*). *Rejected:* keeping the filter and
     documenting the gap.
 
-Smaller choices this change makes, which Adam approves with it:
+Smaller choices this change makes, which approving the change approves (they await that approval):
 
 47. **A seat's headroom is the smaller of its two windows' headroom.** Where a seat may be drawn
     on with no reading, because its line's reserve is 0, a window with no unreset reading counts
@@ -323,7 +310,7 @@ Smaller choices this change makes, which Adam approves with it:
 56. **`igor doctor` reports an `owner` that is an organization**, whose mention notifies nobody,
     and a notice workflow whose most recent run failed.
 
-Adam's answers of 2026-10-19 to the questions this change left open:
+Answers to the questions this change left open:
 
 57. **A lore read at every cycle start is approved, through #208's rule.** Decision 37 limits
     decryption to lore reads, and #208 makes one at every cycle start, even with no new commit,
@@ -331,15 +318,15 @@ Adam's answers of 2026-10-19 to the questions this change left open:
     for it.
 58. **A lender's login appears only in `igor doctor` and `igor budget`.** Handoffs and condition
     reports on items name only the seat id, even where the lore repository is private, since a
-    handoff may sit on a public issue. *A seat's token travels as ciphertext in its file*.
+    handoff may sit on a public issue. *A lender's login appears only where the operator reads*.
 59. **If npm trusted publishing cannot make the first publish of `igor-agent`, Adam makes that
     one publish by hand.** Task 12.3.
-60. **A process holding no token for a seat reads that seat's file, a lore read, before using
-    it.** A condition is shared by every Igor process, but a decrypted token is not, so a
+60. **A process holding no token for a seat reads that seat's file again, not as a lore read, before using it.** A condition is shared by every Igor process, but a decrypted token is not, so a
     condition another process's passing read cleared could otherwise have this process use a seat
-    it cannot decrypt. *A seat's token travels as ciphertext in its file*; task 3.9a.
-61. **A lender revokes a `setup-token` through the claude.ai web interface.** Adam named the
-    interface, not the exact page. The lender guide says so (tasks 1.2, 9.4 and 9.7).
+    it cannot decrypt. *A lent seat a process holds no token for is read again before use*; task
+    3.9a.
+61. **A lender revokes a `setup-token` through the claude.ai web interface.** The exact page is not
+    named. The lender guide says so (tasks 1.2, 9.4 and 9.7).
 62. **Task 10.8 is dropped.** `git diff --name-only` with a `seats/` pathspec filters by path
     itself and never pages through the pull request's other files; the 3,000-file limit task 10.7
     found belongs only to GitHub's `paths:` filter and its files API. The test made when the
@@ -347,11 +334,9 @@ Adam's answers of 2026-10-19 to the questions this change left open:
 63. **A role whose only seats are undecryptable makes a condition handoff:** it names the
     condition and its cure, re-lending the seat or fixing the key, with no return time. It hands
     off rather than stops. A condition handoff is not a budget handoff, so graceful-handoff's *A
-    budget handoff states when capacity returns* needs no `MODIFIED` block. *A role draws on the
-    seat with the most headroom*.
-64. **#143's live `/usage` read is removed in the first change built after this one's code**
-    (Adam, in #143's review). That change is #175, whose task 1.10 removes the read (Adam,
-    2026-10-21). Until #175's code lands, this change's spend requirement keeps listing the read,
+    budget handoff states when capacity returns* needs no `MODIFIED` block. *A handoff with every seat under a condition is a condition
+    handoff*.
+64. **#143's live `/usage` read is removed in the first change built after this one's code**. That change is #175, whose task 1.10 removes the read. Until #175's code lands, this change's spend requirement keeps listing the read,
     beside the probe, as the second call the gate does not choose a seat for.
 65. **`igor run` refuses to start where it can read the file `seatKey` names**, since its worker
     runs as the same user and could read every lent token without Igor. *A lent seat is decrypted
@@ -370,7 +355,7 @@ Adam's answers of 2026-10-19 to the questions this change left open:
 69. **`igor seat add` prompts for `--reserve` and `--roles` when they are left out**, explaining
     each. *`igor seat add` lends a seat in one step*; task 7.1b.
 
-More smaller choices, which Adam approved on 2026-10-21:
+More smaller choices:
 
 70. **What counts as a push changing a seat file** (decision 66). On a push, the workflow compares
     the pull request's head before and after it. Where the earlier head cannot be fetched, as
@@ -389,13 +374,14 @@ More smaller choices, which Adam approved on 2026-10-21:
     text from it. The refusal's own text, naming the key or value at fault, is shown by the
     validation, so by `igor doctor`, and by `igor budget`. Where a malformed file's `roles` cannot
     be read, Igor cannot tell which roles it serves, so while one is present a role that no other
-    seat file lists hands off rather than being refused at load.
+    seat file lists hands off rather than being refused at load. A role whose `seat:` names a
+    malformed file's seat is not refused either, whatever its `roles` holds, and draws on it alone.
 73. **Every role whose seats are all under conditions, and that does not stop, makes a
     condition handoff** (decision 63). Adam's answer named a role whose only seats are
     undecryptable. The same handoff serves any mix in which every seat is under a condition and
     at least one is read-cleared, since no reset brings any of them back.
 
-Adam's answers of 2026-10-21:
+Further answers:
 
 74. **Revoking at claude.ai is measured before gate two** (task 1.3). Adam named where a lender
     revokes (decision 61); the lender's veto (decision 3) also needs a revoked `setup-token` to be
@@ -411,13 +397,12 @@ Adam's answers of 2026-10-21:
     decision 12). With `enforce_admins` off, an administrator can push a seat-file change straight
     to the default branch, with no notice before it, so #113 reports that rather than reporting
     the branch as protected.
-77. **The `age` identity `seatKey` names is registered with credential redaction** (Adam,
-    2026-10-21), so text quoting the key is redacted (task 3.3b), as text quoting a seat's token
-    is (task 3.3a). A seat's token stays registered after its seat is removed (Adam, 2026-10-21);
+77. **The `age` identity `seatKey` names is registered with credential redaction**, so text quoting the key is redacted (task 3.3b), as text quoting a seat's token
+    is (task 3.3a). A seat's token stays registered after its seat is removed;
     #217's *Credential redaction replaces every credential the Igor knows* states that rule.
 
 78. **A lent seat is decrypted only where the worker has a user of its own, under `igor serve`
-    too** (Adam, 2026-10-21). `igor serve` decrypts no `encrypted_token` while its code has no
+    too**. `igor serve` decrypts no `encrypted_token` while its code has no
     worker users, as #175's `task-execution` defines them; with this change built before #175,
     `serve` uses no lent seat until #175's code lands (task 3.8b). A lent seat under such a
     `serve` raises no condition, as under `igor run`, and serves no role. Two consequences
@@ -427,14 +412,13 @@ Adam's answers of 2026-10-21:
     Nothing in the code enforced that instruction, and the lender guide and `igor-agent`, which
     invite lending, ship with this change.
 79. **A proxy URL's user info is the one credential besides the seat's token that the worker
-    gets** (Adam, 2026-10-21, from #217's consistency read). `task-execution`'s requirement *The
+    gets**. `task-execution`'s requirement *The
     worker is given an explicit environment holding no credential but its seat's token* said no
     network setting is a credential. But #217 registers a forwarded proxy URL's password and
     whole URL as credentials to redact, and a user name with no password as `<user>@<host>`,
     never on its own. That requirement now says a network setting can carry this user info,
     which #217 registers. Its title is unchanged for now (see *Still open*).
-80. **A seat probe's environment carries the proxy URL's user info too** (proposed by this
-    change's author on 2026-10-24, from a consistency read, for Adam's approval). The probe's
+80. **A seat probe's environment carries the proxy URL's user info too**. The probe's
     environment is built as a worker's, and on a host whose proxy needs the user info, a probe
     without it could not reach Anthropic, so the seat would never be read. *Rejected:* keeping the
     probe to the seat's token alone, which would break every probe on such a host.
@@ -470,33 +454,29 @@ Adam's answers of 2026-10-21:
   that a `setup-token` only makes model requests is unmeasured. The rule that Igor holds no
   holder's GitHub credentials has no scenario.
 - **Findings of the consistency read of 2026-10-21's last round, for whoever next edits this
-  change.** None is decided, and each says what is wrong, not which way to fix it. The build order in *Impact* and `design.md` puts #113 before #217,
-  where issue #204 puts #217 first. The worker-environment requirement this change removes is
-  still cited by name by #175 and #189, and its re-added copy drops #216's rule that each
-  worker run's Claude state is private to it, besides `IGOR_RUN`. A push that merges the base
+  change.** None is decided, and each says what is wrong, not which way to fix it. The worker-environment requirement this change removes is
+  still cited by name by #175 and #189, and its re-added copy drops two things #216 adds: the rule that each worker run's Claude state is private to it, and the `IGOR_RUN` variable. A push that merges the base
   branch into a pull request names seat files other pull requests changed, so their owners are
-  mentioned. A failing re-read of one seat file is called a lore read, which would open the
-  condition the re-read rule says it does not. The read-cleared kind's fixed counts are
+  mentioned. The read-cleared kind's fixed counts are
   neither configurable nor provisional, as #101's *No recurrence count or cooldown is fixed
   here* asks. A condition handoff defers for a reason other than budget, against the in-force
   *Busy is not a reason*. With no eligible seat, triage claims nothing, so no handoff names the
-  condition. #75's scenario on a triage call with no seat can no longer occur. Decision 11
-  says task 8.4 adds `seatKey` to #175's start check, which #175 already lists, so decision 11
-  should say task 8.4 tests it. #188's
+  condition. #75's scenario on a triage call with no seat can no longer occur. #188's
   `token_file` item is stale. `docs/deployment.md` step 2 and *When a seat token expires*,
   README's `seat: pool:engineering` example, and `docs/architecture.md`'s npm passages are left
-  out of tasks 9.3, 9.9 and 9.10, and `init` does not list `seats/recipient.txt`.
+  out of tasks 9.3, 9.9 and 9.10.
 - **Findings of a consistency read on 2026-10-21, for whoever next edits this change.** None is
   decided, and none blocks approving the rules above, except where an item says so:
   - **Decision 42 and #143's probe.** #143's probe is minimal: it runs with no tools and loads
     nothing. The skills check loads the skills it checks. #174 asks Adam whether the check may
     differ from #143's probe in that way; decision 42 holds as written either way.
-  - **Stopping or handing off.** Where every seat of a role is under a condition, decision 33
-    stops the role, while decisions 15 and 73 have it hand each item off. With no seat, triage
-    claims nothing, so there is no item to hand off.
-  - **The archive commit.** The one-commit archive with #143 names #175, #174 and #113 as the
-    changes between the two. #204 now places seven there, and issue #148 records the
-    one-commit rule as superseded.
+  
+  - **Against #228 (`probe-claim`),** whose *A due probe is eventually taken* covers every
+    condition: a read-cleared condition takes no probe item, so #228's requirement should except
+    it (reported to #228).
+  - **The archive commit, for Adam.** #143's decision 16 archives this change and #143 in one
+    commit, which now holds the seven changes #204 places between them. Issue #148 records that
+    one-commit note as superseded by #204. Which stands is Adam's call.
   - **Against #208 (`lore-pull`),** four rules differ: the notice for a seat file pushed with
     no pull request, when a removed seat file takes effect, whether a restart that removes a
     role's last seat still starts, and which reads clear a read-cleared condition.
@@ -507,8 +487,7 @@ Adam's answers of 2026-10-21:
   - **Against #216.** The worker-environment requirement this change re-adds drops the
     `IGOR_RUN` variable #216 adds to it.
   - **Task 3.4** quotes the found id in double quotes, where the spec requires a code span.
-- **Findings of a later consistency read on 2026-10-21, after decisions 74 to 76, for the next
-  revision.** Two of its findings, that #208 and #113 did not yet hold decisions 38 and 12, are
+- **Findings of a consistency read after decisions 74 to 76, still open.** Two of its findings, that #208 and #113 did not yet hold decisions 38 and 12, are
   met by those changes' commits of the same day. None of the rest is fixed here. The items for
   the author do not block approving the rules above; whether any item for Adam does is his to
   say.
@@ -521,20 +500,10 @@ Adam's answers of 2026-10-21:
     nobody passes every check. Decision 19 rejected an npm token because any writer could publish
     `igor-agent` with it, but any writer can push a version tag, which publishes from a commit of
     their choosing; and the lender guide's `npx igor-agent` names no version, so a lender runs
-    whatever was last published. A `seatKey` that a later lore commit changes is never probed by
-    #175's start-up check, so a merge could point it at a file the worker can read.
+    whatever was last published.
     `budget_share`, a role's ceiling on its spend, now bounds what the role takes of each seat
-    rather than of its pool, and no decision lists that change. A token of 1 to 7 characters in a seat file is
-    accepted but never registered by #217's redaction, which matches only tokens of 8 or more.
-- **Findings of a third consistency read on 2026-10-21, after decision 77, for the next
-  revision.** None is fixed here, and none blocks approving the rules above.
-  - A lender's login "SHALL appear only in `igor doctor` and `igor budget`" (`seat-budget`),
-    but the notice workflow and #208's notice post it in public comments, and the seat file
-    holds it. The rule is true only of condition reports and handoffs, which never name the
-    login, and should say so.
-  - In `seat-budget`'s probe requirement, the scenario for a probe that exits with an error
-    gives it the five-hour back-off. A probe refused for authentication also exits with an
-    error, and the requirement's text forbids that back-off after an authentication failure.
+    rather than of its pool, and no decision lists that change.
+- **Findings of a consistency read after decision 77, still open.** None is fixed here, and none blocks approving the rules above.
   - *Startup checks* is defined here and in #208 with different scopes; one should cite the
     other.
   - No scenario covers `igor budget` showing a malformed file's refusal, or `igor budget`
@@ -544,32 +513,26 @@ Adam's answers of 2026-10-21:
   - `igor doctor`'s check that the notice workflow's most recent run passed says little about
     whether lenders are told. Nearly every run is on a pull request with no seat file, which
     passes having mentioned nobody, so the next such pull request hides a failed run on a
-    seat-file one. A workflow that has never run passes where it should read "not checked",
-    and a disabled workflow or Actions turned off is in no decision.
+    seat-file one.
   - On a push, the notice workflow compares the pull request's head before the push with its
     head after it. Nobody has measured whether it can fetch the head before the push of a
     pull request from a fork. If it never can, every push to such a pull request compares
     against the base, and *A push that leaves the seat files alone mentions nobody* fails for
     forks. It needs a measurement task.
-  - For the author: "lore read" is used for the gate's single-file re-read, which #208's
-    definition excludes; the reason given for refusing a `seatKey` inside the checkout names a
-    reset #208 never makes; `igor doctor` and `igor budget` print a seat file's `owner` and
-    `token_env` values, against decision 48; a `seats/` holding only malformed files is both "no
-    seats declared" and "a malformed file present"; decision 14 says a change pushed with no pull
-    request reaches the lender only through Igor's notice, which #208 posts as a commit comment,
-    while the scenario *A push runs no notice workflow* says nothing comments on such a commit;
+  - For the author: the reason given for refusing a `seatKey` inside the checkout names a
+    reset #208 never makes; `igor doctor` and `igor budget` print a seat file's `owner`
+    value, against decision 48; a `seats/` holding only malformed files is both "no
+    seats declared" and "a malformed file present";
     #174's startup skills check and the stored-login preference are stated both here and in #174,
-    so the two copies can drift apart; decision 16 describes an edit to #143's text that was not
-    the one made; *What Changes* says decryption waits for a pull, against decision 57; task 9.9
-    points at a wrapper task 9.3 removes; `tasks.md`'s build list omits #75, #120 and #137, which
-    #204 builds first; the revocation and the absent stored login are stated as known in
+    so the two copies can drift apart; task 9.9
+    points at a wrapper task 9.3 removes; the revocation and the absent stored login are stated as known in
     requirement and deliverable text while tasks 1.3 and 3.12 are open; several SHALLs lack a
     scenario; and some requirement text carries rejected alternatives. #188's scenario on
     `token_file` tests a key this change removes, for #188 to fix.
 
 Pulling the lore checkout is specified by the open change `lore-pull` (#208, for #176), which
 archives after this one. It defines a *lore read*: a process loading its configuration, role
-files and seat files from one commit. #179's reread at each cycle start is one too. Until #208
+files and seat files from one commit. Until #208
 pulls the checkout, the seat files change only when someone updates the checkout by hand.
 
 ## Why
@@ -608,7 +571,8 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
   configuration with no seat files refuses each role at load. `igor run` spends the token in
   `IGOR_RUN_TOKEN` instead, as an implicit local seat. Removing the last seat file serving a role leaves the
   role with no usable seat, and the role hands off; nothing falls back to a login.
-- **A lent token is decrypted only when Igor reads its lore checkout**, at start and on a pull,
+- **A lent token is decrypted only when Igor reads its lore checkout**, at start and at each
+  cycle start where #208 makes a lore read,
   never when it starts a worker.
 - **`budget` leaves `igor.config.yaml`.** Seats are read from `seats/`, and pools are gone, so the
   mapping has nothing left in it.
@@ -697,13 +661,15 @@ it archives first.
 - `docs/deployment.md`, `docs/seats.md`, `docs/architecture.md` §6.5.1, `README.md`,
   `igor.config.example.yaml`, `deploy/`.
 - `adamstallard/igor-lore`: `seats/adam.yaml`.
-- Build order, one after another: `condition-backoff` (#101), `read-seat-windows-from-the-stream`
-  (#143), `check-a-lore-repository` (#113), `redact-state-branch` (#217), this change, and then
-  `worker-user` (#175) and `pinned-skills` (#174), whose code Adam placed after this change's on
-  2026-10-21 (decision 11, and #174's decision 30). Build order and archive order differ for
+- Build order, one after another, as issue #204 holds it: `condition-backoff` (#101),
+  `probe-claim` (#228), `read-seat-windows-from-the-stream` (#143), `triage-refusal-calibrates`
+  (#75), `rename-arrives-whole` (#120), `carry-what-a-tree-holds` (#137), `redact-state-branch`
+  (#217), `check-a-lore-repository` (#113), this change, and then `worker-user` (#175) and
+  `pinned-skills` (#174), whose code is built after this change's (decision 11, and #174's
+  decision 30). Build order and archive order differ for
   #175 and #174: each is built after this change but archives before it. The archive order is the
-  one issue #204 holds (decision 32). This change and #143 archive in one commit (Adam,
-  2026-10-17), so the changes #204 places between them, #175, #174 and #113, archive in that commit too. No commit then
+  one issue #204 holds (decision 32). #143's decision 16 archives this change and #143 in one commit, which *Still open* asks Adam to confirm; in it the seven changes #204 places between them, #75,
+  #120, #137, #217, #175, #174 and #113, archive too. No commit then
   leaves one of the two archived without the other, so no in-force requirement text names
   `capacity_estimate`, which #143 removes, or `dedicated`, which this change removes. The word
   "dedicated" survives only as plain English in two in-force scenario titles, which openspec
