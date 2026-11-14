@@ -443,6 +443,15 @@ first.
       is unchecked. Read the workflow's most recent run; a failed run is a finding naming it.
       Tests: *A disabled notice workflow*, *A failing notice workflow is reported* and *The
       workflow's state cannot be read*
+- [ ] 8.2a The notice workflow's content, per *The check says whether the notice workflow is the
+      one `igor init` writes*: compare the default branch's `seat-notice.yml` with the file this
+      version's `igor init` writes, byte for byte. The finding, which may be reworded:
+
+      ```
+      .github/workflows/seat-notice.yml on <branch> differs from the one `igor init` writes, so it may not tell lenders when a pull request changes their seat file. Run `igor init --force seat-notice` to restore it.
+      ```
+
+      Tests: *An edited notice workflow is reported* and *The workflow `igor init` writes passes*
 - [ ] 8.3 The configuration's validation, which reads no secret, reports a seat file carrying
       `encrypted_token` while `igor.config.yaml` declares no `seatKey` (proposal, decision 43).
       `igor doctor` shows it because #113 has `doctor` invoke that validation; `doctor` has no
@@ -550,13 +559,13 @@ leaks.
       unencrypted. A plain token
       pasted into a pull request is public as soon as it is pushed, before Igor can refuse it, and
       is to be revoked at once
-- [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent seat add <id> --lore <owner/repo>`, with Node and
+- [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent@<version> seat add <id> --lore <owner/repo>`, naming the exact version of the release the guide ships with (task 12.3b), with Node and
       `gh`, installed and signed in, as the prerequisites: what it asks for, and that it opens the
       pull request through `gh`. A person with no GitHub account lends through the operator, whose
       login is then the seat file's `owner`. No manual `age` steps and no route through a clone
 - [ ] 9.7 `docs/seats.md`, **afterwards:** watching your usage at claude.ai, and what to do when
       you are mentioned on a pull request changing your seat file (say so there if you object; revoke
-      the token if it merges anyway); **changing your mind:** rotating (`npx igor-agent seat add`
+      the token if it merges anyway); **changing your mind:** rotating (`npx igor-agent@<version> seat add`
       again, changing only `encrypted_token`), changing roles or reserve (a pull request to your
       file), withdrawing or objecting (revoke the token at Anthropic, through claude.ai), and the one-year expiry (#145).
       **Removing your seat file** gets this text, which Adam may reword:
@@ -695,7 +704,7 @@ leaks.
       ```
 
 - [ ] 10.2 `src/init.ts`: `igor init` installs `seat-notice.yml` beside `reconcile-on-merge.yml`,
-      under the same rules for an existing file, and it can be named as a target, per the
+      under the same rules for an existing file, and it can be named as a target, `seat-notice`, per the
       `lore-store` delta
 - [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its only trigger is
       `pull_request_target`, with no `paths` or `paths-ignore` filter; its permissions are exactly
@@ -722,6 +731,13 @@ leaks.
       pages through the pull request's files, and the 3,000-file limit belongs only to GitHub's
       `paths:` filter and files API. 10.4's local test covers *A seat file in a very large pull
       request is still noticed*
+- [ ] 10.8a Igor's own notice is built with `lore-pull` (#208). Before archiving, check that #208's
+      notice carries *A seat file added back also tells the owner it last named*: on an added seat
+      file whose id an earlier default-branch commit removed, it mentions the owner the removed
+      file last named as well. Where #208 does not, file an issue for #208 to add it, tick this task with a pointer to that
+      issue, and give the two scenarios named next a line in `openspec/spec-trace-baseline.txt`
+      until #208's tests tag them. Tests: *A re-added seat file names a new owner* and *A re-added
+      seat file with the same owner mentions it once*
 - [ ] 10.9 Before the template ships, run the shipped `seat-notice.yml` in a scratch repository on
       an ordinary small pull request that changes a seat file, from a fork, then push a second
       commit that changes the file again. Confirm both the opening and the push mention the
@@ -800,15 +816,31 @@ of its requirements. Build each against #101's code:
       measure whether a trusted publisher can be configured for a package that has never been
       published. If trusted publishing cannot make the first publish, Adam makes that one publish
       by hand (proposal, decision 59)
+- [ ] 12.3a A GitHub ruleset on the repository that publishes `igor-agent` restricts creating and
+      updating tags matching `v*` to the repository's administrators, so a writer cannot publish a
+      release by pushing a tag. The publish workflow runs in a GitHub environment whose
+      deployment rule admits only `v*` tags, and `igor-agent`'s trusted-publisher setting on npm
+      names that environment, so a run from a branch cannot publish, and with the ruleset, neither can an edited workflow,
+      since only an administrator can push the tag it would need.
+      Measure that a run from a branch is refused, and record the result in `design.md`. `igor doctor` does not check it: doctor reads the lore
+      repository, and this ruleset lives on Igor's source repository
+- [ ] 12.3b At each release, update the version the lender guide names (task 9.6) to that
+      release's, in the same change, so the guide never runs an unpinned `npx igor-agent`. A test
+      fails where the version `docs/seats.md` names differs from `package.json`'s, so a release
+      that skips this fails CI
+- [ ] 12.3c The package ships `npm-shrinkwrap.json`, so `npx igor-agent@<version>` installs the
+      dependency versions the release was tested with, not whatever their ranges resolve to
 - [ ] 12.4 Test from a clean machine with only Node and a signed-in `gh` installed that
-      `npx igor-agent seat add <id> --lore <owner/repo>` works outside any clone, after the first
+      `npx igor-agent@<version> seat add <id> --lore <owner/repo>` works outside any clone, after the first
       release. Record the result in `design.md`
 
 ## 13. Archiving
 
 - [ ] 13.1 Archive in the order issue #204 holds, so that this change's `MODIFIED` blocks apply
       to #101's and #143's in-force text and its `setup-check` delta finds #113's requirements
-      (proposal, decision 32). This change archives in the same commit as #143
+      (proposal, decision 32). Archive this change in its own commit, not in #143's (proposal, decision 82); in-force text
+      that contradicts #143 between the two archives, which #143's decision 16 lists, needs no
+      action
 - [ ] 13.2 #99 (`structured-failure-record`, its task 8.1) rewrites the same pointer in
       `work-triage`'s *A candidate left untriaged is not a candidate triage decided about*,
       "what becomes of it is #78". Whichever of the two archives second merges the two texts by

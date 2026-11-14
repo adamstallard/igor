@@ -99,7 +99,7 @@ Builds on: check-a-lore-repository (adamstallard/igor#113)
     through `npx`. Before publishing, a **licence check covers both the package's own licence
     field and every dependency's licence**, against an allowlist, and fails the release otherwise. Section 12 of `tasks.md` holds the work.
 20. **The keys are X25519 keys in age's format**.
-21. **The lender guide documents one path, `npx igor-agent seat add`**, with Node and a
+21. **The lender guide documents one path, `npx igor-agent@<version> seat add`**, pinned to the release the guide ships with (decision 85), with Node and a
     signed-in `gh` as the prerequisites (the `gh` prerequisite is decision 22). It has no manual `age` section and no route through a clone.
 22. **`igor seat add` requires `gh`, installed and signed in, and opens the pull request
     through it**. Without `gh` it refuses. Igor never holds the lender's GitHub
@@ -386,13 +386,16 @@ Further answers:
 74. **Revoking at claude.ai is measured before gate two** (task 1.3). Adam named where a lender
     revokes (decision 61); the lender's veto (decision 3) also needs a revoked `setup-token` to be
     refused. Task 1.3 checks it with a throwaway token.
-75. **A seat file added back with old ciphertext gets Igor's notice, like any added file.** A
+75. **A seat file added back with old ciphertext gets Igor's notice, like any added file.** The
+    old ciphertext still decrypts to a live token under the same id, so decision 40's id binding
+    does not refuse it. A
     lender who withdraws by having their seat file deleted, without revoking the token, leaves
     its ciphertext in git history, and anyone whose pull request is merged can add the file again
     under the same id. The notice workflow mentions nobody for an added file, since the default
     branch has no copy. After the merge, Igor's notice treats the file as added and mentions the
-    `owner` the added file names, which whoever adds the file writes (see *Still open*): `lore-pull` (#208) records this as its decision 38, which replaces its rule
-    that an added seat file gets no notice.
+    `owner` the added file names, which whoever adds the file writes, and the owner the removed file last named (decision 84). #208's own decision 38 already
+    mentions the added file's owner, replacing its rule that an added seat file gets no notice;
+    mentioning the removed file's last owner is #208's to add (task 10.8a).
 76. **`igor doctor` reports a pull-request rule that administrators can bypass** (#113's
     decision 12). With `enforce_admins` off, an administrator can push a seat-file change straight
     to the default branch, with no notice before it, so #113 reports that rather than reporting
@@ -422,6 +425,40 @@ Further answers:
     environment is built as a worker's, and on a host whose proxy needs the user info, a probe
     without it could not reach Anthropic, so the seat would never be read. *Rejected:* keeping the
     probe to the seat's token alone, which would break every probe on such a host.
+
+81. **This change may cite `lore-pull` (#208) ahead**: its *lore read*, at start and at each
+    cycle start, which says when seat tokens are decrypted; and its pull and the notice Igor
+    posts once a seat-file change lands, which say when a removed seat file takes effect and who
+    is told. #208 archives after this change; issue #204's
+    citing-ahead list records the leave.
+82. **#143 and this change archive one by one, in issue #204's order**, each in its own commit;
+    issue #148's note of 2026-10-18 withdrew the plan to archive the two in one. Between #143's
+    archive and this change's, in-force text that only this change replaces contradicts #143,
+        such as the pool requirement naming `capacity_estimate`, which #143 removes (#143's decision
+    16 lists the passages). Igor's code does not read the specs, so that affects no running code.
+    *Rejected:* one commit archiving both and the seven changes #204 places between them. A change
+    archives only once its code is built, so #143's archive would wait for all eight.
+83. **`budget_share`, the role key giving the most of a window a role may spend, caps a role's
+    spend of each seat.** A seat's `roles` list, and the role's share applied to each seat, are
+    how one role is favoured over another. A cap across seats would have no single window to be
+    a share of, since each seat's windows reset on their own schedule. *Rejected:* a
+    cap across all of a role's seats.
+84. **A re-added seat file's notice also mentions the owner its removed file last named, and
+    `igor doctor` checks the notice workflow's content.** Anyone whose pull request is merged can add a removed seat file
+    back naming any `owner`, so the real lender would not be told, and can edit `seat-notice.yml`
+    so it mentions nobody, which a check of presence and last run cannot see. The content check
+    reports such an edit when `igor doctor` next runs, not when it merges; until then a lender
+    whose seat file changes gets Igor's notice after the change lands, but none before. Requirements *A seat
+    file added back also tells the owner it last named* and *The check says whether the notice
+    workflow is the one `igor init` writes*; tasks 8.2a and 10.8a. A third route, a `push`
+    workflow committing a seat-file edit under the Actions bypass, stays as decision 14 has it. *Rejected:*
+    code-owner review on `seats/`, which decision 3 already turned down.
+85. **Release tags are protected and the lender guide pins a version.** A GitHub ruleset limits
+    who may push `v*` tags on the repository that publishes `igor-agent`, only a `v*` tag may run
+    the publish, the package pins its dependencies, and the guide runs
+    `npx igor-agent@<version> seat add`, naming the release it ships with, so a writer cannot
+    publish a release a lender then runs unreviewed. Tasks 12.3a, 12.3b, 12.3c and 9.6. `igor doctor`
+    does not check the ruleset, since doctor reads the lore repository and the ruleset lives on Igor's source repository.
 
 **Still open.** `design.md`'s *Settled by the agents* records what the agents settled after the consistency reads, among them choices 47 to 56, decision 80 and the requirement titles. What remains open is listed below:
 
@@ -462,12 +499,6 @@ Further answers:
   - **Against #228 (`probe-claim`),** whose *A due probe is eventually taken* covers every
     condition: a read-cleared condition takes no probe item, so #228's requirement should except
     it (reported to #228).
-  - **The archive commit, for Adam.** #143's decision 16 archives this change and #143 in one
-    commit, which would now also hold the seven changes #204 places between them. Issue #148
-    marks that one-commit rule as superseded (2026-10-18), with #204 as the one place the order
-    is stated. The two records disagree.
-  - **Citing #208 ahead, for Adam.** This change uses #208's *lore read*, its pulls, its startup
-    checks and its lore read at each cycle start, and #208 archives after it; #204 records no leave (Adam's permission to cite a change that archives later) for that.
   - **Against #208 (`lore-pull`),** four rules differ: the notice for a seat file pushed with
     no pull request, when a removed seat file takes effect, whether a restart that removes a
     role's last seat still starts, and which reads clear a read-cleared condition.
@@ -478,22 +509,8 @@ Further answers:
   - **Against #216.** The worker-environment requirement this change re-adds drops the
     `IGOR_RUN` variable #216 adds to it.
   - **Task 3.4** quotes the found id in double quotes, where the spec requires a code span.
-- **Findings of a consistency read after decisions 74 to 76, still open.** Two of its findings, that #208 and #113 did not yet hold decisions 38 and 12, are
-  met by those changes' commits of the same day. None of the rest is fixed here. The items for
-  the author do not block approving the rules above; whether any item for Adam does is his to
-  say.
-  - For Adam: a seat file added back under decision 75 names whatever `owner` the person adding it
-    writes, so where they change it, the real lender is not told. Any writer can push a branch
-    whose `push` workflow commits a seat-file edit to the default branch under the GitHub Actions
-    bypass, with no pull request and no notice before it, so decision 14's notice before landing
-    holds only against people who cannot write. `igor doctor` checks only that `seat-notice.yml`
-    is present and its last run passed, not what it does, so a merged edit that makes it mention
-    nobody passes every check. Decision 19 rejected an npm token because any writer could publish
-    `igor-agent` with it, but any writer can push a version tag, which publishes from a commit of
-    their choosing; and the lender guide's `npx igor-agent` names no version, so a lender runs
-    whatever was last published.
-    `budget_share`, a role's ceiling on its spend, now bounds what the role takes of each seat
-    rather than of its pool, and no decision lists that change.
+
+
 - **Findings of a consistency read after decision 77, still open.** None is fixed here, and none blocks approving the rules above.
   - *Startup checks* is defined here and in #208 with different scopes; one should cite the
     other.
@@ -587,12 +604,13 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 - **`igor seat add`** lends a seat in one step: it reads the token without echoing it, encrypts
   it, writes the seat file, and opens the pull request through `gh`, which it requires. Run
   again, it rotates the token.
-- **Igor is published to npm as `igor-agent`**, so a lender runs `npx igor-agent seat add` with
+- **Igor is published to npm as `igor-agent`**, so a lender runs `npx igor-agent@<version> seat add` with
   nothing installed but Node and a signed-in `gh`.
 - **The `work-triage` requirements stop saying "pool"**, and speak of the seats serving a role.
 - **Docs for both sides.** The operator guide in `docs/deployment.md`; the lender guide in
   `docs/seats.md`, which says what a lender trusts the operator with and that revoking the token
-  is how they withdraw or object. The lender guide documents one path, `npx igor-agent seat add`.
+  is how they withdraw or object. The lender guide documents one path, `npx igor-agent@<version> seat add`.
+
 
 ## Capabilities
 
@@ -659,9 +677,7 @@ it archives first.
   `pinned-skills` (#174), whose code is built after this change's (decision 11, and #174's
   decision 30). Build order and archive order differ for
   #175 and #174: each is built after this change but archives before it. The archive order is the
-  one issue #204 holds (decision 32). #143's decision 16 archives this change and #143 in one commit, and issue #148 records that rule as superseded, a conflict *Still open* puts to Adam; under decision 16 the seven changes #204 places between them, #75,
-  #120, #137, #217, #175, #174 and #113, archive too. Under decision 16, no commit leaves one of the two archived without the other, so no in-force requirement text names
-  `capacity_estimate`, which #143 removes, or `dedicated`, which this change removes. If #148's note stands instead, each change archives in its own commit, and between #143's archive and this change's an in-force requirement names `capacity_estimate`. The word
+  one issue #204 holds (decision 32). Each change archives in its own commit (decision 82). #204's archive order places seven changes between #143 and this change (#75, #120, #137, #217, #175, #174 and #113), and while they archive an in-force requirement names `capacity_estimate`, which #143 removes; that affects no running code. Once this change archives, no in-force requirement names `capacity_estimate` or `dedicated`. The word
   "dedicated" survives only as plain English in two in-force scenario titles, which openspec
   will not rename: *A role reserve with a dedicated seat is valid* (decision 16) and #143's *A
   dedicated seat runs uncalibrated*. #143 also withdraws the open changes

@@ -16,7 +16,9 @@ may spend: it rises from `1 − reserve` just after a reset to 100% at the next 
 larger of the seat's and the role's reserve. A *reading* is the seat's most recent observation of
 the window taken since that window last reset. This file defines *headroom* itself, in *How a seat
 is chosen without pools*, below. A *lore read*, a term from `lore-pull` (#208), is a process loading its
-configuration, role files and seat files from one commit of its lore checkout.
+configuration, role files and seat files from one commit of its lore checkout. #208 archives after this change, so until it does, the in-force specs use a term they do not
+yet define; Adam allowed that, and issue #204, which holds the archive order, records his
+permission (proposal, decision 81).
 
 The decisions, with who made them and the alternatives they turned down, open the proposal.
 This file gives the reasoning behind them.
@@ -243,8 +245,8 @@ original file is still there, and says nothing about which file is the copy.
 
 Igor shells out to `git`, `gh` and `claude` rather than reimplementing them, so shelling out to
 `age` would be the house style. The package is chosen instead because of who runs `igor seat
-add`: a lender, on their own machine, through `npx igor-agent seat add`. With the package, that
-lender needs only Node, and no `age` binary. Igor itself only encrypts and decrypts; the server's
+add`: a lender, on their own machine, through `npx igor-agent@<version> seat add`. With the package, that
+lender needs no `age` binary: Node and the signed-in `gh` that `igor seat add` requires are all. Igor itself only encrypts and decrypts; the server's
 keypair is made once by the operator with `age-keygen`, the standard tool (step 1 above). The
 package is Filippo
 Valsorda's TypeScript implementation of the same format.
@@ -542,7 +544,9 @@ opens the pull request with `gh`.
 ## Publishing to npm
 
 **Igor is published as `igor-agent`**, with `bin` `igor`, so
-`npx igor-agent seat add` is a lender's whole install. The description is the README's opening
+`npx igor-agent@<version> seat add`, with a signed-in `gh`, is a lender's whole install.
+`<version>` is the release the lender guide ships with, pinned so a lender never runs a release
+newer than the guide (proposal, decision 85). The description is the README's opening
 line, verbatim, so the package and the README cannot drift into two pitches (#27).
 
 A tag push runs a release workflow on GitHub-hosted runners. It builds the JavaScript, runs the

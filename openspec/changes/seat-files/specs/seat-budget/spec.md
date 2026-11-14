@@ -1100,7 +1100,27 @@ Igor SHALL NOT comment on an open lore pull request about a seat file; its own n
 - **WHEN** a pull request changing `seats/bob.yaml` is open
 - **THEN** no Igor comments on it; the only comment is the workflow's
 
+### Requirement: A seat file added back also tells the owner it last named
+
+Where a commit adds a seat file under an id whose file an earlier commit on the default branch
+removed, Igor's notice of that change (`lore-pull`, #208) SHALL mention, besides the `owner` the
+added file names, the `owner` the removed file last named, each where it has a GitHub login's form. #208 builds that notice; this change only states the rule.
+
+#### Scenario: A re-added seat file names a new owner
+
+- **WHEN** `seats/bob.yaml`, last naming `owner: bob`, was removed, and mallory's pull request adds
+  it back naming `owner: mallory`
+- **THEN** Igor's notice of that commit mentions both `@mallory` and `@bob`
+
+#### Scenario: A re-added seat file with the same owner mentions it once
+
+- **WHEN** carol's pull request adds back a removed `seats/bob.yaml`, naming the same `owner: bob`
+- **THEN** Igor's notice mentions `@bob` once
+
 ### Requirement: The lore repository's default branch requires a pull request before merging
+
+
+
 
 The lore repository's default branch SHALL require a pull request before merging, because only a
 pull request's notice reaches the lender before the change lands. As `check-a-lore-repository`

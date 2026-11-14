@@ -119,3 +119,24 @@ other form to `gh api`. Where the check cannot reach GitHub, the owner check is 
 
 - **WHEN** `gh api users/<owner>` fails for a reason other than the user not existing
 - **THEN** the owner check is reported as unchecked, with the reason, and not as passing
+
+### Requirement: The check says whether the notice workflow is the one `igor init` writes
+
+Where the lore repository has a seat file and its default branch carries
+`.github/workflows/seat-notice.yml`, `igor doctor` SHALL report a finding where that file differs
+from the workflow `igor init` writes for this version of Igor, naming `igor init` with the force
+option and the seat-notice target as the remedy. The version is that of the Igor running
+`igor doctor`, so after an upgrade an older workflow is reported too, and the same command
+updates it.
+
+#### Scenario: An edited notice workflow is reported
+
+- **WHEN** the default branch's `seat-notice.yml` has been edited so that it posts no mention
+- **THEN** `igor doctor` reports that it differs from the workflow `igor init` writes, and names
+  the command that restores it
+
+#### Scenario: The workflow `igor init` writes passes
+
+- **WHEN** the default branch's `seat-notice.yml` is byte for byte the one this version's
+  `igor init` writes
+- **THEN** no finding about its content is reported
