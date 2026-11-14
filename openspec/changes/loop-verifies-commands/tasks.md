@@ -2,11 +2,14 @@
 
 - [ ] 0.1 Start after `worker-user` (#175) has merged. The checks reuse its start as the worker
       user, its kill, and its removal of what the worker user wrote.
-- [ ] 0.2 Start after `concurrent-instances` (#179) has merged. Its sweep goes by rank, so the
-      checks need no change to `src/sweep.ts`.
+- [ ] 0.2 Start after `one-process-per-role` (#242) has merged. A process taking over its role
+      removes every tree whose name carries its role and its lock directory, whatever its age, so
+      the checks need no change to that removal. A tree #242 leaves to the abandoned-tree
+      threshold may outlive it; this task does not handle that, which design.md's *Open
+      Questions* holds.
 - [ ] 0.3 Start after `redact-state-branch` (#217), `keep-action-log` (#188) and then
       `review-evidence` (#190) have merged. Archive after #217, #188 and #190, and after #175
-      and #179.
+      and #242.
 - [ ] 0.4 Measure whether an Igor's GitHub App, with the permissions `docs/deployment.md` lists,
       may call `convertPullRequestToDraft` and `markPullRequestReadyForReview` on its own pull
       request. Record the result in this
@@ -103,8 +106,8 @@
 - [ ] 2.3 Give each round its own deadline of `check_minutes`. At the deadline, kill the running
       check, mark it `timed-out` and the rest of the round `not-run`. Kill a check through
       #175's kill of a worker: under `serve`, every process the worker user owns; under `run`,
-      the check's process group. Register each check with the code that kills workers on a stop,
-      a stand-down or a termination.
+      the check's process group. Register each check with the code that kills workers on a stop, on
+      the serving process stopping its workers (#242), or on a termination.
 - [ ] 2.4 While checks run, call `claimStatus` on a timer every `checkpointMs`, never two calls at
       once, and on `stopped` kill the running check and return the stop outcome. On a lost
       claim, finish the round, start no second run, and offer the work with that round's result.

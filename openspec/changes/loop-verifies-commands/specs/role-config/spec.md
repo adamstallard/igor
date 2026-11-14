@@ -2,35 +2,11 @@
 
 ### Requirement: The org base declares each repository's checks
 
-The org base SHALL accept `repos`, a mapping from a repository, written `owner/name`, to an
-entry holding `checks`, a list of exact command lines, `check_minutes`, the time limit for
-each round of a run's checks, and `ci_only`, a separate list of command lines that Igor does
-not run. A round is one pass through every check of the repository; a run
-makes one round, or two where the worker is sent a failure (`task-execution`). A key not of the
-form `owner/name`, or an entry holding any other key, SHALL be refused at load, naming that key
-and the repository. Two keys that differ only in case SHALL be refused at load, naming both. An entry with no `checks` declares none. `repos` SHALL be read from
-the org base alone: an intermediate base or a role file naming it SHALL be refused as a key
-nobody reads.
-
-Checks belong to the repository: every role with a repository in its `sources` gets that
-repository's checks, matching the key to the source's repository ignoring case, and a repository
-with no entry has none. No role adds a check or drops one.
-
-A check is run as its words, split on single spaces, with no shell. A check that is empty, that
-begins or ends with a space, or that holds two spaces in a row, a tab, a newline, or any of
-``; & | < > ( ) ' " \ $ ` * ? [ ] { } ~ # !`` SHALL be refused at load, naming it and its
-repository.
-
-`check_minutes` SHALL default to 15, and a value that is not a whole number from 1 to 60 SHALL be
-refused at load, naming the key and the repository.
-
-A `ci_only` line SHALL be refused at load under the same rules as a line under `checks`. Igor runs no
-`ci_only` line, and `task-execution` names each one in the pull request as a check Igor did not
-run. A `ci_only` line needs no `commands` entry to permit it. A line listed under both `checks` and `ci_only` SHALL be refused
-at load, naming it and the repository.
-
-An entry refused at load SHALL refuse every role, whether or not its `sources` name that
-repository.
+The org base SHALL accept `repos`, mapping each repository (`owner/name`) to an entry holding any of
+three keys: `checks`, a list of exact command lines; `check_minutes`, the time limit per round, one
+pass through every check; and `ci_only`, lines Igor never runs, left to the repository's CI. Each role gets the checks
+of each repository in its `sources`, matching the key to the source's repository ignoring case. No
+role adds or drops a check. An entry with no `checks` declares none.
 
 #### Scenario: Every role on a repository gets its checks
 
@@ -48,6 +24,24 @@ repository.
 - **WHEN** a role works `org/docs` and `repos` has no entry for it
 - **THEN** no check runs on that role's changes to `org/docs`
 
+#### Scenario: An entry with no checks declares none
+
+- **WHEN** the entry for `org/web` holds no `checks`
+- **THEN** no check runs on changes to `org/web`
+
+#### Scenario: role explain shows a role's checks
+
+- **WHEN** `igor role explain` is run for a role with `org/web` in its `sources`
+- **THEN** it shows `org/web`'s checks and `check_minutes`
+- **AND** it shows `org/web`'s `ci_only` lines, marked as not run by Igor
+
+### Requirement: A malformed repos map is refused at load
+
+Only the org base SHALL hold `repos`: a role or intermediate base naming it SHALL be refused as a
+key nobody reads. At load, a key not of the form `owner/name`, or an entry holding a key other than
+`checks`, `check_minutes` and `ci_only`, SHALL be refused, naming that key and its repository, as
+SHALL two keys differing only in case, naming both.
+
 #### Scenario: A role or an intermediate base that declares repos is refused
 
 - **WHEN** a role file, or an intermediate base it extends, names `repos`
@@ -62,6 +56,39 @@ repository.
 
 - **WHEN** the entry for `org/web` holds `check_mins: 10`
 - **THEN** every role is refused at load, naming `check_mins` and `org/web`
+
+### Requirement: A refused repos entry refuses every role
+
+An entry of `repos` refused at load, for its key or its contents, SHALL refuse every role, whether
+or not its `sources` name that repository, because `repos` is part of the org base, and a fault in
+the org base refuses every role inheriting it, as in *A role file refuses a key nobody reads*.
+
+#### Scenario: A role on another repository is refused too
+
+- **WHEN** the entry for `org/web` holds `check_mins: 10`, and a role's `sources` name only
+  `org/docs`
+- **THEN** that role is refused at load, naming `check_mins` and `org/web`
+
+### Requirement: Each round of checks has a time limit
+
+A round is one pass through every check of the repository. An execution of an item makes one
+round, or two where the worker is sent a failure (`task-execution`). `check_minutes` SHALL default to 15, and a value that
+is not a whole number from 1 to 60 SHALL be refused at load, naming the key and the repository.
+
+#### Scenario: The time limit defaults and is capped
+
+- **WHEN** an entry sets no `check_minutes`
+- **THEN** its limit is 15 minutes
+- **AND** an entry that sets `check_minutes: 90` is refused at load, naming `check_minutes` and
+  the repository
+
+### Requirement: A check is a command line run with no shell
+
+A check runs as its words, split on single spaces, with no shell. A check or `ci_only` line SHALL
+be refused at load, naming it and the repository, where it is empty, begins or ends with a space,
+holds two spaces in a row, a tab, a newline, or any of ``; & | < > ( ) ' " \ $ ` * ? [ ] { } ~ # !``,
+or is listed under both `checks` and `ci_only`. Igor runs no `ci_only` line, which needs no
+`commands` entry, and `task-execution` names each in the pull request as a check Igor did not run.
 
 #### Scenario: A shell line is refused
 
@@ -81,19 +108,6 @@ repository.
 
 - **WHEN** the entry for `org/web` lists `npm test` under both `checks` and `ci_only`
 - **THEN** every role is refused at load, naming `npm test` and `org/web`
-
-#### Scenario: role explain shows a role's checks
-
-- **WHEN** `igor role explain` is run for a role with `org/web` in its `sources`
-- **THEN** it shows `org/web`'s checks and `check_minutes`
-- **AND** it shows `org/web`'s `ci_only` lines, marked as not run by Igor
-
-#### Scenario: The time limit defaults and is capped
-
-- **WHEN** an entry sets no `check_minutes`
-- **THEN** its limit is 15 minutes
-- **AND** an entry that sets `check_minutes: 90` is refused at load, naming `check_minutes` and
-  the repository
 
 ### Requirement: A role's commands permit its repositories' checks
 
@@ -132,19 +146,13 @@ arguments; any other entry permits only that exact line.
 
 ### Requirement: Roles inherit an org-level base of the same shape
 
-A role SHALL inherit from the base named in `extends`, defaulting to the org-level base. A base
-SHALL use the identical file shape, so intermediate bases are possible without a second
-artifact type. The one exception is `repos`, which only the org base holds.
+A role SHALL inherit from the base named in `extends`, defaulting to the org-level base. Every
+base, intermediate ones included, SHALL use the identical file shape, except `repos`, which only
+the org base holds.
 
 `extends` SHALL name at most one base. A role naming two or more SHALL be refused, naming the
 bases and saying how to build a role that spans several areas: give it its own lane and its own
 `allow` and `commands`, and share what roles have in common through an intermediate base.
-
-A role with two bases would take whatever both allow, so a change to either base would change
-what it may do without its own file or its single line of ancestors changing, and nobody
-reviewing that change would see the role it widened. Two bases would also have to be reconciled
-on every field where the last level wins, such as `poll_minutes`. With one base, a role's own file
-and its ancestors say all it may do.
 
 #### Scenario: Org base inherited
 

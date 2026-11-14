@@ -1,9 +1,9 @@
 ## Decisions
 
-**Decided by Adam:**
+**Decided:**
 
 1. **Checks are declared per repository, in a `repos` map in the org base, `roles/org.yaml`**
-   (Adam, 2026-10-18, on #154). `repos` maps a repository, as `owner/name`, to the list of
+   (raised in #154). `repos` maps a repository, as `owner/name`, to the list of
    exact command lines Igor runs on every change to it, under `checks`, and to their time
    limit, `check_minutes`. Every role with that repository in its `sources` gets the same
    checks; a repository with no entry gets none. Only the org base may name `repos`; no role
@@ -11,18 +11,18 @@
    Checks belong to the repository, not to whichever role touches it, and the one lore
    repository, which holds every role file, serves many code repositories with different
    checks.
-2. **A failed check goes back to the worker once** (Adam, 2026-10-18). A round is one pass
+2. **A failed check goes back to the worker once**. A round is one pass
    through every check of the repository. Where any check of the first round fails or times out, the loop starts the worker a second time in the same tree, giving it each such
    check's command, result, exit code and the end of its output, and runs every check again on
    what that run leaves. Where a check still does not pass, Igor publishes a draft pull request
    that names each check that failed. *Rejected:* publishing a draft at once, which hands a
    reviewer a failure the worker could often have fixed; and retrying until the checks pass,
    which has no bound on cost.
-3. **A draft is within `pr`** (Adam, 2026-10-13). A role whose `allow` lists `pr` and not
+3. **A draft is within `pr`**. A role whose `allow` lists `pr` and not
    `draft-pr` still gets a draft when a check still fails. `allow` says what the work may
    become, and a draft is a pull request not yet ready. *Rejected:* opening the pull request
    ready because `allow` lists only `pr`, which presents failing work as ready for review.
-4. **Checks run after #153's staging and signing** (Adam, 2026-10-13), so they test the tree
+4. **Checks run after #153's staging and signing**, so they test the tree
    that is published. #153 (`signed-publishing`) signs every commit Igor pushes other than a
    merge; its prose pass, a model step, may edit docs and comments before it signs. The second
    run's changes become a second signed commit before the checks run again (decision 10). A
@@ -31,8 +31,8 @@
    #153, nothing is staged or signed, the checks run once the loop has read the changes, and
    both runs' changes are published as one commit. *Rejected:* checks before signing, which test
    a tree the prose pass may still change.
-5. **Which account a check runs as follows the command that started the Igor** (Adam,
-   2026-10-17). Under #175 (`worker-user`), `igor serve` always runs its worker as a separate
+5. **The command that started the Igor decides which account a check runs as.**
+   Under #175 (`worker-user`), `igor serve` always runs its worker as a separate
    worker user and `igor run` never does, so a check runs as the worker user under `serve` and as
    the Igor's own account under `run`. Under `run` a check can read the Igor's credentials, such
    as its GitHub App key; so can the worker that wrote the code the check runs, and #175 accepts
@@ -40,12 +40,13 @@
    own account under `serve`, which hands repository code the Igor's App key and the tokens of
    every seat it holds; and building this change before #175, which would leave #175 two starts
    of repository code to move to the worker user, the worker's and the checks', instead of one.
-6. **A pull request opened after a lost claim requests no reviewers**, even with a failed check
-   (Adam, 2026-10-13). *Rejected:* requesting them anyway, which asks people to review work the
+6. **A pull request opened after a lost claim requests no reviewers.** A draft opened for a
+   failed check, with the claim held, requests them as any pull request does.
+   *Rejected:* requesting them anyway, which asks people to review work the
    Igor no longer holds the issue for.
 7. **Checks run before every later push of the worker's changes onto an existing pull
    request**: a conflict resolution, gate two's push under #150, and each revision answering a
-   reviewer (Adam, 2026-10-13). Once the push is published, a comment with a fixed heading
+   reviewer. Once the push is published, a comment with a fixed heading
    reports the result, and a still-failing check returns the pull request to draft. The comment
    is posted only on a repository that declares checks. A clean merge the code host makes with
    no worker runs no checks. *Rejected:* checking only the opening run, which leaves gate two's
@@ -53,46 +54,46 @@
    every push, which adds nothing to the pull request's timeline for a watcher to see; and a
    comment on every push of a repository with no checks, which says nothing.
 8. **The checks' result is written only into #190's evidence table**, in #190's wording, with
-   each failed check's output in the block #190 lays out under the table (Adam, 2026-10-13). The
+   each failed check's output in the block #190 lays out under the table. The
    comment in decision 7 is the one exception. *Rejected:* a line of this change's own in the
    body, which would give the same result two wordings and two places.
 9. **This change builds and archives after #188 (`keep-action-log`) and #190
-   (`review-evidence`)** (Adam, 2026-10-13). It also follows #175, under decision 5, and #179,
-   whose sweep it relies on (*Impact*). Issue #204, the only place the whole archive order is
-   stated, lists #153, #188, #190 and then this change, all after #175 and #179 (Adam,
-   2026-10-19). It also follows `redact-state-branch` (#217), because it
+   (`review-evidence`)**. It also follows #175, under decision 5, and #242,
+   whose removal of leftover trees it relies on (*Impact*). Issue #204, the only place the whole archive order is
+   stated, lists #153, #188, #190 and then this change, all after #175, #242 and #217. It
+   follows `redact-state-branch` (#217) because it
    cites #217's requirement *Credential redaction replaces every credential the Igor knows*
-   and calls the function #217 implements. That requirement is the one redaction rule: Adam
-   decided on 2026-10-19 that #217 defines it, and `keep-action-log` (#188), which first
+   and calls the function #217 implements. That requirement is the one redaction rule:
+   #217 defines it, and `keep-action-log` (#188), which first
    defined it, now cites #217 too.
 10. **The second run's changes are a second commit, on top of the first run's signed commit**
-    (Adam, 2026-10-19; #153's decision 39). Where #153 is built, the first run's changes
+    (#153's decision 39). Where #153 is built, the first run's changes
     are a signed commit before the first round runs (decision 4). The second run's edits become
     a second commit on top of it. #153's steps, bug-hunter and the prose pass with its cold read,
     run on that commit's diff alone, and it carries trailers of its own. The second round runs on
     the second commit's tree. #153 (`signed-publishing`) sets out the steps; this change says
     only when the second commit is made. *Rejected:* restaging both runs' changes as one commit,
-    with every step from bug-hunter on run again over the whole of it, as #153 had recommended.
-11. **Role-level checks wait until a role needs them** (Adam, 2026-10-19). #154 proposed on
+    with every step from bug-hunter on run again over the whole of it.
+11. **Role-level checks wait until a role needs them**. #154 proposed on
     2026-10-01 that a role could add checks to its repository's list or drop some. Decision 1
     gives a role no key for either, and this change adds none. A later change can add such a key
     without amending any rule here, since every rule here reads the repository's list.
-12. **A later push whose checks all pass marks the pull request ready again** (Adam,
-    2026-10-19), but only where Igor's own failed check made it a draft, the role's `allow`
+12. **A later push whose checks all pass marks the pull request ready again**,
+    but only where Igor's own failed check made it a draft, the role's `allow`
     lists `pr`, and the claim is held. A draft a person made, or one a role limited to
     `draft-pr` opened, stays a draft.
-13. **#190's Tests row names the commit its checks ran on** (Adam, 2026-10-19), so a reviewer
+13. **#190's Tests row names the commit its checks ran on**, so a reviewer
     sees when the head has moved past it, as after a clean merge the code host makes with no
     worker, where no check runs. That is #190's to write (*Reported to other changes*).
-14. **Under `igor serve`, the worker user restores the tree before the second run** (Adam,
-    2026-10-19), from the tree object #175 records before the checks (#175's *The Igor
+14. **Under `igor serve`, the worker user restores the tree before the second run**,
+    from the tree object #175 records before the checks (#175's *The Igor
     publishes the tree it recorded before the checks*), which the worker user can read and
     cannot change. Igor's own account cannot remove what a check wrote inside a directory the
     worker user made. Under `igor run` the restore runs as Igor's own account, as the checks
     do.
 
-**Proposed, for Adam to approve.** Decisions 21 and 22 here are approved: *Decided by Adam on
-2026-10-21*, after decision 29, says so, and they keep their numbers.
+**Proposed, for Adam to approve.** Of decisions 15 to 29, these are proposals, except 21 and 22,
+which the *Approved* list after decision 29 approves; they keep their numbers here.
 
 15. **A check is an exact command line, run as its words with no shell, and a role that may open
     a pull request is refused when its `commands` does not permit a check of a repository in its
@@ -162,8 +163,8 @@
     how that work is offered.
     *Rejected:* a second run after the claim is lost, which spends the seat on an item the Igor
     no longer holds.
-21. **A second run that cannot finish keeps the first run's work** (approved by Adam,
-    2026-10-21). It passes the budget gate as
+21. **A second run that cannot finish keeps the first run's work** (approved).
+    It passes the budget gate as
     any run does. In five cases the loop publishes the first run's changes, as a draft with the
     first round's result and the first run's summary: the gate refuses the second run; the second
     run exits with an error; it is killed for a limit; a refusal refuses its changes; or #153
@@ -174,7 +175,7 @@
     is published. *Rejected:* publishing nothing on a failed retry, which discards work the worker
     finished.
 22. **After a conflict resolution, the second run's changes are a second commit on top of the
-    merge** (approved by Adam, 2026-10-21; #153's decision 45 says the same), signed by #153's steps on its own diff, as decision 10 has it for a second run that follows
+    merge** (approved; #153's decision 45 says the same), signed by #153's steps on its own diff, as decision 10 has it for a second run that follows
     no conflict resolution.
     The merge itself still carries no signature (decision 4). Where this change is built before
     #153, they join the merge commit, since neither commit would be signed. *Rejected:* adding
@@ -214,7 +215,7 @@
     Igor could not open it as a draft (task 0.5). *Rejected:* publishing nothing, which loses
     the work for a host setting. Decision 31 limits this to a role whose `allow` lists `pr`.
 
-**Decided by Adam on 2026-10-21:** decisions 21 (a second run that cannot finish keeps the first
+**Approved:** decisions 21 (a second run that cannot finish keeps the first
 run's work) and 22 (a second run after a conflict resolution is a second commit) are approved,
 and so are decisions 30 to 33, below.
 
@@ -240,7 +241,7 @@ and so are decisions 30 to 33, below.
     reach of the code the check runs, which can send it anywhere or leave it where a later run
     reads it.
     The one exception is a proxy URL's password. A check keeps the proxy variables the worker
-    is given, such as `HTTPS_PROXY`, password included. Adam accepted that on 2026-10-21. #175
+    is given, such as `HTTPS_PROXY`, password included. That exception is accepted. #175
     (`worker-user`) records the acceptance as its decision 47, and states the rule in its
     requirement *A worker gets a secret only through the Igor, which registers it*; this change
     cites that requirement. Under it the Igor registers the password with #217's
@@ -257,8 +258,8 @@ and so are decisions 30 to 33, below.
 
 **Still open:**
 
-- **From the third consistency read of 2026-10-21**, a fresh agent's reading of this change
-  against every other spec and change. Each is a defect to fix in this text; the rules above
+- **From a consistency read**, a fresh agent's reading of this change against every other
+  spec and change. Each is a defect to fix in this text; the rules above
   hold until then:
   - Decision 12 marks a pull request ready when a later push's checks all pass. A role whose
     `allow` lists both `pr` and `draft-pr` opens a draft whatever the checks say, so decision
@@ -276,31 +277,28 @@ and so are decisions 30 to 33, below.
   - The item below on the worker's umask calls it unmeasured, but #175's measurement 6.10
     gives it as `0022`.
   - The delimiter that marks check output as untrusted, and the quoting rule for the comment
-    after a later push, are not defined. Refusing every role for one repository's malformed
-    entry is in no decision. The `ci_only` refusal and the stand-down that kills a check have
-    no scenario.
+    after a later push, are not defined. Refusing a `ci_only` line for a shell character has no
+    scenario.
 
 - **For Adam, not yet answered: the cases for building this change before #153 can never
   happen.** Issue #204 builds #153 before this change, yet decisions 4 and 22 and the spec say
   what happens where #153 is not built. *Recommendation:* drop those cases when this change is next edited.
-- **Findings of the second consistency read of 2026-10-21,** made while decision 32 still gave
-  checks credentials; none of these passages depends on that. None is decided or fixed here:
+- **Findings of another consistency read.** None is
+  decided or fixed here:
   - **For Adam:** #216 (`lore-search`) withholds every worker run's transcript and summary from
     the pull request of an execution it counts as flagged, one whose worker met a sensitive
     question, which includes one whose second run ended before
     reporting, while decision 21 publishes the first run's summary then (#216's proposal hands
     this to this change). And on a later push, decision 23 sets the summary to the last run's,
     while #190 leaves the description as it is; #153's *For Adam* 1 raises the same.
-  - **For whoever next edits this change:** under #216 a check would inherit the worker's
-    `CLAUDE_CONFIG_DIR`, naming a directory #216 deletes after the run, and `IGOR_RUN=worker`,
+  - **For whoever next edits this change:** under #216 a check would inherit `IGOR_RUN=worker`,
     which marks repository code as a worker run; the comment after a later push quotes check
     output with no quoting rule like #190's, so repository code could close a fence or forge the
     heading; the org base's `repos` is outside the in-force role-file key list, which #216, #153
     and #143 each modify and this change does not; `check_minutes`' defaults are not marked as
     starting points, as the in-force role-config asks; and the spec still restates #153's
     second-commit rule.
-- **For Adam,** from the first consistency read of 2026-10-21, made before any text of
-  decision 32:
+- **For Adam,** from a consistency read made before decision 32 was written:
   - **Whether checks run at gate one at all.** Gate one carries only the specification, so a
     check that fails there fails on the base's own code. Every gate one on a repository whose
     base fails a check would then spend a second run, whose code fix gate one drops again, and
@@ -308,7 +306,7 @@ and so are decisions 30 to 33, below.
   - **What decision 29 does until task 0.5 is measured.** Until then a refused draft cannot be
     told from any other failure of the create call, as the item on task 0.5 below says, so
     either every failed create is retried as a ready pull request or none is.
-- **For whoever next edits this change,** from that first read. None is decided, and none is
+- **For whoever next edits this change,** from that same read. None is decided, and none is
   fixed in this text:
   - **A claim lost during the first run's #153 steps.** #153 then publishes the work as an
     unsigned draft, and no signed commit exists for the first round to run on. Whether the
@@ -318,8 +316,7 @@ and so are decisions 30 to 33, below.
     The second-commit rule restates #153's, and the outbox's second-run contents restate
     #175's.
   - **Unmeasured:** whether the worker user can restore a tree when the tree's git directory is
-    read-only to it, and whether a directory the worker user makes is writable by Igor's group
-    under the worker's umask. Neither has a task.
+    read-only to it. It has no task.
   - **Against in-force specs:** the draft-only handoff in task 0.5 names neither the remaining
     steps nor who could continue, which *graceful-handoff* requires; and where the budget gate
     refuses the second run, whether *seat-budget*'s handoff is also posted is unsaid.
@@ -360,10 +357,7 @@ and so are decisions 30 to 33, below.
 - **#190 (`review-evidence`):** its Tests row names the commit its checks ran on (decision 13),
   and names each CI-only check as not run by Igor, in task 3.2's wording, which #190 adopts
   (decisions 32 and 33). *Impact* lists three more places #190 needs amending.
-- **#175 (`worker-user`):** its decision 17 says the second run's tree "is recorded, checked
-  and published the same way". Under decision 10 it is published as a second commit, on top of
-  the first run's. #175 also lists, as a question this change has open, who restores the tree
-  before the second run, which decision 14 settles. And this change starts a check through a
+- **#175 (`worker-user`):** this change starts a check through a
   wrapper that runs it as the worker user and reports a program it cannot find; neither #175
   nor this change defines that wrapper.
 - **#188 (`keep-action-log`):** it says this change writes only into #190's table, while
@@ -373,7 +367,7 @@ and so are decisions 30 to 33, below.
 
 The loop runs no test or lint command (#186). The worker's system prompt lists the role's
 commands and leaves testing to the worker (`src/execute.ts:169-182`). The pull request body is
-the worker's own summary (`prBody`, `src/execute.ts:1169-1185`). So the only evidence that a
+the worker's own summary (`prBody`, `src/execute.ts:1178-1193`). So the only evidence that a
 change passes is the worker saying so. Igor also never runs `git commit`, so a repository's
 pre-commit hooks never run on its changes (#154). This change runs no hooks: a repository gets
 what its hooks run only by declaring the same commands as checks.
@@ -410,8 +404,10 @@ None.
 - **Depends on `worker-user` (#175).** Under `serve` the checks use #175's code for starting a
   process as the worker user, killing it, and removing what the worker user wrote. Under `run`
   they run as the Igor's own user, as the worker does.
-- **Built after `concurrent-instances` (#179).** Its sweep removes leftover trees by rank, not by
-  age, so a tree held through the checks and the second run needs no change to the sweep.
+- **Built after `one-process-per-role` (#242).** A process taking over its role removes every
+  tree whose name carries its role and its lock directory, whatever its age, so a tree held through the checks
+  and the second run needs no change to that removal. A tree #242 leaves to the
+  abandoned-tree threshold, such as one `igor run` made, is an open question in design.md.
 - **Overlaps `review-evidence` (#190)**, which owns the table, its Tests row wording, and the
   output block under it. #190 needs amending in three places. It words the checks as the role's
   (`not checked: the role declares no checks`, the role's `check_minutes`, the order the role
