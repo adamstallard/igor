@@ -39,3 +39,8 @@ code by whoever next touches that area.
 **A comment describes the code as it is now.** No history, no narration of what changed. Where
 a past mistake is worth preventing, write it as a warning in the present tense. See the
 `sharper-comments` skill.
+
+**A test names the OpenSpec scenario it checks** with `@scenario <capability>: <Scenario name>`,
+in a comment above the test or in its name, one tag per scenario it checks. CI fails on a scenario
+in `openspec/specs/` that no test tags and the baseline doesn't list, and on a tag that names no
+scenario. See the `spec-trace` skill.
