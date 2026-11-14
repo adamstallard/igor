@@ -7,18 +7,18 @@ its configuration alone cannot show, and changes nothing.
 
 ### Requirement: Setup is reported by one command, over what configuration alone cannot show
 
-A single command SHALL report whether a configured lore repository is wired to work, covering
-what neither the configuration nor a lore entry can show on its own. It SHALL inspect at least
-the destination, each role file under it, each role's sources and seat, the org-level `commands`
-list, the default branch's protection and required approvals, the reconciliation workflow and
-its push, the state branch, and each role's GitHub App. A per-role check SHALL cover every role.
+A single command SHALL report whether a configured lore repository is wired to work. It SHALL
+inspect at least the destination, every role file, each role's sources, seat and effective
+`commands`, the default branch's protection and required approvals, the reconciliation workflow and
+its push, the state branch, and each role's GitHub App, read with that App's own key. *The
+credential* is the code-host credential the command runs with, such as a person's `gh` login or a CI
+token.
 
 #### Scenario: The credential and the App keys
 
-- **WHEN** the command runs
-- **THEN** *the credential*, wherever a check names it, is the code-host credential the command
-  runs with, such as the person's `gh` login or a CI token
-- **AND** a role's App is read with that App's own key
+- **WHEN** a check reads a repository setting or the state branch
+- **THEN** it reads it with the code-host credential the command runs with
+- **AND** a role's App check reads that App with the App's own key, never with the credential
 
 #### Scenario: Direct pushes to the default branch are possible
 
@@ -47,16 +47,25 @@ its push, the state branch, and each role's GitHub App. A per-role check SHALL c
 
 #### Scenario: Approvals are required
 
-- **WHEN** the destination requires an approving review on a pull request
-- **AND** fewer than two people with write access could approve
+- **WHEN** the destination requires N approving reviews on a pull request
+- **AND** fewer than N + 1 people with write access could approve, counting the pull request's
+  author among them
 - **THEN** it is reported as a finding
 - **AND** the finding states that no account may approve its own pull request
 
 #### Scenario: Approvals are required where somebody else can give one
 
-- **WHEN** the destination requires an approving review
-- **AND** two or more people with write access could approve it
+- **WHEN** the destination requires N approving reviews
+- **AND** at least N + 1 people with write access could approve, and no code owners' review is
+  required that only the pull request's author could give
 - **THEN** the check passes, and the report states that requiring approvals blocks self-merge
+
+#### Scenario: A code owners' review only the author could give
+
+- **WHEN** the destination requires review from code owners
+- **AND** for some path under the destination the only code owner with write access is one person
+- **THEN** it is reported as a finding naming that path, since that person's own pull requests
+  touching it can never merge
 
 #### Scenario: The reconciliation workflow is absent
 
@@ -75,9 +84,10 @@ its push, the state branch, and each role's GitHub App. A per-role check SHALL c
 
 #### Scenario: A role's App cannot label the repository it claims on
 
-- **WHEN** a role's App is not installed on a repository the role works, or its installation
-  lacks a permission the start-up check requires there
-- **THEN** it is reported as a finding naming that role and the permission it lacks
+- **WHEN** a role's App is not installed on a repository the role works or on the lore repository,
+  or its installation lacks a permission surface-adapter's start-up check requires there
+- **THEN** it is reported as a finding naming that role, the repository and what is missing
+- **AND** the finding says the role's App cannot label or comment on items there
 
 #### Scenario: A role that claims on GitHub is checked by the start-up check
 
@@ -86,7 +96,8 @@ its push, the state branch, and each role's GitHub App. A per-role check SHALL c
   surface-adapter's *An Igor that cannot act as its App does not start*, for that role's App,
   its identity under work-claiming's *On GitHub, an Igor is a GitHub App and claims with its
   role's label*
-- **AND** the report shows what that check finds
+- **AND** each refusal that check names is reported as a finding, except a refusal only for
+  credential variables missing from the command's environment, which is reported as unchecked
 
 #### Scenario: A role names no source
 
@@ -112,8 +123,13 @@ its push, the state branch, and each role's GitHub App. A per-role check SHALL c
 
 #### Scenario: An unreachable state branch
 
-- **WHEN** the state branch cannot be read
+- **WHEN** the state branch exists and cannot be read
 - **THEN** it is reported as a finding
+
+#### Scenario: A state branch not yet created
+
+- **WHEN** the state branch does not exist, as before any Igor has run against the repository
+- **THEN** it is not a finding, and the report says it is created when first needed
 
 #### Scenario: A credential that cannot push to the state branch
 
@@ -134,7 +150,8 @@ its push, the state branch, and each role's GitHub App. A per-role check SHALL c
 #### Scenario: A role that claims only on Linear
 
 - **WHEN** a role claims only on Linear
-- **THEN** the report says the App check does not apply to it
+- **THEN** its App check still runs, on the repositories it works and on the lore repository, since
+  it acts on GitHub as its App
 
 #### Scenario: Approvals that cannot be graded
 
@@ -145,7 +162,8 @@ its push, the state branch, and each role's GitHub App. A per-role check SHALL c
 #### Scenario: A role's seat is the one `igor serve` would spend
 
 - **WHEN** the command decides whether a role has a seat
-- **THEN** it resolves the role's seats as `seat-budget` defines that for `igor serve`
+- **THEN** it resolves the seat the role references, directly or through a pool, as `seat-budget`
+  defines that reference
 - **AND** the role has a seat if that yields at least one declared seat, whether or not that
   seat has budget left, and has none otherwise
 
@@ -162,8 +180,9 @@ its push, the state branch, and each role's GitHub App. A per-role check SHALL c
 
 #### Scenario: Removals are not permitted
 
-- **WHEN** the org-level `commands` list permits no removal of a tracked file
-- **THEN** it is reported as a finding
+- **WHEN** a role's effective `commands` list, after what it inherits from `roles/org.yaml` and any
+  narrowing of its own, permits no removal of a tracked file
+- **THEN** it is reported as a finding naming that role
 - **AND** the finding states that the worker cannot delete a file and that the refusal would
   otherwise arrive after the work is paid for
 
@@ -189,8 +208,8 @@ a seat whose token cannot be read, the report SHALL name the command that covers
 
 #### Scenario: The loader's validation is invoked, not re-implemented
 
-- **WHEN** the configuration's validation finds a problem, such as a seat file carrying an
-  encrypted token where no key to decrypt it is declared
+- **WHEN** the configuration's validation finds a problem, such as a role naming a seat nobody
+  declared
 - **THEN** the report shows that finding, naming the validation as its source
 - **AND** no key file or token is read to produce it
 
@@ -201,14 +220,20 @@ a seat whose token cannot be read, the report SHALL name the command that covers
 
 ### Requirement: Report text cannot start a workflow command
 
-Text the report takes from repository files, such as a file name, a key or a seat's owner, SHALL
-be printed so that it cannot act as a GitHub Actions workflow command: no line of the report
-SHALL begin with `::` because of such text.
+Text the report takes from repository files or from the code host, such as a file name, a key or a
+seat's owner, SHALL be printed so that it cannot act as a GitHub Actions workflow command: no line
+of the report SHALL begin with `::` or `##[` because of such text, whether or not leading whitespace
+comes first.
 
 #### Scenario: A file name cannot inject a workflow command
 
 - **WHEN** a role file is named `::add-mask::x.yaml` and the report runs in GitHub Actions
-- **THEN** no line of the report begins with `::`
+- **THEN** no line of the report begins with `::`, with or without leading whitespace
+
+#### Scenario: The older command form cannot be injected either
+
+- **WHEN** a role file is named `##[warning]x.yaml`
+- **THEN** no line of the report begins with `##[`, with or without leading whitespace
 
 ### Requirement: The check reports and never repairs
 
@@ -277,11 +302,10 @@ as passing.
 
 ### Requirement: The exit status distinguishes a finding from a clean run
 
-The command SHALL exit non-zero when it has at least one finding, and zero otherwise, so that it
-can be a step in CI or a smoke test after setup. A skipped check is not a finding and SHALL NOT
-by itself make the exit status non-zero; a run in which every check was skipped SHALL exit zero
-and SHALL say plainly that nothing was checked, so that a green exit is never mistaken for a
-verified setup.
+The command SHALL exit non-zero when it has at least one finding, and zero otherwise. A skipped
+check is not a finding and SHALL NOT by itself make the exit status non-zero; a run in which every
+check was skipped SHALL exit zero and SHALL say plainly that nothing was checked, so that a green
+exit is never mistaken for a verified setup.
 
 #### Scenario: Something is wrong
 

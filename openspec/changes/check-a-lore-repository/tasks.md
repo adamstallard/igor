@@ -1,6 +1,3 @@
-**[#156](https://github.com/adamstallard/igor/pull/156)'s implementation, App support, has
-merged:** 3.7 checks Apps only, with no check of a claiming account's write access.
-
 ## 1. The agreement (gate one — this pull request)
 
 - [x] 1.1 Seven `setup-check` requirements: the command and what it inspects, its two
@@ -28,24 +25,30 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       declared, since resolving it fails
 - [ ] 2.3 Every role names at least one source, since nothing else refuses a role with none;
       each role naming none is a finding
-- [ ] 2.4 The org-level `commands` list permits removing a tracked file. Igor publishes a change
+- [ ] 2.4 Every role's effective `commands` list, after what it inherits from `roles/org.yaml`
+      and any narrowing of its own, permits removing a tracked file; a role whose list does not is
+      a finding naming it. Igor publishes a change
       made only of removals ([#88](https://github.com/adamstallard/igor/pull/88)), so an Igor that
       cannot run `git rm` fails work it would otherwise publish
 - [ ] 2.5 The report renders with no credential present: every credentialled check unchecked
       with its reason, the local half run, exit zero
 - [ ] 2.6 Every role has a seat to spend from, whether or not any seat is declared (proposal,
-      decision 3). A role with none is a finding naming the role, once: where seats are declared
-      it is 2.2's role that does not resolve, and where none are, 2.6 reports it. Test: the
+      decision 2). A role with none is a finding naming the role, once: where seats are declared
+      2.2 reports it as a role that does not resolve and 2.6 does not report it again; where none
+      are, 2.6 reports it. Test: the
       scenario *A role with no seat*, with seats declared and with none
 - [ ] 2.7 Invoke the configuration loader's validation in a mode that reads no secret, no private
       key file and no token, and report each finding it makes, named with its source (proposal,
-      decision 4). Where the validation has no such mode, add one rather than re-implementing a
+      decision 3). Where the validation has no such mode, add one rather than re-implementing a
       check. A configuration that fails to load is a finding, and the checks that do not need it
       still run. Test: the scenarios *The loader's validation is invoked, not re-implemented*
       and *A configuration that fails to load*
-- [ ] 2.8 Print text taken from repository files so that no report line begins with `::`, which
-      GitHub Actions reads as a workflow command. Test: *A file name cannot inject a workflow
-      command*
+- [ ] 2.8 Print text taken from repository files or the code host so that no report line begins
+      with `::` or `##[`, with or without leading whitespace, which GitHub Actions may read as a
+      workflow command. Test: *A file name cannot inject a workflow command* and *The older
+      command form cannot be injected either*
+- [ ] 2.9 Measure which lines the Actions runner parses as workflow commands, with leading
+      whitespace and in the `##[` form, and record the result in `design.md`
 
 ## 3. The credentialled half
 
@@ -58,22 +61,24 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       lists the administrator role among its bypass actors. Where they can, the finding says that
       an administrator can push straight to the default branch. Test: *Direct pushes to the
       default branch are possible* and *Administrators can push past the pull-request rule*
-- [ ] 3.3 Approvals are not required, graded on whether a second person could approve, since
-      an Igor's approval never counts; unchecked where the account list cannot be read
+- [ ] 3.3 Approvals are graded on whether N + 1 people with write access could approve a rule
+      requiring N, since an Igor's approval never counts; a code owners' rule is graded per path;
+      unchecked where the account list cannot be read
 - [ ] 3.4 The reconciliation workflow is present **on the default branch**, not merely in the
       working tree — an uncommitted workflow never runs
 - [ ] 3.5 The workflow's actor may bypass the protection, checked only where the branch is
       protected and the workflow is present, and reported unchecked where the bypass list is
       administrative and the credential is not
-- [ ] 3.6 The state branch is reachable, and the credential holds the write permission pushing
-      to it needs — read from the permission, never by writing
-- [ ] 3.7 Invoke, for each GitHub role, the check `igor run` and `igor serve` make before
+- [ ] 3.6 The state branch is reachable, or reported as not yet created where it does not exist,
+      and the credential holds the write permission pushing to it needs, read from the permission,
+      never by writing
+- [ ] 3.7 Invoke, for every role, the check `igor run` and `igor serve` make before
       discovery (surface-adapter's *An Igor that cannot act as its App does not start*). That
       check verifies the role's App is installed where the role works, with the permissions it
-      needs; `doctor` runs it on a repository where nothing has been claimed yet. A role whose App key is not in the environment is unchecked; a role that
-      claims only on Linear is not applicable. Confirm against the live API where an
-      installation's permissions can be read, and record it in `design.md`. Since #156 every
-      role's identity on GitHub is its App, so 3.7 has no branch for any other kind
+      needs; it has to work on a repository where nothing has been claimed yet. A role whose App credential variables are not in the
+      environment is unchecked; every other refusal is a finding. A role that claims only on
+      Linear is checked the same way, since it acts on GitHub as its App. Confirm against the live
+      API where an installation's permissions can be read, and record it in `design.md`
 - [ ] 3.8 Every credentialled check degrades individually: one unreadable endpoint skips one
       check, not the run
 
@@ -105,3 +110,10 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       than documentation — produced a setup check, naming where it is documented. The list of
       two stays two, because both of those are about a role's effective behaviour and this is
       about a repository's wiring
+
+## 6. At archive
+
+- [ ] 6.1 Move into `openspec/specs/setup-check/decisions.md` each rejection or reason in
+      `design.md` that has evidence of the kind a decision record requires (a failure, a
+      measurement or an outside fact), such as the measurement that an
+      App's bot reads `push: false` on the collaborator-permission endpoint
