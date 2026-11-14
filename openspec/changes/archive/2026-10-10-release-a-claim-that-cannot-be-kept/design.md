@@ -18,6 +18,12 @@ handler is needed as well.
 The run under the claim is its own function, `runClaimedItem`, rather than a block indented inside
 the handler. Its name says what the handler protects: the phase that runs under a held claim.
 
+**A finished run releases its claim and leaves the item open.** The item is closed by whatever
+closes it for any work, such as its pull request merging, not by the Igor. Holding the claim
+until then would tell everyone to stand off an item nobody is working. Releasing loses nothing:
+discovery finds the item again, and triage skips it while the artifact the run left is in flight
+(*Items with work already in flight are skipped*), so it is not claimed a second time.
+
 ## Ending the cycle when the surface stops answering
 
 When the tracker or host stops answering, the cycle ends instead of refusing each remaining item.

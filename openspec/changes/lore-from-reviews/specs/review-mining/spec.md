@@ -1,3 +1,10 @@
+## Purpose
+
+Mine a configured set of repositories' pull request review comments for corrections that carry
+signal: extract them, keep those on merged pull requests that the host can anchor to a line,
+record a comment as `stuck` when the host no longer anchors it in the final diff, exclude bots, weight
+each comment by its author, and filter out nits.
+
 ## ADDED Requirements
 
 ### Requirement: Review comments are extracted only from configured repositories
@@ -147,11 +154,6 @@ do not reliably carry a marker in their login.
 Mining SHALL record processed comment identifiers in a ledger, and a subsequent run SHALL NOT
 reprocess a comment already in the ledger. Re-running over an expanded history SHALL add new
 material without duplicating prior results.
-
-The ledger is also what stops a rejected candidate returning: its source comments are already
-processed, so the cluster cannot re-form. A later comment expressing the same rule does form a
-new, smaller cluster and may be proposed again — that is new evidence for a rule the team
-previously declined, and asking once more is the intended behaviour rather than a defect.
 
 #### Scenario: Second run adds only new comments
 
