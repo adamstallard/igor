@@ -3,10 +3,12 @@
 (* Several Igors in one stopped scope racing for its probe, as the        *)
 (* OpenSpec change `probe-claim` specifies it.                            *)
 (*                                                                         *)
-(* The scope is a seat several roles draw on, so the Igors are processes *)
-(* of more than one role, and two processes of one role may pick the     *)
-(* same item. The Igors in First are processes of one role, those in   *)
-(* Second of another, and each role has NItems items of its own.        *)
+(* The scope is a seat several roles draw on, so the Igors cover more    *)
+(* than one body of work, and two Igors that cover the same work, such   *)
+(* as two roles set up to do it, may pick the same item. The Igors in    *)
+(* First cover one body of work, those in Second another, and each body  *)
+(* of work has NItems items of its own. RoleOf, despite its name, gives  *)
+(* an Igor's body of work.                                               *)
 (*                                                                         *)
 (* The execution log is a sequence of rows in storage order. Four kinds  *)
 (* matter here:                                                          *)
@@ -44,9 +46,9 @@
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
 CONSTANTS
-    First,            \* processes of one role, as model values
-    Second,           \* processes of a second role on the same seat
-    NItems,           \* items per role
+    First,            \* Igors that cover one body of work, as model values
+    Second,           \* Igors that cover another, on the same seat
+    NItems,           \* items per body of work
     MaxLosses, MaxLate, MaxStale, MaxCrashes, MaxClaimLosses,
     MaxRounds,        \* probes that may meet the condition again
     MaxNothing,       \* probes that may observe nothing
@@ -60,9 +62,9 @@ CONSTANTS
 
 Igors == First \cup Second
 RoleOf == [i \in Igors |-> IF i \in First THEN 1 ELSE 2]
-\* Processes of one role are interchangeable. Safety configurations use this
-\* symmetry. Liveness configurations must not: TLC can miss a liveness violation
-\* under symmetry.
+\* Igors that cover the same work are interchangeable. Safety configurations
+\* use this symmetry. Liveness configurations must not: TLC can miss a liveness
+\* violation under symmetry.
 Symmetry == Permutations(First)
 Items == {<<r, k>> : r \in {RoleOf[i] : i \in Igors}, k \in 1..NItems}
 ItemsOf(i) == {x \in Items : x[1] = RoleOf[i]}
@@ -276,7 +278,7 @@ Finish(i) ==
     /\ UNCHANGED <<log, attempt, chosen, next, orphaned, lapsed, cooled,
                    losses, lates, stales, crashes, claimLosses>>
 
-\* A process dies. Its probe row, landed or still in flight, is left to lapse.
+\* An Igor dies. Its probe row, landed or still in flight, is left to lapse.
 Crash(i) ==
     /\ pc[i] # "idle" /\ crashes < MaxCrashes
     /\ crashes' = crashes + 1

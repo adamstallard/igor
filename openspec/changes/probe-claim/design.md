@@ -21,11 +21,11 @@ Three more defects in the same code each give a second probe or hold a scope for
   `warnOnly` and the caller goes on to claim.
 
 `appendRecord` in `src/state.ts` reads the day's partition and writes it back. Every write to the
-state branch moves its one ref, and #179 measured that two concurrent writes conflict on that ref
-even when they touch different files (#179's proposal, under its measurements). So the store
-accepts rows one at a time, in a single order. A conflict is not retried, so the race most often
-shows as a failed append whose Igor takes the item anyway. #179's *A conflicted state write
-discards nothing* would retry it.
+state branch moves its one ref, and two concurrent writes conflict on that ref even when they
+touch different files, as #179's proposal measured (in its section on measurements, on the branch
+`concurrent-instances-restated`). So the store accepts rows one at a
+time, in a single order. No rule in force retries a conflict, so a racing Igor's append can fail,
+and the Igor then takes the item anyway.
 
 Within a day's partition, a file's line order is the order the store accepted its rows. Across
 partitions, `readLog` puts the earlier day first, which can disagree with acceptance order at
@@ -36,6 +36,12 @@ also caches a past day's partition for the life of the process, so a row accepte
 yesterday's file is never read by a process that cached the file first.
 
 ## Decisions
+
+The requirements cover Igors in `role-config`'s sense, each a role: within one Igor a single
+process appends probe rows, one per key at a time, because a role runs as one serving process
+whose cycle appends them. Two processes
+of one role bidding at once, such as an `igor run` beside the role's `igor serve`, are outside
+them.
 
 1. **Adopt eight new `stuck-conditions` requirements**: *Exactly one Igor takes a due probe,
    decided by the log after it writes*, and seven that define its terms and its other rules. They
@@ -49,14 +55,13 @@ yesterday's file is never read by a process that cached the file first.
    midnight a row can land ahead of one already read (`NoSettle.cfg`). Each `.cfg` named here is a
    configuration of the TLA+ model of decision 7 (*The model*). See *How decision 2 works* and
    *Rejected*.
-3. **A void row names its probe row by an identifier, not its item.** Two processes of one role
-   can pick the same item, and a void by item would end the winner's probe too (`NoVoidById.cfg`).
+3. **A void row names its probe row by an identifier, not its item.** Two Igors can pick the same
+   item, as two roles set up to do the same work do. A void by item would end the winner's probe
+   too (`NoVoidById.cfg`).
 4. **Every Igor whose row does not decide voids it, and so does one whose append failed or may
    have failed.** A row nobody is working would otherwise hold the scope until it lapses.
 5. **An item that would probe several conditions probes them one at a time, in key order, and is
-   taken only where its rows decide for all of them** (Adam, 2026-10-24). His "one condition at a
-   time, the one whose key sorts first" means this, as the agent coordinating this work for Adam confirmed the same day, not that an item
-   probes only its first-sorting condition. The Igor appends a probe row for each key in turn,
+   taken only where its rows decide for all of them**. The Igor appends a probe row for each key in turn,
    each only once its row for the previous key decides. Where a row does not decide, the Igor
    voids every row it appended for the item, those that had decided included. *Rejected:* bidding
    for every key at once, which lets two Igors each win one key, void both, and collide the same
@@ -65,50 +70,42 @@ yesterday's file is never read by a process that cached the file first.
    oldest unended row. This change decides only that property, not the lapse rule. The code on
    `main` lapses a row older than `SWEEP_AFTER_MS`, the worker's run ceiling plus an hour, counted
    from the timestamp in the row, which every Igor reads alike; this change leaves that rule as it
-   is. #179 removes the run ceiling, so Adam decided on 2026-10-24 that #179 replaces the rule with
-   a keepalive in the log (#179's decision 22 and task 4.9): the Igor working a probe item appends
-   a row naming its probe row every poll interval of its own role, and the probe lapses once 90
-   minutes pass with no such row. That is three times #179's 30-minute maximum poll interval, the
-   longest any role may set, so an Igor that misses three keepalives in a row is treated as no
-   longer working the item. *Rejected:* a rank's heartbeat as the lapse rule, a rank being one of the processes serving a
-   role under #179. A condition scoped to
-   a seat or the whole Igor is shared by every role on it, and a process sees only its own role's
-   heartbeat files.
+   is, and needs no keepalive row while the run ceiling stands, since a live run ends before the
+   bound. A change that removes the run ceiling must give the probe a lapse rule that every Igor
+   judges alike from the log, such as a keepalive row the Igor working the probe appends at a
+   fixed period, with the probe lapsing once a stated time passes with none. *Rejected:* a lapse
+   judged from a signal one role keeps for its own processes. A condition scoped to a seat is shared
+   by every role that draws on it, and a process of one role cannot read such a signal
+   for another role.
 7. **A TLA+ model, `model/ProbeClaim.tla`, proves the requirement**, with one negative
    configuration per rule, run by `.github/workflows/tla-probe-claim.yml`.
 8. **A lapse that compares a log timestamp with a reader's clock allows 5 minutes of clock
-   skew** (2026-10-24, at Adam's request to bound the skew; the figure is this change's choice).
+   skew**.
    Every lapse bound must cover it, so no Igor reads a live Igor's row as lapsed while the hosts'
    clocks agree within 5 minutes, as NTP keeps them. Hosts further apart are outside what the
    requirements cover. The model holds no clocks, so it checks neither case. Igors whose clocks differ can still disagree on
    a row near its bound. That delays a probe but takes no item twice, since an Igor that still
    counts the row as holding takes no item.
-9. **The append deadline and the probe settle interval are fixed in code** (Adam, 2026-10-24),
-   an exception to `role-config`'s rule that every interval is configurable. An Igor's probe
+9. **The append deadline and the probe settle interval are fixed in code**, an exception to `role-config`'s rule that every interval is configurable. An Igor's probe
    settle interval has to outlast every other Igor's append deadline, not only its own; were
    either configurable, one Igor's settle interval could end while another's append is still
    within its deadline. Task 4.1 sets the deadline from a measurement of an append. The settle
-   interval is the longer of twice the deadline and the deadline plus 5 minutes (Adam,
-   2026-10-24). Twice is a margin chosen because a probe is rare, so the wait costs little. The 5
+   interval is the longer of twice the deadline and the deadline plus 5 minutes. The factor of two is a chosen margin against error in the measured deadline, not a fitted value. The 5
    minutes cover clock skew: at midnight a slow host can begin a row up to 5 minutes after another
    Igor's row landed in the new day's partition, yet stamp it before midnight by its own clock, so
    the row is filed in the earlier day's partition, ahead of that row in storage order. Such a row
    begins at most 5 minutes after that row landed and lands at most one deadline after it begins,
    so it has landed once the deadline plus 5 minutes have passed since that row landed. The
    probe settle interval derives from the append deadline, not from any poll interval, and is not
-   #179's claim settle interval.
-10. **Of the appends to the log, this change gives a deadline only to a probe row's** (Adam,
-    2026-10-24). A void row's append has none, nor does any other append this change leaves as it
-    is; #179 gives its keepalive append a deadline of its own. #179's rule that a conflicted state
-    write is retried until it succeeds covers the appends without a deadline once #179's retry is
-    built. Until then a void row whose append fails is not retried, and its probe row holds the
-    scope until it lapses.
-11. **This change stays second in #204's archive order** (Adam, 2026-10-24). #204 sets the order
-    in which open changes archive. First is #101, already archived, so this fix to a rule in force
-    waits behind no change it does not depend on.
-12. **The midnight gap is accepted** (2026-11-01, settled by the agents coordinating this work
-    under the rule Adam set for which questions they may settle without him; it stands until he
-    says otherwise). The gap is described under *The settle interval, and its one gap*. It needs a
+   `work-claiming`'s claim settle interval.
+10. **Of the appends to the log, this change gives a deadline only to a probe row's.** A void row's append has none, nor does any other append this change leaves as it
+    is. No rule in force retries a conflicted append, so a void row whose append fails is not
+    retried, and its probe row holds the scope until it lapses. A change that retries conflicted
+    state writes must let a probe row's append stop at its deadline, retries included.
+11. **This change archives second in #204's order**, just after #101, already archived, whose
+    rule in force it fixes. #204 sets the order in which open changes archive, so this fix waits
+    behind no change it does not depend on.
+12. **The midnight gap is accepted.** The gap is described under *The settle interval, and its one gap*. It needs a
     late write, at midnight, while two Igors race for one probe. Its cost is one extra probe, a
     worker run against a fault that is probably still there, and it shows in the log as two probe
     rows that each led to a run. The conditional append under *Rejected* would close it; revisit
@@ -120,8 +117,7 @@ yesterday's file is never read by a process that cached the file first.
 Two of its parts are already in force for claims, in `work-claiming`'s *Assignment expresses a
 claim; ordering resolves it*: it orders by storage order, never a timestamp, and it
 uses no conditional write. The third, that the earliest row decides after a settle interval, is not
-in force for claims, where the later write wins; it is the rule #179 brings in for claims among
-processes of one role, so a reader who knows #179's claims already knows how probes are decided.
+in force for claims, where the later write wins.
 
 What each rule buys, and the model's negative that shows it is needed:
 
@@ -130,15 +126,14 @@ What each rule buys, and the model's negative that shows it is needed:
 | Re-read after the row lands | Two Igors that read before either row lands both take an item | `NoReread.cfg` |
 | Wait the settle interval first | An append still in flight lands ahead of a row already read as deciding, and its Igor decides too | `NoSettle.cfg` |
 | The oldest unended row decides | A stale re-read, which misses rows that landed after the Igor's own, shows that Igor its own row as the newest, so it takes the item; another Igor reading the full log sees its own, later row as the newest and takes it too | `NoOldestDecides.cfg` |
-| A void names its row | Two processes of one role pick the same item; the loser's void ends the winner's probe, and another Igor probes beside a running one | `NoVoidById.cfg` |
+| A void names its row | Two Igors pick the same item; the loser's void ends the winner's probe, and another Igor probes beside a running one | `NoVoidById.cfg` |
 | The loser voids its row | The winner's probe ends with a run that observed nothing, and the loser's row then holds the scope with nobody working it | `NoVoidLoser.cfg` |
 | A failed append takes no item | The Igor whose row was lost takes an item beside the winner | `NoFailedTakesNone.cfg` |
 | A failed append voids its row | The append landed after all, and its row holds the scope with nobody working it | `NoVoidFailed.cfg` |
 
 **The settle interval, and its one gap.** Only a probe row landing late can change which row
 decides, so the interval only has to outlast a probe row's append, and only that append gets a
-deadline (decision 10). The deadline covers the append's retries once #179's retry of a conflicted
-write is built. An append past its deadline is treated as failed: its Igor takes no item and voids
+deadline (decision 10). The deadline covers the whole append, including any retry the code makes; none is made today. An append past its deadline is treated as failed: its Igor takes no item and voids
 the row. The read that decides reads every partition from yesterday on fresh (task 2.3), so a late
 row in yesterday's file is read. A row lands in the partition of the day its writer's clock gives
 it, within its deadline and so within minutes, so no partition from before yesterday can take a
@@ -164,30 +159,30 @@ wins every key it bids for. That is argued, not checked.
   gap, but every write to the state branch by any role moves that commit, so on a busy fleet a
   probe append would be refused for unrelated reasons and each retry would need a new deciding
   read. `appendRecord`'s own compare-and-set, its PUT carrying the partition file's sha, covers one
-  partition file, and a retry of it, once #179 builds one, needs only that file read again; it decides nothing about the
+  partition file, and a retry of it needs only that file read again; it decides nothing about the
   probe. Revisit if a double
   probe is seen (decision 12).
 - **Taking the log's order from the state branch's commit history** rather than its files. It
-  closes the midnight gap but is a larger change than the race it would close.
+  closes the midnight gap, but changes how every reader of the log orders rows, to close a gap
+  decision 12 accepts.
 - **A lock file per condition**, created only if absent. It is condition state stored apart from
   the log, which the in-force *A condition's scope is its cure's scope* forbids ("No condition
   state is stored apart from the log"), and it needs the same conditional create.
-- **A designated prober**, such as the lowest rank of the lowest-named role. Seat and Igor scopes
-  span roles, and under #179 a process watches only its own role's heartbeats, so no process can
-  tell whether another role's designee is alive (#179's `design.md`, decision 22). A dead designee
-  holds every probe until somebody notices.
+- **A designated prober**, such as the lowest-named role. Seat and Igor scopes span roles, and
+  nothing in force tells one role's process whether another role's process is alive, so no process
+  can tell whether the designee is. A dead designee holds every probe until somebody notices.
 - **The newest row deciding, with a re-read.** It is the smaller edit to `probeRunning`, and wrong
   (`NoOldestDecides.cfg`).
-- **Accepting the race and weakening the requirement** to "about one item". Adam decided on
-  2026-10-24 to fix it.
+- **Accepting the race and weakening the requirement** to "about one item". Each double probe
+  spends a worker against a fault that is probably still there.
 
 ## The model
 
-`model/ProbeClaim.tla` models three Igors in one seat-scoped condition: two processes of one role
-and one of another. Each role has one item, so the two processes of one role always pick the same
-item, the case a void by item gets wrong. Appends are in flight between issue and landing, and may
+`model/ProbeClaim.tla` models three Igors in one seat-scoped condition: two that cover the same
+work, as two roles set up to do it do, and one that covers other work. Each body of work has one
+item, so the first two always pick the same item, the case a void by item gets wrong. Appends are in flight between issue and landing, and may
 be lost, land while their Igor is told they failed, or land late, ahead of rows that landed while
-they were in flight. A re-read may be stale, returning a prefix of the log. A process may crash,
+they were in flight. A re-read may be stale, returning a prefix of the log. An Igor may crash,
 and a claim may be lost to somebody else. A probe may meet the condition again, clear it, or
 observe nothing. Time is abstract: the cooldown is a step, and the settle interval is the
 condition that no append which could land ahead of the Igor's row is in flight.
@@ -211,11 +206,9 @@ Safety configurations use all three Igors; liveness ones use two, except
 shows that `DueProbed` is not met vacuously.
 
 **What the model does not cover.** A lapse is modelled as possible only for a row whose Igor
-crashed or whose end was lost: under `SWEEP_AFTER_MS` because the lapse is longer than any run,
-and under #179's keepalive because a live Igor's keepalives keep its row from lapsing. Both bounds
-leave more than decision 8's 5 minutes of skew: `SWEEP_AFTER_MS` an hour beyond the run ceiling,
-the keepalive 60 minutes beyond the longest gap between two keepalives. Whether the keepalive bound
-keeps that margin before the first keepalive is open (*Open Questions*). A live run outlasting
+crashed or whose end was lost, because `SWEEP_AFTER_MS` is longer than any run. `SWEEP_AFTER_MS` is
+the run ceiling plus an hour, well over decision 8's 5 minutes of skew. Whether it keeps those 5
+minutes of margin once the waits before the run are counted is open (*Open Questions*). A live run outlasting
 `SWEEP_AFTER_MS`, which no run does while the run ceiling stands, is out of scope, as it is in
 #101. A clean run of an item already running when the scope stopped also ends the condition; the
 model starts with nothing running, so it leaves that out. The model has one condition, so the rule
@@ -224,12 +217,14 @@ log, missing only rows that landed after some point: *The read that decides a pr
 storage order* requires the deciding read to show every row landed before it, so a stale read
 served after the settle interval can lack only later rows. An append that lands while its Igor is
 told it failed is modelled (`Failed`, then `Land`); a write the store accepts only after its Igor has given up on
-it is not, and that write is the midnight gap.
+it is not, and that write is the midnight gap. A deciding read that fails is not modelled either:
+its Igor takes no item and voids its row, the same steps a failed append takes, which the model
+checks.
 
 **How the model stays small.** Rows older than the last occurrence are never read again, so the
 log is cut to start at it. With nothing in flight and every probe row ended, the log is cut to the
-last occurrence and any run that cleared it. Neither cut changes what any step reads. Processes of
-one role are interchangeable, which the safety configurations use as a symmetry.
+last occurrence and any run that cleared it. Neither cut changes what any step reads. Igors that
+cover the same work are interchangeable, which the safety configurations use as a symmetry.
 
 **CI after archive.** `openspec archive` moves `model/` under `openspec/changes/archive/`. The
 workflow watches both paths and runs whichever exists, so the model is still checked when a later
@@ -237,43 +232,53 @@ change edits it.
 
 ## Coordination
 
-- **#179 (`concurrent-instances`)** numbers the processes serving one role as ranks, and judges a
-  rank gone when its heartbeat file stops changing. Its keepalive replaces `SWEEP_AFTER_MS` as the
-  probe lapse rule (decision 6).
-- **#171 (`seat-files`)** modifies three requirements this change leaves alone: *A condition
+- **#175 (`worker-user`) and #171 (`seat-files`)** modify requirements this change leaves alone.
+  #175 modifies *A condition clears by not recurring, and a probe is what observes that* and *A
+  condition's scope is its cure's scope*, and its copy of the first says the scope takes "one
+  item, the next it would take", without "exactly". #171 modifies five: *A condition
   clears by not recurring, and a probe is what observes that*, *A condition's scope is its cure's
-  scope* and *A condition that recurs stops the affected scope from taking new work*. This change
-  only adds requirements, so the two do not collide in `openspec archive`.
+  scope*, *A condition that recurs stops the affected scope from taking new work*, *A seat's
+  refused credential is a condition on that seat* and *Reporting tells a refused credential from an
+  unreadable one, and clears nothing*. This change
+  only adds requirements, so none of them collide in `openspec archive`.
 - **The in-force scenario *A probe is taken once*** (under *A condition's scope is its cure's
-  scope*), and #171's copy of it, keep their meaning under this change: no other Igor takes a
+  scope*), and #175's and #171's copies of it, keep their meaning under this change except in the midnight gap: no other Igor takes a
   probe item until the probe's outcome is in. This change defines that outcome, which includes a
-  void row and a lapse, and leaves the scenario as it is. Editing it would mean modifying that
-  requirement, which #171 also replaces whole, so whichever archived second would have to carry
-  the other's text.
+  void row and a lapse, and leaves the scenario as it is. In the gap, a row landing ahead at
+  midnight can decide after another Igor's row was first to land, which the scenario does not
+  allow. Editing it would mean modifying that
+  requirement, which #175 and #171 also replace whole, so whichever archived later would have to
+  carry the others' text.
 - **#143's seat probe** is a different thing that shares the name: a minimal model call that
-  spends no item. It writes a check row, not a probe row, and this change does not touch it.
+  spends no item. It writes a spend row marked as a seat probe, and its credential check as a
+  separate row, never a probe row, and this change does not touch it.
 
 ## Open Questions
 
-Each is a fact nobody has measured, with a task that measures it:
+Each is a fact nobody has measured or argued through. Of the five questions below, tasks 4.2 to 4.4 measure the first three;
+the last two are argued, and task 4.6 files them as an issue for a later model to check:
 
 - **Whether GitHub's contents API returns every write another client had landed.** The probe
   settle interval assumes it; task 4.2 measures it, and reports to Adam before task 2.1 ships
   where it does not hold.
-- **Whether each lapse bound keeps its 5 minutes of margin.** Both bounds count from the probe
-  row's time. Before the first run row or keepalive, an Igor waits one probe settle interval
-  per key, then `work-claiming`'s claim settle interval, which each role configures, and, under
-  #179, up to one poll interval before its first keepalive. With two keys and #179's
-  30-minute maximum poll interval, #179's 90-minute bound keeps the margin only while two probe
-  settle intervals plus the claim settle interval stay under 55 minutes. A claim settle
-  interval of 30 minutes, for example, needs each probe settle interval under 12.5 minutes,
-  and so an append deadline under about 6 minutes, since the interval is at least twice the
-  deadline. Task 4.3 checks it once task 4.1 sets the deadline.
+- **Whether `SWEEP_AFTER_MS` keeps its 5 minutes of margin.** It counts from the probe row's
+  time, and the run ceiling from the worker's start. A live probe row ends only with the run row,
+  appended after the run is published. So the bound has to cover one probe settle interval per
+  key, `work-claiming`'s claim settle interval, the tree's provisioning, the run up to its
+  ceiling, publication and the run row's append. The claim settle interval is configured per role
+  with no upper bound, so a configuration alone can break the margin. With two keys and
+  provisioning and publication taking a few minutes, the hour beyond the run ceiling keeps the
+  margin only while two probe settle intervals plus the claim settle interval stay well under 55
+  minutes. Task 4.3 measures the parts and states the largest claim settle interval the bound
+  allows, once task 4.1 sets the deadline.
+- **Whether hosts' clocks stay within 5 minutes of each other.** The lapse bound's margin and the
+  settle interval's midnight term assume it, from NTP, and nothing has measured it on the hosts
+  that run Igor. Task 4.4 measures it.
 - **How the midnight gap gives a second probe.** An Igor that gives up on its probe-row append
   voids the row (decision 4), and a void ends the row it names once both have landed. It is not
   established whether a late row still gives a second probe through a deciding read between the
   row landing and its void, or through a void whose append fails, which decision 10 leaves
-  unretried until #179's retry is built. So the gap may be narrower than described.
+  unretried. So the gap may be narrower than described.
 - **Whether bidding for several keys in one order always lets some Igor win every key it bids
   for.** It is argued under *One item, several conditions*, not checked: the model has one
   condition.
@@ -285,13 +290,13 @@ Each is a fact nobody has measured, with a task that measures it:
   to reword it, and the request to #171 has yet to be made.
 - The in-force *A condition clears by not recurring, and a probe is what observes that* says
   "After a cooldown the affected scope SHALL take exactly one item", with no exception, as does
-  #171's copy. This change's requirement does not promise exactly one item in the midnight gap that
-  decision 12 accepts, so the two disagree in that one case. #171's copy is where to name the gap, and that request has
-  yet to be made too.
-- #179's `work-discovery` retries, until it lands, every conflicted write to a state file that
-  several processes write, and names no exception for a probe row's append, which this change
-  gives up on at its deadline; #179 should name it.
-- Between this change's archive and #179's, the in-force `role-config` still says every
-  interval is configurable, contradicting this change's fixed timings. #179's copy of that
-  requirement already names them and replaces it whole when #179 archives; the contradiction
-  between the two archives is accepted, since nothing is built from the specs in between.
+  #171's copy; #175's copy says "one item". This change's requirement does not promise exactly
+  one item in the midnight gap that decision 12 accepts, so the two disagree in that one case.
+  #175's and #171's copies are where to name the gap, and those requests have yet to be made
+  too.
+- A change that retries every conflicted state write must name a probe row's append as an
+  exception, since this change gives up on it at its deadline (decision 10).
+- The in-force `role-config` requirement *Timing values are configurable with stated defaults*
+  says every interval is configurable. *A probe's append deadline and settle interval are fixed
+  in code* names itself as the exception. A change that rewrites the `role-config` requirement
+  should name the probe's two timings among its exceptions.

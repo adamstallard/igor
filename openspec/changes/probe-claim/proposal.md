@@ -4,12 +4,11 @@
 
 The in-force *A condition clears by not recurring, and a probe is what observes that* says that
 after a cooldown "the affected scope SHALL take exactly one item". It does not hold with two
-Igors in one scope: two roles on one seat, or two processes of one role. Both can read the log as
+Igors in one scope, such as two roles on one seat. Both can read the log as
 due before either one's probe row lands, and both then take an item. A bug-hunter run proved it
 with a test that failed on `main` on 2026-10-24, and its reviewer could not refute it
 ([#226](https://github.com/adamstallard/igor/issues/226), candidate 4). Each time, a second item
-is claimed and a worker spent against a fault that is probably still there. Adam decided on
-2026-10-24 to fix it, spec first, with a TLA+ model.
+is claimed and a worker spent against a fault that is probably still there.
 
 ## What Changes
 
@@ -36,9 +35,8 @@ is claimed and a worker spent against a fault that is probably still there. Adam
   and its callers in `src/serve.ts` and `src/cli.ts`; `appendRecord` and `readLog` in
   `src/state.ts`, for the append deadline and a read of every partition from yesterday on that
   bypasses the cache.
-- **Other changes:** cites only requirements already in force and modifies none. #179, which
-  archives later, cites a requirement this change adds, so this change must archive before
-  #179. [#204](https://github.com/adamstallard/igor/issues/204), which states the whole archive
+- **Other changes:** cites only requirements already in force and modifies none.
+  [#204](https://github.com/adamstallard/igor/issues/204), which states the whole archive
   order, lists it second, just after #101 (already archived), so that it is not queued behind changes it
-  has nothing to do with. #179 (`concurrent-instances`) changes how a probe row lapses, and
-  #171 (`seat-files`) modifies the neighbouring requirements; `design.md` says how each fits.
+  has nothing to do with. #171 (`seat-files`) and #175 modify other `stuck-conditions` requirements that
+  this change's requirements sit beside; `design.md` says how they fit.
