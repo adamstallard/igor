@@ -71,3 +71,15 @@ budget:
   pools:
     - id: engineering
       seats: [fleet-1, adam]
+
+# When an Igor is stuck on its own configuration, such as a command its allowlist refuses or a
+# seat whose credential the provider refuses, every item fails the same way, and each failure
+# records a cure key naming what to fix, such as `role:web:commands`. After `threshold` failures
+# in a row on one key, the role or seat it names takes no new item. After `cooldown_minutes`, one
+# item is let through to test whether the fault is fixed; each time it is not, the wait doubles,
+# up to `max_cooldown_minutes`. No setting can mark one fault as worse than another: every key
+# stops on its count alone. Left out, these are the values below, which nobody has measured yet.
+# conditions:
+#   threshold: 3
+#   cooldown_minutes: 15
+#   max_cooldown_minutes: 360
