@@ -6,5 +6,6 @@ export default defineConfig({
     // tests collected into every run — counts from two branches at once, and a red result
     // from work nobody on this branch has done.
     exclude: ['node_modules/**', 'dist/**', '.claude/worktrees/**'],
+    setupFiles: ['test/support/no-github.ts'],
   },
 })
