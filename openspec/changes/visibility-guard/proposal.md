@@ -65,15 +65,20 @@ proposals, which approving the change approves.
 
 **Still open:**
 
-- **This change against #212 and #216's three-level ranking.** Issue #212, decided by Adam and
-  not yet specified, refuses a start where the lore store is more visible than at least one
-  repository a role works, ranking private below internal below public. #216 (`lore-search`)
+- **This change conflicts with the three-level ranking that #212 and #216 both use.** Issue
+  #212, whose rule is settled but has no OpenSpec change yet, refuses a start where the lore
+  store is more visible than at least one repository a role works, ranking private below internal below public. #216 (`lore-search`)
   writes the same ranking into its rule for where a lore citation may go. Both are stricter than
   this change for an internal store serving a private repository, which this change allows.
   *Recommended:* when #212 is specified, make it a change that modifies this change's
   comparison to #212's ranking, so one rule states visibility for the state branch. An internal
   store would then no longer serve a private repository, which reverses the consequence decision
   2 states, so that is Adam's call. #216 keeps its ranking for citations either way.
+- **An unanswered read of the store's own visibility at a cycle.** *An unanswered visibility
+  read at a cycle leaves its repository unworked* holds back the candidates of the repository
+  whose read went unanswered. It does not say what happens to other repositories' candidates
+  when the read that goes unanswered is the store's. *Recommended:* none of that cycle's
+  candidates is worked, since none of them can be shown not to be a mismatch.
 - **Where the visibility rule is stated.** #188 (as it stands) and #216 each state their own rule
   for reading the store's visibility from GitHub, and each counts a store whose visibility cannot
   be read as public. This change handles an unread visibility as decisions 7 and 10 say instead:
