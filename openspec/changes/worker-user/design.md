@@ -17,7 +17,8 @@ What the Igor holds:
 | minted installation tokens | the Igor's memory, and the environment of each `gh` child |
 
 The worker runs as a separate Unix user on the machine `igor serve` runs on (proposal, decisions
-1 and 55). This document says how.
+1 and 55). This document says how. *The decision record* below means
+`openspec/specs/task-execution/decisions.md`, which holds the reasons that have evidence.
 
 ## Decisions
 
@@ -40,8 +41,8 @@ local host, and the rest of this document describes that host.
 
 Igor's direction is for workers to run as cloud Claude Code sessions, coordinated by
 `igor serve`. Cloud workers are outside this change's scope, and nothing here depends on them.
-Claude Code's documentation gives a cloud session no status or completion signal a caller can
-read, and no API to stop or cancel it. Without the signal the Igor could not tell when its worker
+Claude Code's documentation, read on 2026-11-13, gives a cloud session no status or completion
+signal a caller can read, and no API to stop or cancel it (issue #244 records the reading). Without the signal the Igor could not tell when its worker
 had finished, and it reads and publishes the tree only after every model step has exited. Without
 the stop API it could not end a run that ran away, which the last guarantee needs.
 
@@ -67,9 +68,11 @@ sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
 - **`PATH` goes through `env`**, because Debian and Ubuntu set `secure_path` in sudoers, which
   replaces a preserved `PATH`. `PATH` is not a secret.
 - **`HOME` is the worker's own**, set by sudo, and lasts across runs: toolchain caches,
-  `~/.claude` and `~/.gitconfig` are the worker's. Before each `claude -p`, as
-  part of the same `sudo` spawn so it can write the worker's home, `~/.claude` and
-  `~/.claude.json` are reset from a template built into Igor, so nothing a worker planted there
+  `~/.claude` and `~/.gitconfig` are the worker's. The Igor resets `~/.claude` and
+  `~/.claude.json` before each model step, never between a step's first call and the
+  `claude -p --resume` calls that continue its session. The reset runs inside the same `sudo`
+  spawn, since only the worker user can write the worker's home. It copies a template built into
+  Igor, so nothing a worker planted there
   loads in a later call; the rest of the home stays. The reset keeps nothing it replaces, a
   stored login in `~/.claude/.credentials.json` included: every seat has a token and Igor never
   uses a stored login, so the seat's token is the worker's only credential. Before every reset
@@ -78,7 +81,7 @@ sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
   kill (its decision 13). Whichever of #174 and this change is built second wires the reset and
   the kill into this spawn (task 0.10).
 - **No script of the prose or bug-hunter skill runs through this `sudo`** (proposal, decision
-  15). These skills check a commit's prose and code and sign the commit with trailers. #153 adds
+  12). These skills check a commit's prose and code and sign the commit with trailers. #153 adds
   model steps after the worker that use both; the Igor runs every one of
   their scripts itself, as the service user, and the steps get what they need of the prose skill
   in their prompts (*#153's steps run no signing script*).
@@ -100,8 +103,8 @@ igor ALL=(igor-worker-maintenance) NOPASSWD: ALL
 `Defaults:igor !log_allowed` stops sudo logging the commands it allows the service user; without
 it, every worker start writes the seat token into the journal (measurement 6.5). sudo's
 documentation says it still logs a command it refuses; task 6.12 measures that, and whether such
-a line lists the preserved variables, the seat token among them. `Defaults:igor !syslog` also
-stops the line, but turns off every sudo log line for the service user, refusals included.
+a line lists the preserved variables, the seat token among them. Why not `Defaults:igor !syslog`
+is in the decision record, under *Isolation is proved before any work is taken*.
 
 `ALL` means any command as `igor-worker-maintenance` and nobody else. The service user is
 already more privileged than the worker, so letting it run anything as the worker grants it
@@ -109,19 +112,13 @@ nothing new, and the rule grants no path to root. Naming
 `claude`, the kill and the removal, with argument patterns sudo matches loosely, would protect
 nothing the runas restriction doesn't. `ALL` also grants `SETENV`, which `--preserve-env` needs.
 
-Rejected alternatives:
+Rejected alternatives (`systemd-run --uid=` and Claude Code's sandbox, which have evidence, are
+in `openspec/specs/task-execution/decisions.md`, under *The worker runs as a separate,
+unprivileged user*):
 
 - **A setuid helper:** security-critical code Igor would write and ship. The unit would have to
   drop `NoNewPrivileges=true` for it just as for sudo (*The unit*), so it has sudo's costs and
   none of its review history.
-- **`systemd-run --uid=`:** the service user would need a polkit rule to start units, and the
-  worker would not be the Igor's child, so the stream, the kill and the exit status would go
-  through `systemctl`. Worse, any local user can read a transient unit's environment over D-Bus
-  with `systemctl show`, exposing the seat token to the worker and every other account.
-- **Claude Code's sandbox**, denying the worker reads of `/etc/igor/` and `/proc`: nobody has
-  measured whether its read restrictions bind a `node` process an allowed command starts, and
-  even if they do, the guarantee would belong to the installed Claude Code version; #144 shows
-  releases change behaviour a deployment depends on.
 - **Keeping the App's key off the host**, passing the Igor short-lived tokens minted elsewhere:
   it bounds a leak to one token's lifetime but stops nothing, since the worker still reads
   whatever token, seat token or age key the Igor holds at that moment.
@@ -154,11 +151,8 @@ role's later runs on the host. #174's decision 9 accepts that: the home has to l
 `~/.gitconfig` and the caches a repository's tests need, and such a file can steer only the same
 role's later work, never another role's.
 
-The `/proc` reach holds between two Igor units, each with its own mount namespace and `/tmp`
-(measurement 6.6). With one worker user under two units, one worker read the other's seat token
-from `/proc/<pid>/environ`, and listed and wrote its tree through `/proc/<pid>/cwd`. With a user
-per unit, under `ProtectProc=invisible` the reader could not see the other worker at all, and
-without it every one of those reads and writes was refused.
+That the `/proc` reach above holds between two Igor units, with measurement 6.6's evidence, is in the
+decision record, under *The worker runs as a separate, unprivileged user*.
 
 With one `igor@<role>` per host, running one worker at a time, a worker user belongs to one
 worker, and its kill by user reaches no other (*Risks* covers two processes of one role on one
@@ -173,10 +167,8 @@ stay the service user, the account the Igor itself runs as; a worker running as 
 the Igor's credentials. The unit uses `igor-worker-%i` directly for `SupplementaryGroups=` and
 `ReadWritePaths=`. No drop-in is generated and no step edits `/etc/group`.
 
-**The worker user's name does not come from `igor.config.yaml`.** The lore repository is shared and edited by pull request, and a lore
-pull request that set the worker user to the service user would turn isolation off for every
-Igor that reads it. The start-up check would refuse that value, but a refused start is still an
-outage triggered from a repository.
+**The worker user's name does not come from `igor.config.yaml`.** The reason is in the decision
+record's Rationale entry for *The worker runs as a separate, unprivileged user*.
 
 ### The tree and outbox are shared through the worker's group
 
@@ -194,8 +186,7 @@ The Igor joins the worker user's primary group through the unit's
 | the Igor's home, lore checkout, `/etc/igor` | igor:igor | `0700`/`0750` | the worker is not in this group |
 
 **The git directory sits beside the tree, not in it.** The worker can write the tree's top
-directory, so it can rename or replace anything there, `.git` included. A sticky bit would stop
-that, and would also stop `git rm` of a top-level file the Igor owns. So the clone uses
+directory, so it can rename or replace anything there, `.git` included, so the clone uses
 `--separate-git-dir=<tree>-git`, leaving in the tree a `.git` file that points to it. The
 worker's git follows that file; the Igor's never does, since every git command the Igor runs in
 a tree names both directories with `--git-dir` and `--work-tree`. A `.git` the worker replaces
@@ -268,7 +259,8 @@ declared for it in the `repos` map in `roles/org.yaml`, as the worker user. Beca
 publishes the recorded tree, nothing a check writes, such as a coverage report or a link, reaches
 the artifact: that is how this change meets #189's rule that what a check writes is not
 published. That rule, and the second worker run when a check fails, are #189's;
-that run is a new run of the model steps, recorded, checked and published the same way.
+that run is a new run of the model steps, recorded and checked the same way, and its edits become
+a second commit on top of the first run's signed commit, as #153 and #189 say.
 
 ### #153's steps run no signing script; the Igor signs at the end
 
@@ -287,10 +279,9 @@ the service user, in this order:
    the worker, the first call could not write a token there at all (#153's measurement 0.9).
 3. Bug-hunter's own triage, on the model #153 pins, runs on the prose pass's diff. A diff it
    judges to need no bug hunt gets no further iteration; any other gets one more bug-hunter
-   iteration. That triage skips tests, specs, lockfiles, generated files, formatting and
-   renames as well as comments and docs, and two models disagreed on whether to skip a
-   spec-only diff (#153's measurement 0.11); #153 decides whether that is the line it wants and
-   pins the model.
+   iteration. That triage draws bug-hunter's own line, skipping tests, specs, lockfiles,
+   generated files, formatting and renames as well as comments and docs, and runs on sonnet, as
+   #153's decisions 20 and 21 have it.
 4. The cold read: a fresh model step, #153's, reads the commit's prose cold, after any extra
    iteration, so it also reads the comments that iteration writes. The prose pass then answers
    the cold read with edits, before prose signs. So no separate prose pass is needed after the
@@ -350,10 +341,9 @@ So, once the waits and the kill above are done, and before anything is read:
 - **Every file read from the tree or the outbox gets the same checks:** it is opened with
   `O_NOFOLLOW` and read only if it is a regular file whose link count is 1. That includes the
   declaration file, `reverts.json` in the outbox, which the changed-path checks never see.
-- **A parse error never quotes what it parsed.** Node's `JSON.parse` puts the start of the text
-  in its message (`Unexpected token 's', "secret-key…" is not valid JSON`), which would carry a
-  hard-linked key's text into a refusal or record. An error about a file read from the worker
-  names the file and says it did not parse, nothing more.
+- **A parse error never quotes what it parsed.** An error about a file read from the worker
+  names the file and says it did not parse, nothing more (the reason is in the decision record,
+  under *Every file read from the worker is a regular file with one link*).
 
 **A changed link is published as a link.** #137 (`carry-what-a-tree-holds`), an open change,
 publishes a link with mode `120000` and its target text as content. The Igor reads that text with
@@ -369,15 +359,17 @@ change publishes links and gitlinks as #137 does, and the spec names no stop for
 ### Kill, release and sweep act as the worker where they must
 
 - **Kill:** `sudo -n -u <worker> -- pkill -KILL -u <worker>`, which kills every process the
-  worker user owns (proposal, decision 27); the Igor cannot signal them itself. A kill of
-  `sudo`'s process group is not enough, since Claude Code 2.1.303 starts each Bash command in a
-  new session (measurement 6.2). The Igor makes it each time it ends a worker, before every reset of the worker's home (#174's
-  decision 13), once the last model step exits, after #189's checks, and before a release.
+  worker user owns (proposal, decision 27); the Igor cannot signal them itself. Why a
+  kill of `sudo`'s process group is not enough is in the decision record, under *A kill reaches
+  the worker's whole process tree*. The Igor makes it each time it ends a worker, before every reset of the worker's home (#174's
+  decision 13), after model steps in a tree exit, before each read or staging of the tree, after
+  #189's checks, and before a release, as decision 27 and *A kill, a release and a sweep reach
+  what the worker owns* list.
 
   Each kill first runs `sudo -n -u <worker> true` (proposal, decision 53), because a refused
   `sudo` and a `pkill` that found no process both exit with status 1. A refused check fails the
-  run and is recorded under `instance:<role>:sudoers`, the key under which #101 counts
-  failures of a role's `igor serve` processes (*A failed worker spawn is a condition on its instance*). At
+  run and is recorded under `instance:<role>@<host>:sudoers`, the instance-scoped key this
+  change adds to #101's counting, for a role's `igor serve` processes on one host (*A failed worker spawn is a condition on its instance*). At
   process exit the check and the kill are both synchronous (`spawnSync`), because an `exit`
   handler cannot wait, and a refused check there goes to standard error only, since no run is
   left to fail.
@@ -395,7 +387,12 @@ change publishes links and gitlinks as #137 does, and the spec names no stop for
 every start. Every role a host serves shares the state directory, and a process can remove
 another role's trees only as that role's worker user, for which it has no sudoers line. So each
 role has its own directory, and a process's startup sweep looks only in its own, never at trees
-it cannot remove. The table's modes and groups hold there unchanged.
+it cannot remove. The modes and groups in the table under *The tree and outbox are shared through the worker's
+group* hold there unchanged. The state directory and `trees` are the
+Igor's, mode `0711`, so a worker passes through them to its own role's directory but lists
+neither, and `trees/<role>` is `igor:igor-worker-<role>`, mode `2750`, so no other role's worker
+enters it. Everything else the Igor keeps there, such as `flagged-questions` and #174's
+session-log copies, is `0700` or tighter.
 
 ### What each start checks
 
@@ -414,6 +411,13 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
      shipped unit are `/etc/igor/env` and `/etc/igor/<role>.env`; the Igor user's home, which
      must also fail `test -x`, so the worker cannot enter it; and a canary the check writes, mode
      `0600`, in a fresh `0700` directory the Igor owns
+   - neither readable nor enterable: the lore checkout and every worktree of it; and each entry
+     the Igor has in its state directory other than `trees`, such as flagged questions and
+     session-log copies, listed by the Igor at the check
+   - not readable, so not listable: the state directory and its `trees` directory. The worker
+     must still be able to pass through them, which the probe does not check, since its own tree
+     sits below them; the unit's `StateDirectoryMode=0711` and the Igor's own `mkdir` make them
+     so
    - not writable: the lore checkout, and the worktree of it this process reads its
      configuration from (#208, `lore-pull`); the directory holding the running `igor`; the `node`
      executable; #174's home template, each of its files and directories; and each script the
@@ -422,7 +426,12 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
      create a file in it and delete it, and a create that succeeds is a refusal. The worker never
      needs to write there.
    - Every path in this check must exist: a missing one refuses the start, naming it, since
-     `test -r` and `test -w` fail on a missing file and the check would pass it.
+     `test -r` and `test -w` fail on a missing file and the check would pass it. The Igor tests
+     existence as the service user, before the worker's probe, so a path the worker cannot see,
+     such as `/proc/<igor pid>/environ` under `ProtectProc=invisible`, is not missing.
+   - `skills_dir`, its scripts and #174's template are probed only where #174's code is built.
+     In a build without it they are reported as not checked, so a build before #174 does not
+     refuse every start.
 6. `/proc/sys/fs/protected_hardlinks` reads `1`. Otherwise the worker could make a hard link to
    the App's key in its tree.
 7. As the service user, `sudo -n -l` lists `!log_allowed` among the `Defaults` that apply to it.
@@ -433,8 +442,8 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
    each proxy the worker is given in `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY` or
    `https_proxy`, the last two by a `CONNECT` to port 80. Any HTTP response is a refusal. A
    connection refused, unreachable, blocked, timed out, or accepted and closed with no response
-   passes, so a network stack that accepts every connection, as Docker Desktop's does, is not
-   taken for the endpoint (*Secrets reach the worker only through the Igor*).
+   passes, so a network stack that accepts every connection is not taken for the endpoint; whether
+   Docker Desktop's network stack accepts every connection is unmeasured, and task 6.15 runs the check there (*Secrets reach the worker only through the Igor*).
 10. The worker user's groups, from `id -Gn` as the worker, include none of `docker`, `lxd`,
     `incus` and `disk`; `sudo -n -l` as the worker lists no command; and, as the worker,
     `test -w` fails on `/run/docker.sock`, `/var/run/docker.sock`, `/run/podman/podman.sock` and
@@ -497,9 +506,9 @@ Five side channels could carry a secret to the worker past the Igor:
 `IPAddressDeny=169.254.169.254 fd00:ec2::254`, which systemd enforces with a BPF program on the
 unit's control group, inherited by every process in it. A process `sudo` starts stays in that
 group unless `pam_systemd` in sudo's PAM stack opens a session for it and moves it into the
-worker user's slice; measurement 6.2 did not record the group, and task 6.15 does. Debian's
-`/etc/pam.d/sudo` includes `common-session-noninteractive`, which holds no `pam_systemd`; other
-distributions are task 6.15's to check.
+worker user's slice. Which happens is unmeasured: measurement 6.2 did not record the group, and
+whether Debian's or another distribution's `/etc/pam.d/sudo` runs `pam_systemd` is not checked;
+task 6.15 records both. The kill by user does not depend on it.
 
 The line also blocks the Igor, which needs no cloud credential; a seat's `token_command` reading
 a cloud secret store with the instance's role would fail, but #171's seat code, built first,
@@ -588,10 +597,10 @@ accepted (proposal, decision 34), since what is built follows decision 21.
 
 ### Prompts go on stdin
 
-On Linux every user can read every process's `/proc/<pid>/cmdline`. Today `claudeWorker`
-(`src/execute.ts`) and `runClaude` (`src/triage.ts`) pass the prompt and `--system-prompt` as
-arguments, so a worker of one role could read another worker's item and lore, or triage's,
-through `/proc` or `ps`. Two things close that:
+Today `claudeWorker` (`src/execute.ts`) and `runClaude` (`src/triage.ts`) pass the prompt and
+`--system-prompt` as arguments, which any local user can read in `/proc/<pid>/cmdline`. The
+decision record, under *A prompt reaches claude on stdin, never in its arguments*, gives the
+evidence and why `ProtectProc=invisible` alone is not enough. Two things close it:
 
 - **stdin and a file.** Every `claude -p` takes its prompt on stdin, and its system prompt,
   which cannot share stdin, in a file named by `--system-prompt-file`, written before the spawn
@@ -603,23 +612,8 @@ through `/proc` or `ps`. Two things close that:
   prompt from stdin and its system prompt from `--system-prompt-file`, and the usage read and
   triage's `json` call take their prompts from stdin too.
 - **`ProtectProc=invisible`** in the unit. systemd mounts the unit's `/proc` with
-  `hidepid=invisible`, so a process sees only its own user's processes. That needs per-mount
-  `hidepid`, in Linux 5.8 and later; on an older kernel the setting has no effect, and the
-  prompts are still out of the arguments. Measurement 6.8 confirmed it on Linux 6.12 under the
-  unit as task 8.2 changes it; task 6.11 repeats it on a Linux server's kernel.
-
-Out of the arguments, the prompts are also out of `sudo`'s log, which records each command line:
-measurement 6.5 found no prompt text there, only the paths of `claude` and of the system prompt
-file, and the worker's flags, which name the role's allowed commands.
-
-### `igor doctor` gets no check
-
-`igor doctor` (#113) reports on a lore repository from wherever someone has a checkout, usually
-not the host and not as the service user. Isolation belongs to one host and one service user,
-and only the Igor process knows its key paths and pid, so the start-up check, which refuses
-rather than reports, covers it. Under doctor's rule (*name the command that covers it*), doctor
-could at most add a line saying the Igor checks worker isolation when it starts: a later edit to
-#113's branch, not made here.
+  `hidepid=invisible`, so a process sees only its own user's processes. It needs Linux 5.8 or
+  later; task 6.11 repeats measurement 6.8 on a Linux server's kernel.
 
 ### `serve` always has a worker user, `run` never does
 
@@ -637,11 +631,8 @@ could at most add a line saying the Igor checks worker isolation when it starts:
   trees sit.
 
 So the command says whether there is a worker user, and nothing in the environment or the
-configuration does (proposal, decision 3). Rejected alternatives:
-`serve --same-user`, which leaves an unattended Igor whose worker can read its credentials;
-refusing both without a worker user, which adds a step to every development run; and warning in
-both, under which a server whose worker user was never created would run its worker as the
-service user, the exposure #163 found.
+configuration does (proposal, decision 3). Why `serve --same-user` and the other alternatives
+lost is in the decision record, under *serve always has a worker user, and run never does*.
 
 **macOS runs `serve` only in #192's container image** (`deploy-image`), and runs `run` on the
 host. macOS has no `/proc` to probe and no `fs.protected_hardlinks`, so start check 6 would
@@ -697,9 +688,9 @@ the second, given in *Reasons* or, where it has no bullet there, in the decision
 
 ### Reasons the requirements rest on
 
-- *The worker runs as a separate, unprivileged user.* Claude Code's permission checks cover its
-  own tools and the commands it recognises, not the code an allowed command runs, such as a file
-  the worker wrote that `npm test` runs. File permissions hold whatever the worker runs.
+Reasons with evidence are in the decision records, `openspec/specs/task-execution/decisions.md`
+and `openspec/specs/stuck-conditions/decisions.md`. These have none beyond the reasoning:
+
 - *The worker can write its tree and outbox and nothing the Igor depends on.* A worker that can
   write a file the Igor later executes or trusts has the Igor's identity, and the separate user
   then protects nothing.
@@ -711,9 +702,10 @@ the second, given in *Reasons* or, where it has no bullet there, in the decision
 - *The Igor reads no file on the worker's behalf through a link* and *Every file read from the
   worker is a regular file with one link.* A link to the App's key, read by the Igor, would
   publish the key in a pull request. A hard link is a regular file inside the tree, which the
-  symbolic-link rules do not catch, and a FIFO would hang the read. Under
-  `igor run` these rules do not apply: the worker runs as the person, who can read the same
-  credentials, so a link reaches nothing the person could not already publish.
+  symbolic-link rules do not catch, and a FIFO would hang the read. These rules bind both modes.
+  Under `igor run` a link reaches nothing the person could not already publish, since the worker
+  runs as the person, but the Igor keeps one code path for both modes, and task 3.5 tests it in
+  each.
 - *The Igor runs prose's first call, and bug-hunter checks the prose pass* and *The Igor stages
   only after its checks, and #153's trailers bind the last staging.* The terms are #153's: prose's
   first call prints prose's rules and a one-use pass token, which its second call needs to sign;
@@ -775,13 +767,10 @@ the second, given in *Reasons* or, where it has no bullet there, in the decision
 
 ## Risks / Trade-offs
 
-- **The seat token is within reach of what the worker runs.** It has to be in `claude`'s
-  environment. Claude Code removes `CLAUDE_CODE_OAUTH_TOKEN` from its commands' environment but
-  gives them `CLAUDE_PID`, and `claude` runs as the same worker user, so a test can read the
-  token from `/proc/$CLAUDE_PID/environ` (measurements 6.1 and 6.4).
-  `ProtectProc=invisible` hides only other users' processes, so it does not stop that read. A
-  worker can spend or leak its own seat, as it could under one user; the comment on `npm test`
-  in `templates/org.yaml` says so.
+- **The seat token is within reach of what the worker runs:** a test reads it from
+  `/proc/$CLAUDE_PID/environ`. The decision record's Rejected entry on keeping it out of reach
+  says why, and the comment on `npm test` in
+  `templates/org.yaml` says so to operators.
 - **Other clouds' metadata addresses are not blocked.** The line names two: `169.254.169.254`,
   which AWS, Google Cloud, Azure and Oracle use, and EC2's IPv6 `fd00:ec2::254`. A cloud that
   serves metadata elsewhere, such as Alibaba Cloud's `100.100.100.200`, stays reachable.
@@ -795,10 +784,10 @@ the second, given in *Reasons* or, where it has no bullet there, in the decision
   by user then ends the other's worker, and each can read the other's seat token through
   `/proc`. Neither the shipped unit, `igor@<role>`, nor the compose file, one container per role,
   starts two; a person who starts a second by hand gets that.
-- **A role served from several hosts shares one condition on its instance.** The cure key
-  `instance:<role>:sudoers` names the role, not the host, so one host's broken sudoers line
-  stops the role's `igor serve` on every host until a passing check clears it; the stop names the
-  host whose line to fix.
+- **The sudoers condition puts the host's name on the state branch.** The cure key
+  `instance:<role>@<host>:sudoers` is per host, so one host's broken sudoers line stops only that
+  host's `igor serve`, and another host's clean runs and passing checks neither end its count nor
+  clear it. The key and the stop carry the host's name to the state branch, which may be public.
 - **With `Defaults:igor !log_allowed`, the journal does not record which commands the Igor ran
   as a worker user.** The pam session lines remain, holding no command and no environment
   (measurement 6.5).

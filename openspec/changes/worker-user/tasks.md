@@ -10,19 +10,21 @@
       `design.md`, including any that contradicts it, and change the design before the code where
       one does. Done on 2026-10-18: `design.md`, *Measurements*. 6.2 changed the kill (proposal,
       decision 27) and 6.5 the sudoers file (decision 28).
-- [ ] 0.3 Under the cure key `instance:<role>:sudoers`, record each failed `sudo` spawn of the
+- [ ] 0.3 Under the cure key `instance:<role>@<host>:sudoers`, `<host>` being the host's name, record each failed `sudo` spawn of the
       worker, and each refused token-free `sudo -n -u <worker> true` check that runs before a
       spawn, a later `claude -p`, one of #189's checks or a kill (5.8 and 4.1). A refused check
       before the metadata probe, or at process exit, is not recorded there. A cure key is the key
       `condition-backoff` (#101) records a failure under. #101's code on `main` has scopes for a
       role, a seat and an Igor; add the instance scope, a role's `igor serve` processes, as
       `stuck-conditions`' *A failed worker spawn is a condition on its instance* states it; an
-      `igor run` of the role is not in it. Each run row, in `src/budget.ts`, names its instance.
+      `igor run` of the role is not in it, nor the role's `igor serve` on another host. Each run row, in `src/budget.ts`, names its instance.
       While the condition is open, the instance runs the check at each cycle's start, takes no
       probe item, and appends a condition row only where a passing check clears the condition. The
-      stop names the sudoers line for `igor-worker-<role>` as the cure. The Igor does not exit when
+      stop names the sudoers line for `igor-worker-<role>` and the host as the cure. The Igor does not exit when
       the condition opens (#82). Tests: one per scenario of that requirement and of *A sudoers
-      condition clears only on a passing check at a cycle's start* (proposal, decisions 31 and 53)
+      condition clears only on a passing check at a cycle's start*, and for the instance scope and
+      the exception in the two `MODIFIED` requirements of `stuck-conditions` (proposal, decisions
+      31 and 53)
 - [ ] 0.4 #137 (`carry-what-a-tree-holds`) is built before this change (issue #204). Build 3.3's
       publishing of a changed link as a link, and 3.1's publishing of a changed gitlink as a
       pointer, on #137's code. If #137 has not merged when gate two starts, stop and ask Adam.
@@ -31,8 +33,10 @@
       #153 to run its steps through this change's spawn, to have them edit and run no signing
       script, to have the Igor run prose's first call and both signing calls, and to have the
       trailers made against the tree 2.5 stages, and link it here.
-- [ ] 0.6 If #174 (`pinned-skills`) has merged, add `skills_dir` to the probe in 5.1. If not,
-      file an issue asking #174 to add it, and link it here.
+- [ ] 0.6 If #174 (`pinned-skills`) has merged, add `skills_dir`, its scripts and the home
+      template to the probe in 5.1. If not, 5.1 reports each as not checked and refuses no start
+      for them, and file an issue asking whichever of #174 and this change is built second to
+      probe them, and link it here.
 - [ ] 0.7 If #189 (`loop-verifies-commands`) has merged, its checks go through 1.4's spawn and
       run after 3.2 records the tree, and the Igor publishes that recorded tree. If not, file an issue
       asking #189 to run its checks on the tree the Igor recorded and to publish that tree, as
@@ -83,7 +87,7 @@
       named `igor-worker-<role>` exists; a model step in the tree after the worker spawned through
       `sudo` as the worker user.
 - [ ] 1.6 No prose or bug-hunter script goes through 1.2's spawn: the Igor runs them as the
-      service user (2.5; proposal, decision 15). If #153 has not merged, the issue 0.5 files
+      service user (2.5; proposal, decision 12). If #153 has not merged, the issue 0.5 files
       asks for this too.
 - [ ] 1.7 Every `claude -p` the Igor starts takes its prompt on stdin, its system prompt from
       `--system-prompt-file`, and any text appended to it from `--append-system-prompt-file`: `claudeWorker` (`src/execute.ts`), `runClaude` (`src/triage.ts`),
@@ -139,6 +143,14 @@
       `/var/lib/igor/trees/<role>`, never under the unit's `/tmp`, with 2.1's groups and modes,
       and have the startup sweep look only in that directory. Test: a sweep of role `dev` leaves
       a tree under `/var/lib/igor/trees/docs`.
+- [ ] 2.4b Under `serve`, keep the worker out of the lore and the state directory (*Under serve,
+      the worker cannot read the lore or the Igor's state*): the state directory and `trees` are
+      the Igor's with mode `0711` (8.2 sets `StateDirectoryMode=0711`; the Igor makes `trees`
+      itself), `trees/<role>` is `igor:igor-worker-<role>` with mode `2750`, and the lore
+      checkout, its worktrees and every other entry the Igor makes in the state directory give
+      the worker no access. Tests, as the worker user in 7.1's setting: listing the state
+      directory, reading the lore checkout and reading a file under `flagged-questions` are each
+      refused, and the worker still reaches its own tree.
 - [ ] 2.5 Where a role runs #153's steps: bug-hunter runs, edits the tree and reports its
       `Bug-hunter:` value, without running `caller-result.sh`. The Igor then runs prose's first
       call as the service user, from `skills_dir`, and gives the rules and the pass token it
@@ -334,10 +346,14 @@
       ```
 
       where `<what>` is one of: `is this Igor's process environment`, `is this Igor's GitHub App
-      key`, `is the key that decrypts seat files`, `holds seat <id>'s token`, `is this Igor's
+      key`, `is the key that decrypts seat files`, `is this Igor's
       home directory`, `is an environment file this Igor's unit loads` (each path in
       `IGOR_ENV_FILES`, a `:`-separated list the unit sets, 8.2), `holds this Igor's App
-      identity` (for `/etc/igor/<role>.env`, which 8.2 lists in `IGOR_ENV_FILES`).
+      identity` (for `/etc/igor/<role>.env`, which 8.2 lists in `IGOR_ENV_FILES`), `is the lore
+      checkout`, `is a lore worktree`, `is this Igor's state directory`, `is this Igor's trees
+      directory` and `is in this Igor's state directory` (for each entry other than `trees`). For
+      the lore and the state directory's entries, "read" covers entering a directory too; for the
+      state directory and `trees`, which the worker must pass through, it means listing only.
 
       ```
       the worker user "<worker>" can enter <path>, which is this Igor's home directory. Make it accessible only by <igor-user>.
@@ -353,7 +369,11 @@
 
       The template is probed file by file and directory by directory, and so is every script the
       Igor runs from `skills_dir`, prose's and bug-hunter's among them (proposal, decision 37).
-      Every path the probe is given must exist; one that does not refuses the start:
+      Every path the probe is given must exist, as the service user sees it: the Igor tests
+      existence itself before the worker's probe, so `/proc/<igor pid>/environ`, which
+      `ProtectProc=invisible` hides from the worker, is not missing. Where #174's code is not
+      built, `skills_dir`, its scripts and the home template are reported as not checked (0.6).
+      Any other path that does not exist refuses the start:
 
       ```
       this Igor was told to check <path>, which <what>, but it does not exist, so the check would prove nothing. Fix the path in <where it was named: the variable, seat file or configuration key that gave it>, or create the file.
@@ -444,7 +464,10 @@
       file in a subdirectory of it (`~/.docker/config.json`) and a dangling link; a missing Docker socket passes, and so does a
       home with none of the six credential files; `IGOR_ENV_FILES`
       unset is reported as not checked, and its files are never reported as passed; `fs.protected_hardlinks` at `0` refuses; the file the `skills_dir`
-      probe created is deleted; the first failure
+      probe created is deleted; a readable lore checkout, a listable state directory and a
+      readable entry in it each refuse; `/proc/<igor pid>/environ` hidden from the worker is not
+      a missing path; without #174's code its three paths are reported as not checked; the first
+      failure
       stops the check; every refusal exits with status 78; `serve` refuses with no worker user, and refuses `--same-user` as an
       unknown flag; `run` runs as the same user and prints the notice; `serve` never prints
       it.
@@ -565,7 +588,7 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       answers, with the shipped unit and 8.2's `IPAddressDeny=` line, on Debian and on each other
       distribution `docs/deployment.md` targets: read `/proc/<pid>/cgroup` of the worker `sudo`
       started and of a command it runs, and record whether both name the unit's group or a user
-      slice; then, as the worker through that `sudo`, connect to port 80 of `169.254.169.254` and
+      slice, and whether that distribution's `/etc/pam.d/sudo` runs `pam_systemd`; then, as the worker through that `sudo`, connect to port 80 of `169.254.169.254` and
       `[fd00:ec2::254]`, and record that each fails. Repeat without the line and record that start
       check 9 (the metadata endpoint) then refuses. Time check 9 on a host with no endpoint, and
       run it under Docker Desktop and behind an intercepting proxy, recording that neither is taken
@@ -628,8 +651,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       ```
 
 - [ ] 8.2 `deploy/igor.service`: set `SupplementaryGroups=igor-worker-%i` and
-      `ReadWritePaths=/var/lib/igor-worker-%i`, and set `StateDirectory=igor`, which makes
-      `/var/lib/igor` and keeps it writable under `ProtectSystem=strict`, for 2.4a's
+      `ReadWritePaths=/var/lib/igor-worker-%i`, and set `StateDirectory=igor` with
+      `StateDirectoryMode=0711` (2.4b), which makes `/var/lib/igor` and keeps it writable under
+      `ProtectSystem=strict`, for 2.4a's
       `/var/lib/igor/trees/<role>`; `PrivateTmp=true` stays for everything else. No drop-in and no
       `/etc/group` step. `User=` stays the service user, and the unit gains `Group=igor`, the
       service user's group, which the unit on `main` does not set, and `ExecStart=` passes `%i` to

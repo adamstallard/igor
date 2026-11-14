@@ -2,12 +2,12 @@
 
 ### Requirement: The worker runs as a separate, unprivileged user
 
-Under `igor serve`, every model step and every process one starts SHALL be unable to read any
-credential the Igor holds (its environment files, key or token files, seat-file key or process
-environment) or reach another role's worker or that worker's files, and no argument of theirs
-SHALL hold the item's text or the seat token. On a *local host*, the machine `igor serve` runs on,
-they SHALL run as the *worker user* `igor-worker-<role>`, never root or the unit's `User=`, the
-*service user*.
+Under `igor serve`, the worker, every other *model step* (#174's term: a `claude -p` call) in its
+tree and every process they start SHALL be unable to read any credential the Igor holds
+beyond what it hands them, or reach another role's worker or its files. No argument of a process
+the Igor starts SHALL hold the item's text or the seat token. On a *local host*, where
+`igor serve` runs, they SHALL run as the *worker user* `igor-worker-<role>`, never root or the
+unit's `User=`, the *service user*.
 
 #### Scenario: Code an allowed command runs cannot read the Igor's credentials
 
@@ -101,8 +101,9 @@ is a condition on its instance* says.
 
 Under `igor serve`, the worker SHALL be able to create, edit and remove files in its working
 tree, write its outbox, and run the role's allowed commands. It SHALL NOT be able to write the
-tree's git directory, the lore checkout or any worktree of it the Igor reads configuration from,
-the Igor's installation, `skills_dir`, the Igor's home or the Igor's credential files. The Igor
+tree's git directory, `<tree>-git` beside the tree, the lore checkout or any worktree of it the
+Igor reads configuration from, the Igor's installation, `skills_dir`, the Igor's home or
+credential files. The Igor
 SHALL write its records only through the code host, never to a local file the worker could write.
 
 #### Scenario: The worker edits and removes files in its tree
@@ -224,8 +225,9 @@ a link.
 
 #### Scenario: An index the worker edited hides nothing
 
-- **WHEN** under `igor serve` a worker modifies a file and marks it unchanged in the index copy it
-  was given
+- **WHEN** under `igor serve` a worker modifies a file and marks it unchanged in its *index
+  copy*, the copy of the Igor's index that the Igor puts in the outbox for the worker's `git rm`
+  and `git mv`
 - **THEN** the Igor still reads the file as changed
 - **AND** the artifact carries the change
 
@@ -245,12 +247,12 @@ a link.
 
 ### Requirement: Every file read from the worker is a regular file with one link
 
-Each file the Igor, or a process it runs as the service user, reads from the worker's tree or
-outbox, the declaration file `reverts.json` included, SHALL be checked with `lstat` before it is
-opened, opened without following a link and without blocking, and read only if `fstat` shows a
-regular file whose link count is 1. Otherwise the run SHALL stop before anything is published,
-naming the file. An error parsing such a file SHALL NOT quote its content anywhere the Igor
-writes.
+Each file the Igor, or a process it runs as the service user, opens from the worker's tree or
+outbox, `reverts.json` included, SHALL be checked with `lstat`, opened without following a link
+and without blocking, and read only if `fstat` shows a regular file with one link; otherwise the
+run SHALL stop before publishing, naming the file. A symbolic link, read by `readlink` alone, and
+a gitlink are never opened, and so are exempt. A parse error SHALL NOT quote the file
+anywhere the Igor writes.
 
 #### Scenario: A link in the outbox is not followed
 
@@ -282,6 +284,12 @@ writes.
 - **WHEN** the declaration file is a regular file with one link whose content is not valid JSON
 - **THEN** no refusal, comment, record or log the Igor writes quotes any of its content
 
+#### Scenario: A changed symbolic link is published, not stopped
+
+- **WHEN** a worker changes a symbolic link in its tree to point at a path that does not exist
+- **THEN** the Igor reads the link's target with `readlink`, without opening it
+- **AND** the run does not stop under this requirement, and the artifact carries the link
+
 ### Requirement: The Igor publishes the tree it recorded before the checks
 
 After the last staging of the changed paths into its own index, the Igor SHALL record the staged
@@ -309,8 +317,10 @@ one more.
 #### Scenario: The Igor runs prose's first call
 
 - **WHEN** the prose pass is about to start
-- **THEN** the Igor runs prose's first call as the service user, with the script in `skills_dir`
-- **AND** the prose pass's prompt holds the rules and the pass token that call printed
+- **THEN** the Igor runs prose's first call as the service user, with the script in `skills_dir`,
+  #174's root-owned directory of pinned skills
+- **AND** the prose pass's prompt holds the rules and the pass token that call printed, the
+  one-use token prose's second call needs to sign
 - **AND** no prose or bug-hunter script, `prose start` (the call that marks a session as having
   read prose's rules) included, runs as the worker user
 
@@ -339,7 +349,7 @@ trailers, `Prose:` and `Bug-hunter-Tree:`, SHALL name that staging's tree, which
 - **AND** the worker had marked a changed file unchanged in its index copy
 - **THEN** every staging comes after the model steps started so far have exited
 - **AND** the Igor runs prose's second call, with the first call's pass token, and bug-hunter's
-  minting script against the last staged tree, which holds that file's change and both steps' edits
+  minting script, which writes `Bug-hunter-Tree:`, against the last staged tree, which holds that file's change and both steps' edits
 - **AND** both calls run as the service user, with the scripts in `skills_dir`
 - **AND** that tree is the one the Igor publishes
 
@@ -355,7 +365,8 @@ trailers, `Prose:` and `Bug-hunter-Tree:`, SHALL name that staging's tree, which
 #### Scenario: Every staging follows the kill and the checks
 
 - **WHEN** the Igor stages before prose's first call, after the prose pass, and after the model
-  steps that answer #153's cold read
+  steps that answer #153's cold read, a fresh model step that reads the commit's prose with no
+  other context
 - **THEN** before each staging every model step started so far has exited, every process the
   worker user owns has been killed, and the link and hard-link checks have passed
 - **AND** both trailers name the tree of the last staging, which is the tree the Igor publishes
@@ -370,6 +381,8 @@ trailers, `Prose:` and `Bug-hunter-Tree:`, SHALL name that staging's tree, which
 - **WHEN** #189 starts a second worker run after a check fails
 - **THEN** the order of #153's steps, the extra bug-hunter iteration and the last staging the
   trailers bind apply to that run afresh, as they did to the first
+- **AND** that run's edits become a second commit on top of the first run's signed commit, as
+  #153 and #189 say
 
 #### Scenario: A hard link made after the first staging is caught before the next
 
@@ -431,6 +444,28 @@ only in its own role's directory.
   under `/var/lib/igor/trees/docs`
 - **THEN** its startup sweep removes nothing under `/var/lib/igor/trees/docs`
 
+### Requirement: Under serve, the worker cannot read the lore or the Igor's state
+
+Under `igor serve`, the worker SHALL be unable to read or enter the lore checkout and every
+worktree of it, and unable to list the Igor's state directory or its `trees` directory, which it
+SHALL only pass through. It SHALL reach nothing else the Igor keeps in the state directory,
+flagged questions and session-log copies included. `trees/<role>` SHALL be
+enterable only by the Igor and that role's worker user. The start check SHALL prove this.
+
+#### Scenario: The worker cannot read the lore checkout
+
+- **WHEN** under `igor serve` a test the worker wrote lists the lore checkout, or reads a file in
+  it or in the lore worktree this process reads its configuration from
+- **THEN** each is refused
+
+#### Scenario: The worker cannot read flagged questions or session-log copies
+
+- **WHEN** under `igor serve` a test the worker wrote lists the state directory, or reads a file
+  under `flagged-questions` or a session-log copy #174 keeps in the state directory, naming its
+  path
+- **THEN** each is refused
+- **AND** the worker still reaches its own tree under `trees/<role>`
+
 ### Requirement: Isolation is proved before any work is taken
 
 Before its first cycle, `igor serve` SHALL prove as the worker user that it can run `claude` but
@@ -466,6 +501,12 @@ start, naming it.
   check created that only the Igor can read
 - **THEN** the Igor refuses to start, naming that path
 
+#### Scenario: The worker user can read the lore checkout or the state directory
+
+- **WHEN** the worker user can read or enter the lore checkout, can list the state directory or
+  its `trees` directory, or can read or enter any other entry the Igor has in the state directory
+- **THEN** the Igor refuses to start, naming that path
+
 #### Scenario: The worker user can write the lore checkout
 
 - **WHEN** the worker user can write the lore checkout
@@ -484,10 +525,17 @@ start, naming it.
 
 #### Scenario: A named credential path does not exist
 
-- **WHEN** a path the check is given to probe does not exist, such as one
-  `GITHUB_APP_PRIVATE_KEY_FILE` or `IGOR_ENV_FILES` names
+- **WHEN** a path the check is given to probe does not exist as the service user sees it, such
+  as one `GITHUB_APP_PRIVATE_KEY_FILE` or `IGOR_ENV_FILES` names
 - **THEN** the Igor refuses to start, naming that path, since a probe of a missing file proves
   nothing
+
+#### Scenario: A path hidden from the worker is not missing
+
+- **WHEN** under the unit's `ProtectProc=invisible` the worker user cannot see
+  `/proc/<igor pid>/environ`
+- **THEN** the check finds the path exists, since the Igor tests existence as the service user
+- **AND** the worker's read of it fails, so that probe passes
 
 #### Scenario: The worker user can read an environment file the unit names
 
@@ -501,6 +549,13 @@ start, naming it.
   `igor serve` starts with `IGOR_ENV_FILES` unset
 - **THEN** the check reports that file as not checked
 - **AND** it does not report them as passed
+
+#### Scenario: Paths #174 provides are not checked where #174 is not built
+
+- **WHEN** this change is built without #174's code, so no `skills_dir`, scripts in it or home
+  template exist
+- **THEN** the check reports each of them as not checked, and does not refuse the start for them
+- **AND** where #174's code is built, a missing one refuses the start like any other probed path
 
 #### Scenario: The worker user can write a script the Igor runs
 
@@ -683,8 +738,8 @@ own user, without `sudo`.
 ### Requirement: A worker gets a secret only through the Igor, which registers it
 
 Under `igor serve`, a secret SHALL reach the worker, a model step or a check only from the Igor.
-Those secrets are the seat's token, a forwarded proxy URL's user info, which is all #189's checks
-get, and any the server's own configuration declares. In both modes the Igor SHALL register each
+Those secrets are only the seat's token and a forwarded proxy URL's user info; #189's checks get
+only the user info. In both modes the Igor SHALL register each
 secret it hands over with #217's `rememberSecret` first, SHALL fail the run rather than hand over
 one shorter than 8 characters, and SHALL pass no agent socket variable.
 
