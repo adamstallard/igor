@@ -17,8 +17,6 @@ export const ACTIONS = [
   'draft-pr',
   'pr',
   'label',
-  'merge',
-  'send',
 ] as const
 export type Action = (typeof ACTIONS)[number]
 

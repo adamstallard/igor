@@ -1,6 +1,36 @@
 # Design notes
 
-## The numerator stops at the reading, not at the reset
+## Whether a seat is spent is read from the observation rows
+
+An observation records how full one of a seat's windows was and when that window resets. Whether
+the seat is spent right now is a scan of those rows for one at 100% whose reset has not passed.
+Its capacity is a division over the same rows: the spend recorded in an observation's window
+instance up to the reading, divided by the fraction of the window the reading says was used.
+No separate store records whether a seat is spent, because it would be one more record to keep
+in agreement with the rows.
+
+## A low estimate need not last, and an unknown capacity is not spent against
+
+**Capacity is recorded spend divided by the fraction it consumed.** When the seat's owner also
+uses the window, the fraction includes their use and the recorded spend does not, so that one
+observation underestimates the capacity. The estimate does not stay there: the implementation
+uses the newest observation that yields a figure, so the next reading replaces the low one. A
+seat read repeatedly is also read across intervals its owner happened not to use it, and those
+observations give the capacity outright. How to combine observations so the better ones win, rather
+than simply the newest, is not decided yet: it needs a season of them. It matters, because an owner
+shares a seat with the Igors so that its unused capacity gets used, and a seat left under-used for
+good wastes exactly that.
+
+**A seat with no capacity figure at all protects no floor.** A reserve is a fraction of
+capacity, so with no capacity figure the reserve bounds nothing, and a reserved seat with no
+figure is not spent from. Spending somebody's subscription against a capacity nobody supplied
+would be worse than declining to use their seat, because they would not see the failure until
+their own work was refused. A declared figure is different: somebody named it, it is reported as
+declared, and the first observation replaces it. A seat with no reserve is spent from even
+without a figure. The worst that does is a run that fails on a limit error, and that error is
+the observation that calibrates the seat.
+
+## The implementation stops the numerator at the reading; the requirement does not say so
 
 The requirement says the numerator is "the spend recorded for that seat within the instance the
 observation belongs to — bounded by the observation's reset time and the window's cadence". Read

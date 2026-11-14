@@ -110,6 +110,15 @@ bounds six hours of spend where the wall clock bounded fifteen minutes. Reconstr
 a price table plus correct cache-read, cache-write and thinking accounting, against per-event
 figures that do not reconcile with the total by a factor of forty-seven.
 
+## A kill keeps what the run produced
+
+A kill for a limit ends the worker, not the record of its work. A silence window can expire on a
+run that has already reported its result but whose process has not exited: that run settles with
+its result and cost, as a success. A kill can also land hours into real editing: the run still
+fails, and its record names the files the worker changed, read from its working tree. Recording
+either run as having produced nothing would misreport the first as a failure and hide the work of
+the second.
+
 ## Consequences accepted
 
 **A wedged worker also stops answering stops.** Mid-run claim re-reads are driven by event

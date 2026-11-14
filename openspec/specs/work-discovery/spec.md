@@ -47,33 +47,11 @@ it as deliberately loose — narrowing is the job of later stages, not of the qu
 
 ### Requirement: Watermarks reduce reconsideration without governing it
 
-Discovery SHALL record a per-source watermark so previously seen items are not reconsidered
-indefinitely. A watermark is an efficiency measure only.
-
-A cycle that decided nothing SHALL NOT advance the watermark. Where discovery ran to show
-somebody what a cycle would decide, nothing was decided and nothing is settled, so the items it
-examined remain exactly as unexamined as before it ran.
-
-The watermark advances on a cycle that acted, even past the items triage decided to skip,
-because deciding not to act on an item is still having considered it, and reconsidering it every
-cycle would cost the model call again for the same answer. A preview decided nothing, so it has no
-such reason. What it costs to hold the mark back is a later cycle paying for the same triage call,
-which is the efficiency this requirement already declines to treat as governing. What advancing
-costs is the items themselves: marked seen, never rediscovered, never worked.
-
-A cycle has not acted on an item triage chose to work until it takes that item. Where a cycle does
-not take one, because its budget ran out, a condition (a fault in the Igor's own configuration that
-recurs on every item) stopped it part-way through, or the tracker gave no answer to its claim, the 
-watermark SHALL NOT advance past that item. Passed by the mark, the item would be marked seen and 
-never worked, with no decision against it to justify the loss.
-
-Where the tracker answered the claim and refused it, the watermark SHALL advance past the item as
-past one taken. Such a refusal is about the item or about what the Igor may do, such as a GitHub
-App without permission to add the claim label, and a retry would be refused the same way until the
-item or that permission changed. The watermark is one timestamp per source, so holding it below
-the item would also triage every item updated after it again, each cycle, while the refusal
-lasted. This accepts that the item, once passed, is reconsidered only after somebody edits or
-comments on it.
+Discovery SHALL keep a watermark per source, for efficiency only, so seen items are not reconsidered
+forever. A cycle that decided nothing, such as a preview, SHALL NOT advance it. One that acted moves
+it past skipped items, but SHALL NOT pass an item triage chose to work and the cycle did not take:
+budget ran out, a condition (an Igor configuration fault recurring on every item) stopped it, or its
+claim got no answer. A claim the tracker refused SHALL count as taken; a retry would fail alike.
 
 #### Scenario: Seen items not re-triaged
 
@@ -107,7 +85,8 @@ comments on it.
 
 - **WHEN** a cycle decides to work an item and the tracker answers its claim with a refusal: it
   rejects the request, or accepts it and the claim is not on the item when read back
-- **THEN** the watermark advances past that item as past one the cycle took
+- **THEN** the watermark advances past that item as past one the cycle took, since a retry would be
+  refused the same way until the item or the Igor's permission changed
 
 ### Requirement: The cycle repeats without supervision
 
@@ -140,17 +119,8 @@ single cycle invoked by hand is the unit that process repeats, not a substitute 
 
 A source with no watermark SHALL consider only items updated within a bounded look-back window,
 and SHALL set its watermark from that run. It MUST NOT triage a repository's entire open
-history because it has not run before.
-
-Without the bound, an Igor pointed at an established repository wakes up facing every open
-item at once — a cost spike, and an Igor appearing to lay claim to years of open work in its
-first minute. Handing it the backlog stays something a person does deliberately.
-
-A run that decided nothing does not count as that first run and sets no watermark. What stops the
-next run re-facing the backlog is the bound, which applies to every run with no watermark however
-many previews preceded it; setting the mark only determines where a run that *acted* continues
-from. So a preview of a first run leaves the next run still a first run, still bounded, and this
-requirement's purpose is untouched.
+history because it has not run before. A run that decided nothing, such as a preview, does not
+count as that first run and sets no watermark.
 
 #### Scenario: Established repository does not flood the first cycle
 
