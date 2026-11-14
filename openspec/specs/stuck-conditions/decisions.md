@@ -1,0 +1,38 @@
+# stuck-conditions: constraints, rejected alternatives and rationale
+
+## Rejected
+- **Rejected: an Igor-authored issue in the destination for each stop.**
+  Facing: a stopped Igor that nobody notices, since nothing pushes the stop to a person.
+  Lost because: it needs Igors to author tracker items, `universalSkip` to learn about items an Igor wrote and `issues: write` on the template, for one use, and it puts an operations alert where reviewers decide what to work on, #77.
+  Instead: the cycle report, `igor budget` and `igor conditions`, which a person reads.
+  Paths: src/serve.ts, src/handoff.ts
+- **Rejected: a requirement that the shipped supervisors escalate a process that keeps refusing to start.**
+  Facing: a refusal nobody notices.
+  Lost because: under the shipped unit a refusal leaves the unit `failed`, which `systemctl status` shows and which a monitor that watches for failed units can catch, with nothing Igor-specific to configure; task 1.6 of `stopped-scope-visible` measured the `failed` state, #82.
+  Instead: *The shipped systemd unit restarts a crash and leaves a refusal down*, and the slow, logged retries under compose.
+  Paths: deploy/igor.service, deploy/docker-compose.yml
+
+## Rationale
+- **Rationale: An open condition never ends a running service.**
+  A restarted process rebuilds every condition from the execution log on the state branch, so it exits again or idles and knows nothing a process that stayed up does not. A process that exits on sight of an open condition never reaches its probe's cooldown, so the condition never clears, and how often the supervisor restarted it would set how often a probe could run. Nor does a restart loop alert anyone: a unit restarted 30 seconds after each exit never reaches systemd's start-rate limit, so nothing hung off a failed unit fires.
+  Evidence: conditions are rebuilt from `executions.ndjson`, with a probe after a cooldown, in `src/conditions.ts` on `main`, https://github.com/adamstallard/igor/blob/b4f8ac0/src/conditions.ts
+  Evidence: systemd 252's default start-rate limit did not trip even at a 2-second restart delay, measured in a `debian:bookworm` container on 2026-10-18 (task 1.6 of `stopped-scope-visible`), posted on PR #82
+  Under compose, a fix in the service's `.env` takes effect when the container is recreated, not when compose restarts it, because Docker applies the environment when it creates a container: `docker compose restart` does not apply changes made to the compose configuration, and `docker compose up -d` recreates a container whose configuration changed.
+  Evidence: Docker documents that `docker compose restart` does not reflect configuration changes, https://docs.docker.com/reference/cli/docker/compose/restart/
+  Evidence: a restart policy restarts the same container rather than creating one, https://docs.docker.com/engine/containers/start-containers-automatically/ (that a policy restart keeps the creation-time environment is not yet checked; task 1.9 of `stopped-scope-visible` measures it)
+- **Rationale: A process that refuses to start exits with status 78.**
+  78 is `EX_CONFIG` in `sysexits.h`, a configuration error, which every refusal is. No other exit collides with it: Node's own exit codes run from 1 to 14, and a signal gives 128 plus its number, so a supervisor can tell a refusal from a crash by status alone.
+  A start check that fails because GitHub or the model provider did not answer, or GitHub refused the App's credential, exits 1, not 78: a restart can cure each of those, and an exit 78 would leave the unit failed until a person acted. A crash while the App's credential condition is open restarts the process, its start check finds the credential refused, and an exit 78 there would leave the unit down for good.
+  Evidence: under the shipped unit's settings an exit 78 left the unit `failed` and not restarted, and an exit 1 was restarted, measured on systemd 252 on 2026-10-18 (task 1.6 of `stopped-scope-visible`), posted on PR #82
+  Evidence: `sysexits.h` defines 78 as `EX_CONFIG`, https://man.freebsd.org/cgi/man.cgi?query=sysexits
+  Evidence: Node.js documents its exit codes, https://nodejs.org/api/process.html#exit-codes
+- **Rationale: The shipped systemd unit restarts a crash and leaves a refusal down.**
+  With `Restart=on-failure` and `RestartPreventExitStatus=78`, a refusal stays down and failed with Igor's reason in the journal, a clean exit stays down and inactive, and an exit 1 is restarted; under `Restart=always` every one of them comes back, a clean exit included. `RestartSec=30s` retries an exit 1, such as a start GitHub refused the App's credential for, every 30 seconds: slow enough that systemd's start-rate limit, by default five starts in ten seconds, never trips and leaves the unit failed.
+  Evidence: systemd documents the default start-rate limit, `DefaultStartLimitIntervalSec=10s` and `DefaultStartLimitBurst=5`, https://www.freedesktop.org/software/systemd/man/latest/systemd-system.conf.html
+  Evidence: measured on systemd 252 in a `debian:bookworm` container on 2026-10-18, with a stand-in that exits with a chosen status and `RestartSec=2` in place of 30: under `Restart=always` exits 0, 1 and 78 were all restarted; under `Restart=on-failure` with `RestartPreventExitStatus=78`, exit 0 left the unit inactive, exit 1 was restarted, and exit 78 left it `failed` with `status=78/CONFIG` and Igor's line in the journal (task 1.6 of `stopped-scope-visible`), posted on PR #82
+- **Rationale: Under the shipped compose file, a failed start waits before it exits.**
+  Compose has no setting that skips one exit status, and `restart: on-failure:3` is no substitute: its count never resets while the container exists, so a container that had run for weeks stays down after its fourth crash. So compose keeps `unless-stopped` and Igor slows the loop itself, for a start check's exit 1 as well as a refusal: compose's own delay before a restart starts at 100 milliseconds and only doubles from there, so without a wait a refused App credential or a GitHub outage at start is retried many times in its first minutes. `unless-stopped` also brings a container that was running back after a daemon restart, so no setup is needed after a reboot. Docker's rule that a restart policy takes effect only after 10 seconds of running governs only the delay between restarts: a quick refusal was retried all the same. The count of failed starts stays off every volume, the trees volume the shipped compose file mounts at `/tmp` included, because a count there would outlive the container and be shared by any other container that mounts the volume.
+  Evidence: Docker restarts a container under a restart policy after a delay that starts at 100 milliseconds and doubles, https://docs.docker.com/engine/containers/start-containers-automatically/
+  Evidence: Docker's restart policies are `no`, `on-failure[:max-retries]`, `always` and `unless-stopped`, none of which names an exit status to skip, https://docs.docker.com/engine/containers/start-containers-automatically/
+  Evidence: on Docker Engine 29.6.2 with Compose 5.3.1, `on-failure:3` left a container down after a fourth crash, runs of 12 and 150 seconds did not reset its count, a quick refusal was retried three times with every attempt in `docker compose logs`, and inside `docker:29-dind` a container that was running came back after `docker restart` of the daemon without spending a retry, measured on 2026-10-18 (task 1.8 of `stopped-scope-visible`), posted on PR #82
+  Evidence: `deploy/docker-compose.yml` on `main` mounts the volume `igor-trees` at `/tmp`, https://github.com/adamstallard/igor/blob/b4f8ac0/deploy/docker-compose.yml#L16
