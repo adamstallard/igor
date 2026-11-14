@@ -1,62 +1,24 @@
+## Purpose
+
+`igor doctor` reports whether a configured lore repository is wired to work, covering what
+its configuration alone cannot show, and changes nothing.
+
 ## ADDED Requirements
 
 ### Requirement: Setup is reported by one command, over what configuration alone cannot show
 
 A single command SHALL report whether a configured lore repository is wired to work, covering
-what neither the configuration nor an entry can show on its own. *The credential* below is the
-code-host credential the command runs with, such as the person's own `gh` login or a CI token;
-a role's App is read with that App's own key, where the command's environment holds it, and where
-it does not, that role's App check is unchecked. It SHALL inspect at least:
+what neither the configuration nor a lore entry can show on its own. It SHALL inspect at least
+the destination, each role file under it, each role's sources and seat, the org-level `commands`
+list, the default branch's protection and required approvals, the reconciliation workflow and
+its push, the state branch, and each role's GitHub App. A per-role check SHALL cover every role.
 
-- **The destination.** That it resolves, is inside a git repository, and has an `origin` remote
-  naming a repository on the code host.
-- **Roles.** That every role file under the destination resolves, and that every role names at
-  least one source.
-- **Every role has a seat.** A role has a seat to spend from when resolving its seats, as
-  `seat-budget` defines that for `igor serve`, yields at least one declared seat, whether or not
-  that seat has budget left. It is `igor serve`'s definition because a seat is what `igor serve`
-  spends. A role with none SHALL be a finding, whether or not any seat is declared. Where seats
-  are declared, resolving the role also fails; the role SHALL still be reported once.
-- **A removal is permitted.** That the org-level `commands` list permits removing a tracked
-  file.
-- **Direct pushes to the default branch are prevented.** The default branch requires a pull
-  request before merging, and administrators are bound by that rule too. An entry pushed straight
-  to the default branch is never promoted, as lore-review's *Lore reaches the default branch by
-  pull request* says. Where administrators may bypass the rule, as classic branch protection lets
-  them with `enforce_admins` off, or a ruleset whose bypass list holds the administrator role,
-  an administrator can still push straight to the default branch. That SHALL be a finding, and
-  the report SHALL say that administrators can bypass the rule, not that the branch is protected
-  against direct pushes. For the check of the workflow's push, below, the branch still counts as
-  protected: the bypass is administrators' alone, so the rule still blocks the workflow's actor.
-- **Approval is not required on a pull request.** Where fewer than two people with write access
-  could approve, requiring approvals blocks promotion outright, for the reasons lore-review's
-  *Lore reaches the default branch by pull request* and task-execution's *A person approves every
-  Igor pull request* give.
-- **The merge-triggered reconciliation workflow is present on the default branch.**
-- **The workflow's own push is not blocked.** Where the default branch is protected and the
-  workflow is present, that the actor the workflow pushes as may bypass the protection.
-- **The state branch.** That it is reachable, and that the credential holds the write permission
-  pushing to it requires.
-- **Each role's GitHub identity can act.** For each role that claims on GitHub, the report SHALL
-  invoke the check `igor run` and `igor serve` make before discovery, surface-adapter's *An Igor
-  that cannot act as its App does not start*, and report what it finds. A GitHub role's identity
-  is its App (work-claiming's *On GitHub, an Igor is a GitHub App and claims with its role's
-  label*). The check reads the App's installation, so it works on a repository where nothing has
-  been claimed yet. A role that claims only on Linear has no such App, and the report SHALL say
-  the check does not apply to it.
+#### Scenario: The credential and the App keys
 
-The command MAY invoke a check another part of Igor already makes, and SHALL NOT re-implement
-one. It SHALL invoke the configuration loader's validation, in a mode that reads no secret: no
-private key file, no token, and no token command run. It SHALL report each finding that
-validation makes, named with its source. A configuration that fails to load is itself a finding,
-and the checks that do not need it still run. Where a condition is reported only at runtime, such
-as a seat whose token cannot be read, the report SHALL name the command that covers it, here
-`igor budget`, rather than check it. A per-role check SHALL cover every role. `igor run` and
-`igor serve` check only the role they run.
-
-Text the report takes from repository files, such as a file name, a key or a seat's owner, SHALL
-be printed so that it cannot act as a GitHub Actions workflow command: no line of the report
-SHALL begin with `::` because of such text.
+- **WHEN** the command runs
+- **THEN** *the credential*, wherever a check names it, is the code-host credential the command
+  runs with, such as the person's `gh` login or a CI token
+- **AND** a role's App is read with that App's own key
 
 #### Scenario: Direct pushes to the default branch are possible
 
@@ -73,6 +35,15 @@ SHALL begin with `::` because of such text.
 - **AND** the finding states that an administrator can push straight to the default branch
 - **AND** where the reconciliation workflow is present, the check that its actor may bypass the
   protection still runs
+
+#### Scenario: Either kind of administrators' bypass is named as one
+
+- **WHEN** administrators may bypass the default branch's pull-request rule, through classic
+  branch protection with `enforce_admins` off or a ruleset whose bypass list holds the
+  administrator role
+- **THEN** it is reported as a finding
+- **AND** the report says that administrators can bypass the rule, not that the branch is
+  protected against direct pushes
 
 #### Scenario: Approvals are required
 
@@ -108,27 +79,30 @@ SHALL begin with `::` because of such text.
   lacks a permission the start-up check requires there
 - **THEN** it is reported as a finding naming that role and the permission it lacks
 
+#### Scenario: A role that claims on GitHub is checked by the start-up check
+
+- **WHEN** a role claims on GitHub
+- **THEN** the command invokes the check `igor run` and `igor serve` make before discovery,
+  surface-adapter's *An Igor that cannot act as its App does not start*, for that role's App,
+  its identity under work-claiming's *On GitHub, an Igor is a GitHub App and claims with its
+  role's label*
+- **AND** the report shows what that check finds
+
 #### Scenario: A role names no source
 
 - **WHEN** a role under the destination names no source
 - **THEN** it is reported as a finding, because such a role discovers nothing and says nothing
-
-#### Scenario: A configuration that fails to load
-
-- **WHEN** the configuration fails the loader's validation
-- **THEN** each failure is reported as a finding, named with its source
-- **AND** the checks that do not need the configuration still run
-
-#### Scenario: A file name cannot inject a workflow command
-
-- **WHEN** a role file is named `::add-mask::x.yaml` and the report runs in GitHub Actions
-- **THEN** no line of the report begins with `::`
 
 #### Scenario: A role that does not resolve
 
 - **WHEN** a role file fails to resolve, such as by naming a seat nobody declared
 - **THEN** it is reported as a finding naming that role
 - **AND** the remaining roles are still checked
+
+#### Scenario: A destination that does not resolve
+
+- **WHEN** the configured `destination` does not resolve
+- **THEN** it is reported as a finding
 
 #### Scenario: A destination that is not a git repository
 
@@ -168,11 +142,23 @@ SHALL begin with `::` because of such text.
   approve cannot be read
 - **THEN** the approval check is reported as unchecked, with the reason
 
+#### Scenario: A role's seat is the one `igor serve` would spend
+
+- **WHEN** the command decides whether a role has a seat
+- **THEN** it resolves the role's seats as `seat-budget` defines that for `igor serve`
+- **AND** the role has a seat if that yields at least one declared seat, whether or not that
+  seat has budget left, and has none otherwise
+
 #### Scenario: A role with no seat
 
 - **WHEN** a role has no seat to spend from, whether or not the configuration declares any seat
 - **THEN** it is reported as a finding naming that role, once
 - **AND** the remaining roles are still checked
+
+#### Scenario: A role with no seat that also fails to resolve
+
+- **WHEN** seats are declared and a role has no seat, so resolving that role also fails
+- **THEN** the role is reported once, not once under each check
 
 #### Scenario: Removals are not permitted
 
@@ -180,6 +166,26 @@ SHALL begin with `::` because of such text.
 - **THEN** it is reported as a finding
 - **AND** the finding states that the worker cannot delete a file and that the refusal would
   otherwise arrive after the work is paid for
+
+#### Scenario: A clean setup says what it checked
+
+- **WHEN** every check passes
+- **THEN** the report says so, naming what was checked rather than printing nothing
+
+### Requirement: The check invokes Igor's existing checks and validates without reading a secret
+
+The command MAY invoke a check another part of Igor already makes, and SHALL NOT re-implement
+one. It SHALL invoke the configuration loader's validation in a mode that reads no secret: no
+private key file, no token, and no token command run. It SHALL report each finding that
+validation makes, named with its source. Where a condition is reported only at runtime, such as
+a seat whose token cannot be read, the report SHALL name the command that covers it, here
+`igor budget`, rather than check it.
+
+#### Scenario: A configuration that fails to load
+
+- **WHEN** the configuration fails the loader's validation
+- **THEN** each failure is reported as a finding, named with its source
+- **AND** the checks that do not need the loaded configuration still run
 
 #### Scenario: The loader's validation is invoked, not re-implemented
 
@@ -193,10 +199,16 @@ SHALL begin with `::` because of such text.
 - **WHEN** a seat names a token source that cannot be read
 - **THEN** the report names the command that reports seats rather than reading the token itself
 
-#### Scenario: A clean setup says what it checked
+### Requirement: Report text cannot start a workflow command
 
-- **WHEN** every check passes
-- **THEN** the report says so, naming what was checked rather than printing nothing
+Text the report takes from repository files, such as a file name, a key or a seat's owner, SHALL
+be printed so that it cannot act as a GitHub Actions workflow command: no line of the report
+SHALL begin with `::` because of such text.
+
+#### Scenario: A file name cannot inject a workflow command
+
+- **WHEN** a role file is named `::add-mask::x.yaml` and the report runs in GitHub Actions
+- **THEN** no line of the report begins with `::`
 
 ### Requirement: The check reports and never repairs
 

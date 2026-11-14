@@ -1,24 +1,25 @@
 ## Decisions
 
-1. **`igor doctor` is built after App support (#156's implementation, now merged)** (Adam,
-   2026-10-04). Its only identity check is that each role's App is installed on the repository
-   where it claims issues, with the permissions its `igor:<role>` label and claim comment need.
-   Under decision 4 that check is the one `igor run` and `igor serve` make before discovery,
-   invoked rather than re-implemented. *Rejected:* an interim check of the claiming account's
-   write access.
-2. **An identity that is not an App is not a finding** (Adam, 2026-10-11). Since #156 every
-   role's identity on GitHub is its App, so `doctor` never meets another kind and has nothing to
-   report for one. Igor reports no old configuration, since nobody runs Igor yet.
-3. **A role with no seat is a finding, whether or not any seat is declared** (Adam,
-   2026-10-18). Where seats are declared the loader refuses such a role, but only the role being
-   run; where none are, nothing refuses it. When this takes effect is open (*Still open*).
-   Task 2.6.
-4. **`igor doctor` may invoke an existing check, and never re-implements one** (Adam,
-   2026-10-18). It invokes the configuration loader's validation in a mode that reads no secret
-   and reports each of its findings, named with its source. One of them will be a seat file
-   carrying an encrypted token where no key is declared: #171 (`seat-files`), an open pull
-   request built after this change, adds that finding to the validation, and `doctor` shows it
-   once #171 lands. Task 2.7.
+1. **`igor doctor` is built after App support (#156's implementation, now merged)**. Its only
+   identity check is that each role's App is installed on the repository where it claims issues,
+   with the permissions its `igor:<role>` label and claim comment need. That check is the one
+   `igor run` and `igor serve` make before they look for work to claim, and `doctor` invokes it
+   rather than re-implementing it (decision 4). *Rejected:* an interim check of the claiming
+   account's write access.
+2. **An identity that is not an App is not a finding**. Since #156 every role's identity on
+   GitHub is its App, so `doctor` never meets another kind and has nothing to report for one.
+   Igor reports no configuration from before App support, since only its developers run it yet.
+3. **A role with no seat is a finding, whether or not any seat is declared**. Where seats are
+   declared the loader refuses such a role, but only the role being run. Where none are, nothing
+   refuses it, and it spends through a stored login, which #171 and #175 decided Igor never does. Whether this
+   applies before #171 lands, and so whether `doctor` exits non-zero on every deployment that
+   declares no seats, is open (*Still open*). Task 2.6.
+4. **`igor doctor` may invoke an existing check, and never re-implements one**. It invokes the
+   configuration loader's validation in a mode that reads no secret, adding that mode where the
+   loader has none, and reports each of its findings, named with its source. One of those
+   findings will be that a seat file carries an encrypted token where no key is declared. #171
+   (`seat-files`), an open pull request whose implementation comes after this change's, adds
+   that finding to the validation, and `doctor` shows it once #171 lands. Task 2.7.
 
 Choices this change makes, which Adam approves with it:
 
@@ -38,11 +39,14 @@ Choices this change makes, which Adam approves with it:
 
 Adam's decision of 2026-10-21:
 
-12. **A pull-request rule that administrators can bypass is a finding** (Adam, 2026-10-21). With
+12. **A pull-request rule that administrators can bypass is a finding**. With
     `enforce_admins` off in branch protection, an administrator can push straight to the default
     branch, so the report says so and does not call the branch protected against direct pushes.
-    A ruleset whose bypass list holds the administrator role is the same case. Under #171 (`seat-files`), seat files live in the lore repository, and a lender hears of a
-    change to theirs from a notice on its pull request, which a direct push skips. Task 3.2.
+    A ruleset whose bypass list holds the administrator role is the same case. An entry pushed
+    straight to the default branch is never promoted (`design.md`). And under #171
+    (`seat-files`), seat files live in the lore repository: a person who lends a seat hears of a
+    change to their seat file from a notice on the pull request that makes it, which a direct
+    push skips. Task 3.2.
 
 **Still open, for Adam, each with a recommendation:**
 
@@ -72,12 +76,11 @@ Adam's decision of 2026-10-21:
   repository `doctor` always exits non-zero, so a CI step there is always red. *Recommended:*
   keep the finding; such a repository can skip `doctor` in CI.
 
-**Found by the 2026-10-21 consistency read, for the next revision.** A consistency read is a
-fresh agent's check of this change against every other spec, change and open pull request. None
-of its findings is fixed here, and none concerns decision 12.
+**Found by the 2026-10-21 consistency read, and open.** A consistency read is a fresh agent's
+check of this change against every other spec, change and open pull request. None of the
+findings below is fixed here.
 
 - To fix, by whoever next revises this change:
-  - *What Changes* still says at least one role must name a source, against decision 11.
   - Decision 1 describes one claiming repository and two permissions, while the start-up check
     it invokes covers every repository the role works, and the lore repository.
   - A role that claims on Linear still acts on GitHub as its App, so its App check is not "not
@@ -143,8 +146,10 @@ the executable half executable, and says which half is not — see *What this do
 ## What Changes
 
 **One new command, `igor doctor`, and one new capability, `setup-check`.** The command reports
-on a configured lore repository and changes nothing. Five requirements, one for the surface and
-one for each of the four constraints the issue states.
+on a configured lore repository and changes nothing. Seven requirements: one for the command and
+what it inspects, two more rules for it (it invokes Igor's existing checks and validates without
+reading a secret; report text cannot start a workflow command), and one for each of the four
+constraints issue #110 states.
 
 *Setup is reported by one command, over what the configuration alone cannot show.* The command
 inspects the destination and its repository:
@@ -152,7 +157,7 @@ inspects the destination and its repository:
 - The destination resolves, is inside a git repository, and has an `origin` remote naming a
   GitHub repository — what `repoFromCheckout` throws on, surfaced before a run rather than
   during one.
-- Every role file resolves, and at least one role names at least one `sources` entry. A role
+- Every role file resolves, and every role names at least one `sources` entry. A role
   with none discovers nothing, forever, quietly: `role.ts` prints `sources: (none)` and no
   path refuses it.
 - Every role has a seat to spend from, whether or not any seat is declared (decision 3).

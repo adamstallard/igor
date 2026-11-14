@@ -3,16 +3,19 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
 
 ## 1. The agreement (gate one — this pull request)
 
-- [x] 1.1 Five `setup-check` requirements: the surface and the four constraints — read-only,
-      remedy and actor, degrade rather than fail, exit status
+- [x] 1.1 Seven `setup-check` requirements: the command and what it inspects, its two
+      further rules (existing checks invoked, validating with no secret read; report text that
+      cannot start a workflow command), and the four constraints — read-only, remedy and
+      actor, degrade rather than fail, exit status
 - [x] 1.2 Say which rows of `docs/deployment.md`'s "When something is wrong" table become
       checks and which stay prose, and why each one that dissolves does
 - [x] 1.3 Say that the nested-store check is dissolved by
       [#111](https://github.com/adamstallard/igor/pull/111) rather than omitted
-- [x] 1.4 `design.md` for the five choices with live alternatives: the name; the refusal of
+- [x] 1.4 `design.md` for the six choices: the name; the refusal of
       `--fix` and its consequence for writability; the three-outcome exit semantics, with
-      approvals graded on who could approve; protection read across two API surfaces; and the
-      App check
+      approvals graded on who could approve; protection read across two API surfaces; the App
+      check; and the seat definition the seat check borrows from `seat-budget`, with why each
+      per-role check covers every role
 
 ## 2. The local half — no credential needed
 

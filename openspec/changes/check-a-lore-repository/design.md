@@ -1,7 +1,7 @@
 # Design
 
-Five decisions with live alternatives. The requirements state what must be true; these state
-how, and each was a choice rather than the only way.
+Six decisions. The requirements state what must be true; these state how, and each was a
+choice rather than the only way.
 
 ## The command is `doctor`, not `check` or `verify`
 
@@ -72,12 +72,17 @@ Three alternatives, one chosen:
 **"Require approvals" is graded rather than absolute** for the same reason. It hard-blocks a
 solo maintainer and is unremarkable for a team of four, so reporting it as a finding
 unconditionally would train a team to ignore the output. The discriminator is whether any
-person other than the one that proposes could approve: where there is none, the setting blocks
-promotion outright and it is a finding; where there is one, the check passes and the report
-states the consequence, which keeps the report at three states — pass, finding, unchecked — and
-the exit status answering one question. Where that cannot be determined — the account list is itself a
-credentialled read — the degrade rule applies and it is reported as unchecked, naming what it
-would have decided.
+person other than the one who opened the pull request could approve. Where there is none, the
+setting blocks promotion outright, and it is a finding. Lore reaches the default branch only by
+pull request (lore-review's *Lore reaches the default branch by pull request*), GitHub lets
+nobody approve their own pull request, and an Igor's approval never counts as a person's
+(task-execution's *A person approves every Igor pull request*). Where there is one, the check
+passes and the report states that requiring approvals blocks self-merge. That keeps the report
+at three states — pass, finding, unchecked — and the exit status answering one question. Who
+could approve is read from the list of people with write access, which leaves Apps out (see
+*Every Igor is a GitHub App*, below). Reading that list needs a credential, so where it cannot
+be read the degrade rule applies: the check is reported as unchecked, naming the question it
+could not answer, whether anyone else could approve.
 
 ## Protection is read from whichever surface answers, and the bypass list is the one most likely to skip
 
@@ -104,6 +109,25 @@ a set of endpoints, and the cheap local checks (destination, roles, `commands`, 
 share none of it. They are separable, and the local half is worth having on its own where no
 credential exists at all.
 
+A pull-request rule administrators can bypass is a finding because an entry pushed straight to
+the default branch is never promoted, as lore-review's *Lore reaches the default branch by pull
+request* says. The report then does not call the branch protected against direct pushes. Check
+4, whether the Actions actor may bypass the protection, still treats the branch as protected:
+the bypass is administrators' alone, so the rule still blocks the workflow's actor.
+
+## A role's seat is the one `igor serve` spends, and every role is checked
+
+In `seat-budget`, a role references a seat, or a pool of seats in order. The seat check resolves
+that reference as `seat-budget` defines it for `igor serve`, and a role has a seat when that
+yields at least one declared seat, with budget left or not. It follows `igor serve` because a
+seat is what `igor serve` spends.
+
+Where seats are declared, a role with no seat also fails the check that each role resolves. The
+report names that role once, not under both the seat check and the resolution check.
+
+Each per-role check covers every role, because `igor run` and `igor serve` check only the role
+they run.
+
 ## Every Igor is a GitHub App (amended 2026-10-04)
 
 [#156](https://github.com/adamstallard/igor/pull/156) settles that on GitHub every Igor is a
@@ -124,5 +148,6 @@ already leaves the Apps out.
 implementation, so the only identity it ever meets is an App, and the App check is the only
 identity check it has. There is no interim check of a claiming account's write access.
 
-**An identity that is not an App is not reported (Adam, 2026-10-11).** Igor does not report old
-configurations: nobody runs Igor yet, so such a check is code that supports no user.
+**An identity that is not an App is not reported.** Igor does not report a configuration from
+before App support, such as a machine user: only Igor's developers run it yet, so such a check
+is code that supports no user.
