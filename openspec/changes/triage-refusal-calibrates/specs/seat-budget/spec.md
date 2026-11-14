@@ -2,12 +2,11 @@
 
 ### Requirement: A refusal met during triage is recorded as a full reading of the seat that refused
 
-Where the provider refuses a triage call on a seat the gate named, and it carried no reading of
-the refusal that Igor records, a 100% observation SHALL be recorded for that seat with
-source `limit`, its window and any stated reset decided by the rules a refused run uses. The
-refusal SHALL be recognised by the recogniser a refused run uses, from a field the provider filled;
-a limit named only in the call's result text SHALL NOT record one. The row holds the seat until
-the window resets.
+Where the provider refuses a triage call on a seat the gate named, a 100% observation SHALL be
+recorded for that seat with source `limit`, its window and reset decided as for a refused run,
+unless the call's own `rate_limit_event` reports it `rejected` and an observation of the refusal is
+recorded from that event. The refusal SHALL be recognised as a refused run's is, from a field the
+provider filled; a limit named only in the result text SHALL NOT record one, nor SHALL a preview.
 
 #### Scenario: A refused triage call records the observation
 
@@ -18,15 +17,15 @@ the window resets.
 
 #### Scenario: A refusal the call's own reading reports is left to that reading
 
-- **WHEN** a refused triage call carries a rate-limit event that Igor records as a reading of the
-  seat
+- **WHEN** a refused triage call carries a `rate_limit_event` reporting it `rejected`, and an
+  observation of the refusal, at 100% of the window it names, is recorded from that event
 - **THEN** this requirement records no observation for that call
-- **AND** the refusal is recorded once, from the reading
 
 #### Scenario: A refusal with no reading behind it is still recorded
 
-- **WHEN** a refused triage call carries no rate-limit event Igor recognises, and the refusal is
-  named in a field the provider fills
+- **WHEN** a refused triage call carries no `rate_limit_event` reporting it `rejected`, or one
+  from which no observation of the refusal is recorded, and the refusal is named in a field the
+  provider fills
 - **THEN** an observation is recorded at 100% for that seat and window, with source `limit`
 
 #### Scenario: A triage call run with `--output-format json` takes this route
@@ -49,9 +48,15 @@ the window resets.
 - **THEN** no observation is recorded
 - **AND** the call is reported as the failure it otherwise is
 
+#### Scenario: A preview records no refusal
+
+- **WHEN** a preview of a cycle meets a triage refusal
+- **THEN** no observation is recorded
+
 #### Scenario: A refusal with no seat behind it records nothing
 
-- **WHEN** a triage call is refused and the gate named no seat for the role
+- **WHEN** an organization declares no seats, so budget is not enforced and the triage call is made
+  with no seat named, and the provider refuses it
 - **THEN** no observation is recorded
 - **AND** nothing is attributed to a seat that was not named
 
@@ -65,19 +70,20 @@ the window resets.
 
 - **WHEN** a triage refusal names no return, or names one already past
 - **THEN** the observation is recorded without a reset
-- **AND** it yields no capacity figure, on the rules already governing such a row
+- **AND** like an observation whose reset cannot be resolved, it places no window boundary, yields
+  no capacity figure, and expires one window length after it was taken
 
 ### Requirement: One refusal is one observation, however many calls met it
 
-A triage stage SHALL record at most one observation per seat and window, however many of its calls
-met the refusal. The stage SHALL stop calling a seat once the provider has refused it, and the
-observation SHALL be written once, outside whatever loop makes the per-candidate calls, by the
-caller that owns the batch rather than by the code that makes a call. The candidates it did not
-reach SHALL be reconsidered by the next cycle with capacity to triage them.
+A cycle's model stage SHALL stop calling a seat once it recognises a refusal from it, and SHALL
+record at most one observation per seat, window and stage, written once, after the per- candidate
+loop, by the caller that owns the batch, without reading the log first. Verdicts reached before the
+refusal SHALL stand. The refused candidate and those not reached SHALL be left untriaged, naming the
+refusal, under work-triage's *A candidate left untriaged is not a candidate triage decided about*.
 
 #### Scenario: Many refused calls record one row
 
-- **WHEN** a triage stage would meet the same refusal on each of several candidates
+- **WHEN** a cycle's model stage would meet the same refusal on each of several candidates
 - **THEN** exactly one observation is recorded for that seat and window
 - **AND** no further triage call is made on that seat in that stage
 
@@ -103,8 +109,9 @@ reach SHALL be reconsidered by the next cycle with capacity to triage them.
 #### Scenario: The untriaged candidates come back
 
 - **WHEN** a stage stops early because the seat refused it
-- **THEN** the candidates it did not reach are considered again by the next cycle with capacity
-- **AND** none of them needs an edit or a reply to be reconsidered
+- **THEN** the refused candidate and each candidate the stage did not reach are recorded as
+  untriaged, naming the refusal as the reason, and hold their source's watermark back
+- **AND** the next cycle with capacity considers them again, with no edit or reply needed
 
 #### Scenario: A later cycle records its own refusal
 

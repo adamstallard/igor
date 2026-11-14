@@ -1,13 +1,15 @@
 ## 1. The envelope boundary carries the limit fields
 
 - [ ] 1.1 `TriageResponse` (`src/triage.ts`) gains `api_error_status`, `terminal_reason`,
-      `stop_reason` and `rate_limit_info`, named as the envelope names them so a `TriageResponse`
-      satisfies what `usageLimit` asks of a `WorkerOutput`
+      `stop_reason` and `rate_limit_info`, named as the envelope names them, and its `isError`
+      reaches `usageLimit` as `is_error`, so a `TriageResponse` satisfies what `usageLimit` asks of
+      a `WorkerOutput` and a call the provider reports as successful never counts as a refusal
 - [ ] 1.2 `parseEnvelope` admits each under the discipline already stated there — the type it
       claims or absent, never coerced — and its doc comment says the boundary now passes
       classification inputs as well as the arithmetic it was written about
 - [ ] 1.3 Tests: a wrong-typed `api_error_status` is dropped rather than admitted; the existing
-      `result` / `costUsd` / `isError` behaviour is unchanged
+      `result` / `costUsd` / `isError` behaviour is unchanged; a successful call carrying a
+      limit in a provider-filled field records nothing
 
 ## 2. One recogniser, reached from triage
 
@@ -20,11 +22,13 @@
       invisible to the recogniser
 - [ ] 2.4 Tests: each structural signal recognised; a prose-only limit refused; an exit-zero
       errored envelope recognised
-- [ ] 2.5 The fallback condition: where the triage call's output carries a `rate_limit_event` that
-      is recorded as a reading of the seat (`read-seat-windows-from-the-stream`, #143), this path
-      records nothing for that call. Under `--output-format json` no event arrives, so the
-      condition always passes. Test it with a hand-built event only if triage reads the stream by
-      the time this lands. Otherwise leave a comment at the check naming #143's rule
+- [ ] 2.5 The fallback condition: where the triage call's output carries a `rate_limit_event`
+      reporting it `rejected`, and an observation of the refusal is recorded from that event
+      (`read-seat-windows-from-the-stream`, #143), this path records nothing for that call. In
+      every other case, including an event with another status, this path records the refusal.
+      Under `--output-format json` no event arrives, so today this path always records. Test the
+      skip with a hand-built event only if triage reads the stream by the time this lands;
+      otherwise leave a comment at the check naming #143's rule
 
 ## 3. The stage stops, and the batch reports one refusal
 
@@ -45,11 +49,15 @@
 - [ ] 4.2 Nothing reads `capacity.ndjson` to decide whether to write
 - [ ] 4.3 The write failing does not fail the cycle, and is reported the way the other
       non-fatal cycle writes are
-- [ ] 4.4 The candidates the stage did not reach hold the source's watermark back. Where #70 has
-      landed this is its `held` path; where it has not, they must not be left in `report.failures`
-      alone, which `heldBelow` does not read
-- [ ] 4.5 Tests: one refusal writes one row naming the gate's seat; a refusal with no seat writes
-      nothing; a cycle with no refusal writes nothing
+- [ ] 4.4 The candidates the stage did not reach are recorded as untriaged, naming the refusal,
+      and hold the source's watermark back through `report.untriaged`, #70's path, under
+      work-triage's *A candidate left untriaged is not a candidate triage decided about*. The
+      refused candidate is recorded the same way, not left in `report.failures`
+- [ ] 4.5 Tests: one refusal writes one row naming the gate's seat; a refusal with no seats
+      declared writes nothing; a cycle with no refusal writes nothing; a preview that meets a
+      refusal writes nothing; the refused candidate holds the mark
+- [ ] 4.6 If [#143](https://github.com/adamstallard/igor/pull/143)'s gate is built first, check that
+      it reads the row this change writes as a 100% reading until its reset
 
 ## 5. Left for a captured refusal
 
@@ -63,3 +71,12 @@
       exists because the patterns are guesses and nobody has seen a real refusal, and triage is the
       likeliest first sighting — but the record's shape is built around a run: an item, an outcome,
       a transcript pointer
+- [ ] 5.3 Capture whether an `api_error_status` 429 can be a transient throttle rather than an
+      exhausted window (#57), and bring the result to design.md's *Open Questions*
+
+## 6. At archive
+
+- [ ] 6.1 Move design.md's *Decisions* into `openspec/specs/seat-budget/decisions.md`, as
+      Rationale entries for the two requirements and a Constraint entry for §6.3's rule that the
+      stream is never a correctness dependency. [#82](https://github.com/adamstallard/igor/pull/82)
+      creates that record, so the move waits for it rather than creating a competing file
