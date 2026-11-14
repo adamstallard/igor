@@ -73,14 +73,26 @@
       `<names>` is every variable `workerEnv` built except `PATH` and `HOME`, and `<claude>` is
       the absolute path the Igor resolves on its own `PATH`. The worker's own flags are
       unchanged, and so are `detached` and the stdio pipes, except that the prompt and the
-      system prompt leave the arguments (1.7).
+      system prompt leave the arguments (1.7). Where #174's code is built (0.10), the same `sudo`
+      call first runs #174's reset of `~/.claude` and `~/.claude.json` and then execs `claude`,
+      so the reset runs as the worker user with nothing else between it and the call. Before that
+      `sudo` call, the Igor makes 4.1's kill.
 - [ ] 1.3 Under `run`, the spawn is what it is today, as the Igor's own user, with the token in
       `IGOR_RUN_TOKEN` as the seat's token in the worker's environment (proposal, decision 24;
       #171 defines the seat).
 - [ ] 1.4 Every other `claude -p` the Igor starts with a tree as its working directory goes
-      through 1.2's spawn, with the same environment rules. Triage and usage reads, which run
-      outside any tree, do not; they run as the Igor with a seat's token in their environment
-      (proposal, decision 21) and take their prompt as 1.7 says.
+      through 1.2's spawn, with the same environment rules. So does each of #153's model steps
+      that has no tree, such as one writing a pull request description or a reply: it runs as
+      the worker user in an empty directory the Igor makes under `/var/lib/igor/trees/<role>`,
+      named `igor-step-<id>`, with its system prompt file in its `-prompt` sibling, and the Igor removes
+      both when it exits (proposal, decision 58). Triage and #174's startup skills check do not;
+      they run as the Igor with a seat's token in their environment (proposal, decision 21) and
+      take their prompt as 1.7 says. Build one wrapper, `runAsWorker(argv, env, cwd)`, that every
+      process run as the worker user goes through, #189's checks included: it runs 5.8's check,
+      then `sudo … -- /usr/bin/env PATH=<path> <argv>`, and returns the exit status, or
+      `not-found` where `env` exits 127 because the command does not exist, so #189 can tell a
+      missing command from a failing check. Tests: a tree-less step's argv and directory; 127 is
+      `not-found`, any other status is returned as it is.
 - [ ] 1.5 Tests (with an injected command, no real `sudo`): the argv for each mode; the seat token
       in no argv element; `--preserve-env` naming exactly `workerEnv`'s keys less `PATH` and
       `HOME`; no prompt text in any argv element; `run` spawning without `sudo` even where a user
@@ -136,7 +148,8 @@
       the tree with `--git-dir` and `--work-tree`, so a `.git` the worker replaced is never read
       by the Igor. Under `run`, the git directory stays inside the tree and the
       index is not copied.
-- [ ] 2.4 The sweep's name rule, which decides which sibling paths belong to a tree, takes `<tree>-git` and `<tree>-prompt` as it takes `<tree>-outbox`, and the startup
+- [ ] 2.4 The sweep's name rule, which decides which sibling paths belong to a tree, takes `<tree>-git` and `<tree>-prompt` as it takes `<tree>-outbox`, and also a tree-less model step's
+      `igor-step-<id>` directory and its `-prompt` sibling (1.4), and the startup
       sweep removes every system prompt file 1.7 left, beside a tree or in 1.7's directory only the Igor can
       read. Test: a system prompt file left by a crash is gone after the next start.
 - [ ] 2.4a Under `serve`, provision every tree, outbox and `<tree>-git` under
@@ -187,7 +200,8 @@
 
 - [ ] 3.1 Every git command the Igor runs in a tree passes
       `-c core.hooksPath=/dev/null -c core.fsmonitor=false -c submodule.recurse=false`, and
-      `--ignore-submodules=all` where the command takes it, in both modes. A changed path that
+      `--ignore-submodules=dirty` where the command takes it, in both modes, so the status read
+      still reports a moved gitlink while never reading a submodule's working tree. A changed path that
       holds its own `.git` with working content stops the run before publishing (verbatim;
       Adam may reword):
 
@@ -195,8 +209,10 @@
       `<path>` is a nested repository, and Igor reads none a worker made, so nothing was published
       ```
 
-      A changed gitlink is published as the commit it names, with no git command run inside the
-      submodule's directory, on #137's code (0.4).
+      A changed gitlink is published as the commit it names, read the way #137 reads it, from
+      `git diff --raw` against the Igor's index, with no git command run inside the submodule's
+      directory, on #137's code (0.4). Test: a moved gitlink appears in the status read and the
+      artifact.
 - [ ] 3.2 Before every read or staging of the tree, the Igor waits for every model step started
       so far to exit, and then kills every process the worker user owns (4.1). It then runs
       3.3's checks and stages the changed paths in its own index. After the last model step and
@@ -307,13 +323,13 @@
       worker's process group.
 - [ ] 4.2 `ClonedTree.release()` and the startup sweep first run
       `sudo -n -u <worker> -- rm -rf -- <tree> <outbox>`, then the Igor's own removal of the
-      tree, the outbox and the git directory. The second runs even when the first fails. Under
+      tree, the outbox, the git directory and `<tree>-prompt`. The second runs even when the first fails. Under
       `run`, whatever the run removes, its trees under the in-force sweep and the worker home
       and plugin directory #174 gives each run, it removes as the Igor's own user with no `sudo`
       (this change's decisions 25 and 39).
 - [ ] 4.3 Tests with an injected runner: `run` removes an abandoned tree with no `sudo`; the kill
       and the removal argv; the kill by user before the tree is read and after the checks; a failed
-      first removal still leads to the second.
+      first removal still leads to the second; a release removes `<tree>-prompt`.
 
 ## 5. The start-up check, and `run` as the same user
 
@@ -341,6 +357,12 @@
       the worker user "<worker>" cannot run <path>, the claude this Igor uses. Install claude where both users can run it: docs/deployment.md, "A separate user for the worker".
       ```
 
+      As the worker, `pkill` must run (`pkill --version` exits 0), since every kill (4.1) uses it:
+
+      ```
+      the worker user "<worker>" cannot run pkill, which this Igor kills the worker's processes with. Install procps where the worker user can run it, then restart.
+      ```
+
       ```
       the worker user "<worker>" can read <path>, which <what>. Make it readable only by <igor-user>.
       ```
@@ -364,11 +386,15 @@
       ```
 
       ```
-      the worker user "<worker>" can write <path>, which <is the lore checkout | is the lore worktree this Igor reads its configuration from | holds this Igor's installation | is the node this Igor runs on | is part of the home template every call in the worker's home starts from | is a script this Igor runs from skills_dir>. Make it writable only by <igor-user>.
+      the worker user "<worker>" can write <path>, which <is the lore checkout | is the lore worktree this Igor reads its configuration from | holds this Igor's installation | is the node this Igor runs on | is claude, git or gh, which this Igor runs, or the directory this Igor finds it in | is part of the home template every call in the worker's home starts from | is a script this Igor runs from skills_dir>. Make it writable only by <igor-user>.
       ```
 
       The template is probed file by file and directory by directory, and so is every script the
       Igor runs from `skills_dir`, prose's and bug-hunter's among them (proposal, decision 37).
+      The installation is probed whole: as the worker, `find <dir> -writable -print -quit` over
+      the directory holding the running `igor`, so a writable file anywhere under it refuses,
+      naming that file. The `claude`, `git` and `gh` the Igor resolves on its `PATH`, and the
+      directory each resolves from, are probed with `test -w`, like the other paths.
       Every path the probe is given must exist, as the service user sees it: the Igor tests
       existence itself before the worker's probe, so `/proc/<igor pid>/environ`, which
       `ProtectProc=invisible` hides from the worker, is not missing. Where #174's code is not
@@ -464,7 +490,8 @@
       file in a subdirectory of it (`~/.docker/config.json`) and a dangling link; a missing Docker socket passes, and so does a
       home with none of the six credential files; `IGOR_ENV_FILES`
       unset is reported as not checked, and its files are never reported as passed; `fs.protected_hardlinks` at `0` refuses; the file the `skills_dir`
-      probe created is deleted; a readable lore checkout, a listable state directory and a
+      probe created is deleted; a missing `pkill` refuses; a writable file deep under the
+      installation, and a writable `git`, each refuse; a readable lore checkout, a listable state directory and a
       readable entry in it each refuse; `/proc/<igor pid>/environ` hidden from the worker is not
       a missing path; without #174's code its three paths are reported as not checked; the first
       failure
@@ -475,7 +502,8 @@
       cannot be dumped*). It exports one function that calls `prctl(PR_SET_DUMPABLE, 0)` and
       `setrlimit(RLIMIT_CORE, 0)`, then returns what `prctl(PR_GET_DUMPABLE)` reads. Build it in
       Rust through `napi-rs` (proposal, decision 43), with prebuilt binaries
-      for Linux on x64 and arm64 in the package. `serve` and `run` call it
+      for Linux on x64 and arm64, each for glibc and for musl, in the package, so it loads on
+      Alpine as on Debian. `serve` and `run` call it
       first in `src/cli.ts`, before anything reads a credential. Under `serve`, an addon that
       will not load, a call that fails or a read-back other than 0 is 5.1's dumpable refusal.
       Under `run` on a platform the addon has no binary for, such as macOS, Igor starts without
@@ -500,7 +528,7 @@
       `http://alice:@proxy.internal:3128` start, with the name registered with its host and never
       as `alice` alone
 - [ ] 5.8 Before each `sudo` that passes the worker a secret, the worker's spawn and each later
-      `claude -p` in its tree, the Igor runs
+      model step, in its tree or with none (1.4), the Igor runs
       `sudo -n -u <worker user> true`, and where that is refused, fails the run without the spawn
       (proposal, decision 52). #189's checks and the start check's probe through a proxy run the
       same check. A refusal before the probe refuses the start with status 78 and records
@@ -508,6 +536,19 @@
       (0.3).
       Test: with the worker's sudoers line removed after the start
       check, the run fails, no worker is spawned, and the token appears in no journal line
+
+- [ ] 5.9 Under `serve`, where a lore pull (#208) changes the path the Igor reads `seatKey`
+      from, the Igor probes the new path as 5.1 probes the key's path, as the worker and for
+      existence, before reading it (*A seat key path a lore pull brings is probed before it is
+      read*). Where the probe fails, it keeps the key it holds, reads nothing from the new path,
+      and logs (verbatim; may be reworded):
+
+      ```
+      seatKey now names <path>, which <the worker user "<worker>" can read | does not exist>, so this Igor keeps the key it loaded at <time> and reads nothing from <path>.
+      ```
+
+      Tests: a new path the worker can read is not read; a missing one is not read; a new path
+      that passes is read.
 
 ## 6. Measurements
 
@@ -614,6 +655,22 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       `SSL_CERT_DIR`, `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH` lets a fetch through an
       intercepting proxy succeed. If git needs one 3.7's list lacks, the list goes back to Adam.
       Record the result in `design.md`.
+- [ ] 6.18 Before 8.2 ships, under the shipped unit: remove the worker user's group, then
+      separately its home, and start the unit. Record whether systemd fails the unit before Igor
+      runs (on `SupplementaryGroups=` and `ReadWritePaths=`), with what status and journal line,
+      and whether Igor's start check ever runs. Record the result in `design.md`, and have 8.7's
+      table name systemd's message for each.
+- [ ] 6.19 Before 5.1 is built, on section 6's host: record what `sudo -n -l` prints, and its
+      exit status, for a worker user with no sudoers entry, for one whose rule needs a password,
+      and for the service user under 8.1's file; and whether either run mails root "user NOT in
+      sudoers". If a start would mail root, 5.1's check goes back to Adam. Record the result in
+      `design.md`.
+- [ ] 6.20 Before 3.7 is built, on section 6's host and on a developer's machine: run `gh auth
+      status` as a person's own login with only 3.7's list of variables, once with the login in
+      the system keyring and once in `hosts.yml`, and record whether `gh` finds it; then add
+      `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `GH_ENTERPRISE_TOKEN` and
+      `GITHUB_ENTERPRISE_TOKEN` one at a time and record which it needs. If it needs any, the
+      list goes back to Adam. Record the result in `design.md`.
 
 ## 7. An automated end-to-end test
 
@@ -711,8 +768,11 @@ file in the service user's home. Each holds a random string and nothing else. Ne
         `/etc/sudoers.d/igor` in the form 8.1 shows, naming `node`, the user #192's image runs
         Igor as, where 8.1's lines name `igor`. Create
         `/var/lib/igor/trees`, owned by `node`, and put `claude` where the worker user can
-        run it.
-      - `deploy/docker-compose.yml`: each service runs `igor serve <role>`, one container per role,
+        run it. Install `procps`, which holds `pkill`, which the kill (4.1) and start check 4
+        need.
+      - `deploy/docker-compose.yml`: each service sets a stable `hostname:`, `igor-<role>`, so the
+        `<host>` of the sudoers condition's key (0.3) survives a new container. This change owns the file's `STATE_DIRECTORY` setting and
+        its trees volume, which a later change edits by citing this task. Each service runs `igor serve <role>`, one container per role,
         so each container's worker user is `igor-worker-<role>`. The trees volume mounts at
         `/var/lib/igor/trees` instead of `/tmp` (the proposal's decision 19). The header comment
         says the image holds `sudo`, the worker users and their sudoers lines. A mounted key is
@@ -827,9 +887,18 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 - [ ] 8.7 `docs/deployment.md`, *When something is wrong*: one row per refusal in 5.1,
       each naming its cure in a phrase, as the existing rows do.
 - [ ] 8.8 `docs/deployment.md`, *macOS*: say that `serve` under `launchd` refuses to start, since
-      the start check that `/proc/sys/fs/protected_hardlinks` reads `1` (5.1) cannot pass on
-      macOS, which has no `/proc`, and that a Mac runs `serve` in #192's
-      container image and `run` on the host.
+      its first act, making itself not dumpable (5.6), has no addon binary on macOS and refuses
+      there, and that a Mac runs `serve` in #192's container image and `run` on the host.
+- [ ] 8.9 `docs/deployment.md`, in the section of 8.4, after the paragraph on `LimitCORE=0` or,
+      where there is none, at the section's end, add (may be reworded):
+
+      ```markdown
+      **Igor refuses to start unless `fs.suid_dumpable` is 0.** At 2, as Ubuntu sets it with
+      apport, the kernel still writes a core of a process that made itself undumpable, owned by
+      root, to the crash handler, and that core holds every token Igor has read. Set it with
+      `sysctl fs.suid_dumpable=0` and a line in `/etc/sysctl.d`, then start the unit again.
+      ```
+
 
 ## 9. Architecture
 
@@ -843,7 +912,20 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       hook in its tree.
       ```
 
+- [ ] 9.2 `docs/architecture.md` §6.7.2, the paragraph that begins **Cleanup is a startup
+      sweep**, and the one after it: under `igor serve` trees live in
+      `/var/lib/igor/trees/<role>`, not the temp directory, each process sweeps only its own
+      role's directory, and the sweep's names include `-git` and `-prompt` beside `-outbox`.
+      §6.7.2b, the paragraph that begins "The outbox is a directory beside the clone": under
+      `igor serve` the outbox is shared through the worker's group, so the Igor can read it, and
+      it also holds the worker's index copy, which is never read as a declaration. Reword both
+      freely; keep the rest of each section.
+
 ## 10. Closing
 
 - [ ] 10.1 Every requirement in `specs/task-execution/spec.md` met. Section 6's results are in
       `design.md`. #163 is closed by the gate-two pull request.
+- [ ] 10.2 At archive, after `openspec archive` merges the deltas, edit the Purpose of
+      `openspec/specs/stuck-conditions/spec.md` so its list of the scopes a key names reads "a
+      role, a seat, an Igor, or an instance (a role's `igor serve` processes on one host)", since
+      a delta cannot change a Purpose.

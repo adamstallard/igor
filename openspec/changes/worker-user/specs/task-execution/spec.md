@@ -62,16 +62,17 @@ unit's `User=`, the *service user*.
 ### Requirement: A sudo that passes a secret is preceded by a check that passes none
 
 Before each `sudo` that passes the worker user a secret, the Igor SHALL run
-`sudo -n -u <worker user> true`, so that no refusal sudo logs holds the seat token or a proxy
-password. A refused check SHALL fail the run without that `sudo`, except before the
+`sudo -n -u <worker user> true`, which carries no secret for a refusal's log line to hold. A
+refused check SHALL fail the run without that `sudo`, except before the
 start check's metadata probe, where it SHALL refuse the start with status 78. A refused check that
 fails a run, and a failed spawn, SHALL be recorded as `stuck-conditions`' *A failed worker spawn
 is a condition on its instance* says.
 
 #### Scenario: Four calls pass a secret
 
-- **WHEN** the Igor spawns the worker, starts a later `claude -p` in its tree, runs one of #189's
-  checks, or probes the metadata endpoint through a proxy at the start check
+- **WHEN** the Igor spawns the worker, starts a later model step, in the worker's tree or one of
+  #153's with no tree, runs one of #189's checks, or probes the metadata endpoint through a proxy
+  at the start check
 - **THEN** it runs `sudo -n -u igor-worker-<role> true` first
 
 #### Scenario: A refused sudo logs no seat token
@@ -97,6 +98,21 @@ is a condition on its instance* says.
 - **THEN** `igor serve` refuses to start with status 78, and nothing is recorded under the
   instance's cure key
 
+### Requirement: A declaration is read only from the run's own outbox
+
+A declaration SHALL be read only from the outbox: a directory outside the working tree that the
+Igor makes for the run, that only the worker writes while it runs, and that the Igor removes with
+the tree. It SHALL be empty when the worker starts, except for the declarations #189 writes back into it
+for a second worker run and, under `igor serve`, the worker's index copy; the index copy SHALL
+NOT be read as a declaration; the worker's group, which holds the Igor, can read it.
+
+#### Scenario: The index copy in the outbox is not a declaration
+
+- **WHEN** `igor serve` starts a first worker run on a conflict-resolution item, with the index
+  copy in its outbox
+- **THEN** the index copy is the only file in the outbox when the worker starts
+- **AND** the Igor reads no declaration from it
+
 ### Requirement: The worker can write its tree and outbox and nothing the Igor depends on
 
 Under `igor serve`, the worker SHALL be able to create, edit and remove files in its working
@@ -111,6 +127,13 @@ SHALL write its records only through the code host, never to a local file the wo
 - **WHEN** a worker edits a file, creates one in a new directory, and runs `git rm` and `git mv`
 - **THEN** each succeeds
 - **AND** the artifact carries every one of those changes
+
+#### Scenario: The worker's git trusts the tree
+
+- **WHEN** a worker runs `git status` in its tree, which the Igor owns
+- **THEN** it succeeds, because the start check set `safe.directory=*` in the worker user's own
+  `~/.gitconfig`
+- **AND** the worker's environment holds no `GIT_CONFIG_*` entry
 
 #### Scenario: The tree's git directory is not writable by the worker
 
@@ -153,7 +176,8 @@ it names, without entering the submodule.
 
 - **WHEN** the service user's global git configuration defines `filter.lfs`
 - **AND** a worker's `.gitattributes` names that filter for a file it changed
-- **THEN** the Igor's staging and status read run no filter
+- **THEN** the Igor's staging, its adding of the changed paths to its own index, and its status
+  read run no filter
 - **AND** the Igor publishes the file as the worker left it
 
 #### Scenario: With no global configuration, a merge is given the Igor's identity on its command line
@@ -200,8 +224,7 @@ a link.
 #### Scenario: The signing scripts follow no link
 
 - **WHEN** a worker replaces a file in its tree with a link to a file only the Igor can read, and
-  a signing script of #153's, or the scope check of #187 (an open change listing changed paths
-  its item does not name), reads that path
+  a signing script of #153's reads that path
 - **THEN** the read does not follow the link
 - **AND** the linked file's content is in no artifact, comment, record or trailer
 
@@ -215,7 +238,8 @@ a link.
 #### Scenario: A link a later model step makes is seen
 
 - **WHEN** a model step after the worker creates a link in the tree
-- **THEN** the Igor's link checks before the next staging see it
+- **THEN** the Igor's link checks before the next staging (*The Igor stages only after its
+  checks, and #153's trailers bind the last staging*) see it
 
 #### Scenario: A hard link stops the run
 
@@ -307,12 +331,11 @@ Igor SHALL publish the recorded tree.
 
 ### Requirement: The Igor runs prose's first call, and bug-hunter checks the prose pass
 
-Where a role runs both of #153's bug-hunter and prose steps, bug-hunter SHALL run first. No model
-step SHALL run a prose or bug-hunter script; bug-hunter SHALL end by reporting its `Bug-hunter:`
-value. Before the prose pass, the Igor SHALL run prose's first call itself and put the rules and
-pass token it prints in the pass's prompt. Bug-hunter's triage SHALL then run on the prose pass's
-diff before #153's cold read: a diff it skips SHALL get no further iteration, and any other diff
-one more.
+Where a role runs #153's bug-hunter and prose steps, they SHALL run in the order #153's *A commit
+is signed by bug-hunter and the prose pass before it is committed* sets, including the triage of
+the prose pass's diff. No model step SHALL run a prose or bug-hunter script; bug-hunter SHALL end
+by reporting its `Bug-hunter:` value. Before the prose pass, the Igor SHALL run prose's first call
+itself and put the rules and pass token it prints in the pass's prompt.
 
 #### Scenario: The Igor runs prose's first call
 
@@ -324,22 +347,29 @@ one more.
 - **AND** no prose or bug-hunter script, `prose start` (the call that marks a session as having
   read prose's rules) included, runs as the worker user
 
+#### Scenario: Bug-hunter reports its value and runs no script
+
+- **WHEN** bug-hunter's step ends
+- **THEN** its output holds its `Bug-hunter:` value
+- **AND** no bug-hunter script ran as the worker user, `caller-result.sh` included
+
 #### Scenario: A prose pass whose diff the triage skips needs no second hunt
 
 - **WHEN** bug-hunter's triage skips the prose pass's diff, such as one that touches only comments
-- **THEN** no further bug-hunter iteration runs
+- **THEN** no further bug-hunter iteration runs, as #153's order sets
 
 #### Scenario: A prose pass whose diff the triage does not skip gets one more hunt
 
 - **WHEN** bug-hunter's triage does not skip the prose pass's diff, such as one that changes an
   error message
-- **THEN** bug-hunter runs one more iteration before the Igor stages
+- **THEN** bug-hunter runs one more iteration before the Igor stages, as #153's order sets
 
 ### Requirement: The Igor stages only after its checks, and #153's trailers bind the last staging
 
 A *staging* is the Igor adding the changed paths to its own index. Before each, every model step
-started so far SHALL have exited, every process the worker user owns SHALL have been killed, and
-the checks on links, hard links, nested repositories and submodules SHALL have passed. After the
+started so far SHALL have exited, under `igor serve` every process the worker user owns SHALL
+have been killed, and the link, hard-link, nested-repository and submodule checks SHALL have
+passed. After the
 last, the Igor SHALL run prose's second call and bug-hunter's minting script against it, and both
 trailers, `Prose:` and `Bug-hunter-Tree:`, SHALL name that staging's tree, which the Igor publishes.
 
@@ -393,11 +423,11 @@ trailers, `Prose:` and `Bug-hunter-Tree:`, SHALL name that staging's tree, which
 
 ### Requirement: A kill, a release and a sweep reach what the worker owns
 
-Under `igor serve`, the Igor SHALL make the kill that *A kill reaches the worker's whole process
-tree* requires each time it kills a worker, and also after model steps in a tree exit, before each
-read or staging of the tree, after #189's checks, and before it releases the tree. Releasing a
-tree, and the startup sweep, SHALL remove what the worker created. On a local host that kill is
-by worker user, and releasing and the sweep SHALL act as the worker user where the Igor cannot
+Under `igor serve`, the Igor SHALL make the kill *A kill reaches the worker's whole process tree*
+requires when it kills a worker, after model steps exit, before each read or staging of the tree,
+after #189's checks, and before a release. Releasing a tree and the startup sweep SHALL remove what
+the worker created and `<tree>-prompt`, the tree's system prompt directory. For a local
+worker the kill is by worker user, and releasing and the sweep SHALL act as that user where the Igor cannot
 write.
 
 #### Scenario: A killed worker's subprocess dies with it
@@ -417,6 +447,11 @@ write.
 - **THEN** releasing the tree removes it
 - **AND** under `igor serve`, a tree left by a crash is removed by the startup sweep
 
+#### Scenario: A release removes the prompt directory
+
+- **WHEN** the Igor releases a tree under `igor serve`
+- **THEN** the tree, its outbox, its `<tree>-git` and its `<tree>-prompt` are all removed
+
 #### Scenario: A command still running after the checks is killed before the release
 
 - **WHEN** a check that runs as the worker user leaves a process running
@@ -424,11 +459,11 @@ write.
 
 ### Requirement: Under serve, a role's trees sit in its own directory of the state directory
 
-Under `igor serve` on a local host, each tree, its outbox and `<tree>-git`, its git directory,
-SHALL sit side by side in `/var/lib/igor/trees/<role>`, under the unit's `StateDirectory=igor`,
-never in the unit's private `/tmp`. The tree and the outbox SHALL have the worker's group and mode
-`2770`, and `<tree>-git` SHALL be read-only to the worker. Each process's startup sweep SHALL look
-only in its own role's directory.
+Under `igor serve` on a local host, each tree, its outbox and `<tree>-git` SHALL sit side by side in
+`/var/lib/igor/trees/<role>`, never in the unit's private `/tmp`. The tree and the outbox SHALL
+have the worker's group and mode `2770`, and `<tree>-git` SHALL be read-only to the worker. Each
+process's startup sweep SHALL look only in its own role's directory. A model step of #153's with
+no tree SHALL run as the worker user in an empty directory there, removed when it exits.
 
 #### Scenario: Trees are in the role's directory
 
@@ -437,6 +472,13 @@ only in its own role's directory.
 - **AND** none of them is under the unit's `/tmp`
 - **AND** the tree and the outbox have the worker's group and mode `2770`, and the worker user
   cannot write `<tree>-git`
+
+#### Scenario: A model step with no tree runs as the worker user
+
+- **WHEN** #153 runs a model step that writes a pull request description, which has no tree
+- **THEN** it runs as the worker user, in an empty directory under `/var/lib/igor/trees/<role>`
+- **AND** that directory and its system prompt file are gone once it exits, and after a crash
+  the next start's sweep removes them
 
 #### Scenario: A sweep leaves another role's trees alone
 
@@ -466,13 +508,30 @@ enterable only by the Igor and that role's worker user. The start check SHALL pr
 - **THEN** each is refused
 - **AND** the worker still reaches its own tree under `trees/<role>`
 
+### Requirement: A seat key path a lore pull brings is probed before it is read
+
+Under `igor serve`, where a lore pull (#208) changes the path the Igor reads `seatKey` from, the
+Igor SHALL probe the new path as the start check probes the key's path before reading it. Where
+the probe fails, the Igor SHALL keep the key it holds, read nothing from the new path, and log
+the failure, naming the path.
+
+#### Scenario: A seat key the worker can read is not loaded
+
+- **WHEN** a lore commit points `seatKey` at a file the worker user can read
+- **THEN** the Igor does not read that file, keeps the key it holds, and logs the path
+
+#### Scenario: A seat key path that passes the probe is loaded
+
+- **WHEN** a lore commit points `seatKey` at an existing file only the service user can read
+- **THEN** the Igor reads the key from it
+
 ### Requirement: Isolation is proved before any work is taken
 
-Before its first cycle, `igor serve` SHALL prove as the worker user that it can run `claude` but
-cannot read a credential, write the Igor's code or configuration, or reach the metadata endpoint,
-and has no root-equivalent right or credential file in its home. It SHALL check that this is a
-separate user sudo starts without a password, that the Igor is in its group and not dumpable, that
-sudo logs no allowed command, and that `fs.protected_hardlinks=1`. A failure SHALL refuse the
+Before its first cycle, `igor serve` SHALL prove as the worker user that it can run `claude` and
+`pkill` but cannot read a credential, write the Igor's code or configuration, or reach the
+metadata endpoint, and has no root-equivalent right or credential file in its home. It SHALL check
+that sudo starts this separate user without a password, that the Igor is in its group and not
+dumpable, sudo logs no allowed command, and `fs.protected_hardlinks=1`. A failure SHALL refuse the
 start, naming it.
 
 #### Scenario: The worker user can read the App's key
@@ -514,8 +573,9 @@ start, naming it.
 
 #### Scenario: The worker user can write the Igor's installation or configuration worktree
 
-- **WHEN** the worker user can write the directory holding the running `igor`, the `node` it
-  runs on, or the lore worktree this process reads its configuration from (#208)
+- **WHEN** the worker user can write the directory holding the running `igor` or anything under
+  it, the `node` it runs on, the `claude`, `git` or `gh` it runs or the directory it finds one
+  in, or the lore worktree this process reads its configuration from (#208)
 - **THEN** the Igor refuses to start, naming that path
 
 #### Scenario: Hard links are not protected
@@ -585,6 +645,12 @@ start, naming it.
 - **WHEN** the worker user cannot execute the `claude` the Igor resolves
 - **THEN** the Igor refuses to start, naming that path
 
+#### Scenario: The worker user cannot run pkill
+
+- **WHEN** `pkill` is missing on the host, as in a container image without `procps`, or the
+  worker user cannot run it
+- **THEN** the Igor refuses to start, naming `pkill`, since every kill uses it
+
 #### Scenario: sudo asks for a password
 
 - **WHEN** the Igor cannot start a process as the worker user without a password
@@ -651,12 +717,12 @@ start, naming it.
 
 ### Requirement: A prompt reaches claude on stdin, never in its arguments
 
-Every `claude -p` the Igor starts SHALL take its prompt on stdin, and no process's arguments SHALL
-hold a prompt or system prompt. A system prompt, or text appended to one, SHALL reach
-`claude` through `--system-prompt-file` or `--append-system-prompt-file`, in a file the process's
-user can read and no worker user can write. The Igor SHALL remove that file once the process
-exits, or, after a crash, when `igor serve` next starts. Under `igor serve` the unit SHALL set
-`ProtectProc=invisible`.
+Every `claude -p` the Igor starts SHALL take its prompt on stdin; no process's arguments SHALL
+hold a prompt. A system prompt or text appended to one SHALL reach `claude` through
+`--system-prompt-file` or `--append-system-prompt-file`, in a file the process's user can read and
+no worker user can write. The Igor SHALL remove that file when the process exits, or at
+`igor serve`'s next start after a crash. On a systemd host the unit SHALL set
+`ProtectProc=invisible`; #192's container has no unit.
 
 #### Scenario: The worker's prompt is not on its command line
 
@@ -706,8 +772,8 @@ exits, or, after a crash, when `igor serve` next starts. Under `igor serve` the 
 
 ### Requirement: serve always has a worker user, and run never does
 
-`igor serve` SHALL run its worker only on a local host, and so always as its worker user, with no
-way to run it as the Igor's own user. `igor run`, for development, SHALL always run the worker as
+Under `igor serve`, a worker on the local host SHALL always run as its worker user, with no way
+to run it as the Igor's own user. `igor run`, for development, SHALL always run the worker as
 the Igor's own user and say so when it starts, naming what the worker can then use: the Igor's
 credentials and whatever the person's own user can. Nothing else SHALL tell the Igor whether it
 has a worker user. What `igor run` removes of an earlier run, it SHALL remove as its
@@ -739,9 +805,10 @@ own user, without `sudo`.
 
 Under `igor serve`, a secret SHALL reach the worker, a model step or a check only from the Igor.
 Those secrets are only the seat's token and a forwarded proxy URL's user info; #189's checks get
-only the user info. In both modes the Igor SHALL register each
-secret it hands over with #217's `rememberSecret` first, SHALL fail the run rather than hand over
-one shorter than 8 characters, and SHALL pass no agent socket variable.
+only the user info. In both modes the Igor SHALL register each secret it hands over with #217's
+`rememberSecret` first, SHALL fail the run rather than hand over one shorter than 8 characters,
+except a proxy user name without a password (#217 binds it to its host), and SHALL pass
+no agent socket variable.
 
 #### Scenario: A secret is registered before the worker gets it
 
@@ -791,8 +858,8 @@ one shorter than 8 characters, and SHALL pass no agent socket variable.
 Where a proxy URL the Igor would pass on from its own environment holds a password of 1 to 7
 characters, counted after percent-decoding, `igor serve` and `igor run` SHALL refuse to start and
 exit with status 78, naming each variable that holds such a URL, never the password or the URL. A
-user name with no password, or with an empty one (`user:@host`), is registered bound to its host
-(#217), so however short it is, it SHALL neither refuse the start nor fail a run.
+user name with no password, or with an empty one (`user:@host`), however short, SHALL neither
+refuse the start nor fail a run; #217 registers it bound to its host.
 
 #### Scenario: A short proxy password refuses the start
 
@@ -815,18 +882,24 @@ user name with no password, or with an empty one (`user:@host`), is registered b
 
 ### Requirement: Under serve, the worker user has no route to a credential the Igor did not hand it
 
-Under `igor serve`, the worker SHALL reach neither the metadata endpoint, `169.254.169.254` or
-`fd00:ec2::254`, nor a root-equivalent right, and the Igor SHALL put no credential in a tree's git
-directory or remote URL. On a local host the unit SHALL block the endpoint with `IPAddressDeny=`,
-the worker user SHALL be in none of `docker`, `lxd`, `incus` and `disk`, hold no sudo right and
-write no container socket, and the deployment guide SHALL tell operators to keep credentials out
-of its home.
+Under `igor serve`, the worker SHALL reach neither the metadata endpoint nor a root-equivalent
+right, and the Igor SHALL store no credential in a tree's git directory. On a
+systemd host the unit SHALL block the endpoint with `IPAddressDeny=`; in #192's container the start
+check SHALL refuse until the host does. A local worker user SHALL be in no root-equivalent
+group, hold no sudo right and write no container socket, and the deployment guide SHALL warn
+against credentials in its home.
 
 #### Scenario: The metadata endpoint is out of the worker's reach
 
 - **WHEN** under `igor serve` a test the worker wrote opens a connection to port 80 of
   `169.254.169.254`
 - **THEN** the connection fails, and no reply reaches the test
+
+#### Scenario: The deployment guide keeps credentials out of the worker's home
+
+- **WHEN** an operator reads `docs/deployment.md`'s section "A separate user for the worker"
+- **THEN** it tells them to put no credential in the worker user's home, and that a credential a
+  worker needs comes only from the Igor
 
 #### Scenario: A tree's git directory holds no credential
 
@@ -876,8 +949,9 @@ and `XDG_CONFIG_HOME` where set. No other variable SHALL reach either.
 
 #### Scenario: A gh call as a person's login keeps that login
 
-- **WHEN** the Igor runs `gh` as a person's own login, with `GH_CONFIG_DIR` set
-- **THEN** the `gh` process gets `GH_CONFIG_DIR`, and no seat token
+- **WHEN** the Igor runs `gh` as a person's own login, with `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`,
+  `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` set
+- **THEN** the `gh` process gets each of the five, and no seat token
 
 #### Scenario: A proxy still reaches gh and git
 
@@ -896,8 +970,16 @@ helper, the variable that helper reads the token from, and `GIT_TERMINAL_PROMPT=
 
 - **WHEN** the Igor's environment holds `IGOR_SEAT_ADAM` and `GITHUB_APP_PRIVATE_KEY`, and the
   Igor fetches into a tree
-- **THEN** the `git` process's environment holds its helper's token and neither of those
+- **THEN** the `git` process's environment holds its helper's token and `GIT_TERMINAL_PROMPT=0`
+- **AND** it holds neither `IGOR_SEAT_ADAM` nor `GITHUB_APP_PRIVATE_KEY`
 - **AND** no `GIT_CONFIG_*` entry an operator set in the Igor's environment
+
+#### Scenario: A git child gets the CA and configuration variables
+
+- **WHEN** the Igor's environment sets `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH`, and the Igor runs
+  `git status` in a tree
+- **THEN** the `git` process's environment holds both, `GIT_CONFIG_NOSYSTEM=1` and
+  `GIT_CONFIG_GLOBAL=/dev/null`
 
 #### Scenario: A local git call gets no token
 
@@ -906,18 +988,25 @@ helper, the variable that helper reads the token from, and `GIT_TERMINAL_PROMPT=
 
 ### Requirement: The Igor's memory is never written out by a crash dump
 
-Under `igor serve`, as the first thing it does, before reading any credential, the Igor SHALL make
-its process not dumpable (`prctl(PR_SET_DUMPABLE, 0)`) and set its core-file limit to 0, and the
-unit SHALL set `LimitCORE=0`. Where either call fails, or the start check finds it dumpable or
-`fs.suid_dumpable` not 0, the start SHALL be refused with status 78. `igor run` SHALL make both
-calls first where Igor ships native code for them (Linux on x64 and arm64), and start without them
-elsewhere.
+Under `igor serve`, before reading any credential, the Igor SHALL make its process not dumpable
+and set its core-file limit to 0. On a systemd host the unit SHALL also set `LimitCORE=0`; in
+#192's container the Igor's own limit stands alone. Where either call fails, or the start check
+finds it dumpable or `fs.suid_dumpable` not 0, the start SHALL be refused with status 78.
+`igor run` SHALL make both calls first where Igor ships native code for them, and start without
+them elsewhere.
 
 #### Scenario: The Igor under serve is not dumpable
 
 - **WHEN** `igor serve` has passed its start check
 - **THEN** `prctl(PR_GET_DUMPABLE)` in its process returns 0
 - **AND** a crash of the process writes no core file
+- **AND** where it runs under the shipped systemd unit, that unit sets `LimitCORE=0`
+
+#### Scenario: The Igor is not dumpable before it reads a credential
+
+- **WHEN** `igor serve` starts with its App key in a file
+- **THEN** its call to make itself not dumpable comes before it opens that file or reads any
+  token source
 
 #### Scenario: A failed call refuses the start
 
@@ -933,21 +1022,6 @@ elsewhere.
 
 - **WHEN** `igor run` starts on macOS
 - **THEN** it starts, without the call
-
-### Requirement: A declaration is read only from the run's own outbox
-
-A declaration SHALL be read only from the outbox: a directory outside the working tree that the
-Igor makes for the run, that only the worker writes while it runs, and that the Igor removes with
-the tree. It SHALL be empty when the worker starts, but for the declarations #189 writes back into
-it for a second worker run and, under `igor serve`, the worker's index copy, which SHALL NOT be
-read as a declaration; the worker's group, which holds the Igor, can read it.
-
-#### Scenario: The index copy in the outbox is not a declaration
-
-- **WHEN** `igor serve` starts a first worker run on a conflict-resolution item, with the index
-  copy in its outbox
-- **THEN** the index copy is the only file in the outbox when the worker starts
-- **AND** the Igor reads no declaration from it
 
 ## MODIFIED Requirements
 
@@ -1004,11 +1078,11 @@ naming it.
 ### Requirement: A kill reaches the worker's whole process tree
 
 A kill SHALL end the worker and every process it started, and SHALL NOT fail where none is left.
-The worker SHALL always run in its own process group, which a kill under `igor run` ends. Under
-`igor serve` the kill SHALL end every process the worker user owns, first running
-`sudo -n -u <worker user> true`; if that is refused, the kill SHALL be skipped, the run SHALL fail
-before the tree or outbox is read or staged, and the refusal SHALL be recorded as a failed spawn
-is (`stuck-conditions`).
+The worker SHALL run in its own process group, which a kill under `igor run` ends. For a local
+worker under `igor serve` the kill SHALL end every process the worker user owns, after
+`sudo -n -u <worker user> true`. If that is refused the kill SHALL be skipped and the run SHALL
+fail before the tree is read or staged, recorded as a failed spawn; at process exit the refusal
+only goes to standard error.
 
 #### Scenario: A refused check before a kill fails the run
 
@@ -1050,7 +1124,7 @@ is (`stuck-conditions`).
 
 Where the process is asked to terminate, execution SHALL kill every worker it spawned and every
 process each started: under `igor run` the worker's process group, and under `igor serve` on a
-local host every process the worker user owns.
+local host every process the worker user owns, unless the check before that kill is refused.
 Where the process winds down gracefully instead, the worker in hand SHALL be left running and
 SHALL be killed the same way when the process exits.
 
@@ -1070,6 +1144,8 @@ SHALL be killed the same way when the process exits.
 - **WHEN** the process exits with a worker still running
 - **THEN** that worker is killed: its process group under `igor run`, and every process of the
   worker user under `igor serve` on a local host
+- **AND** where the check before a kill by user is refused at exit, the kill is skipped and the
+  refusal goes to standard error, as *A kill reaches the worker's whole process tree* says
 
 ### Requirement: A base change is undone only where the resolution says so
 

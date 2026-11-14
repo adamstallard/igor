@@ -31,16 +31,16 @@ The requirements state what any worker must meet, whatever runs it:
 - a worker gets only what the Igor hands it, such as its seat's token;
 - the Igor can end a run and every process the run started.
 
-A worker runs on a *local host* when it runs on the machine `igor serve` runs on. This change
-specifies workers only on a local host, so its local-host rules bind every worker it builds; a
-worker run anywhere else needs a change that says how it meets the properties. A local host meets
+A worker runs on a *local host* when it runs on the machine `igor serve` runs on. The properties
+bind every worker `igor serve` runs, wherever it runs, and nothing here forbids a worker
+elsewhere; this change specifies the mechanism only for a local worker. A local host meets
 them with the worker user `igor-worker-<role>`, started through `sudo` under its own sudoers line;
 with the kill by user, which ends every process that user owns; and with the role's trees under
 `/var/lib/igor/trees/<role>`. The requirements name these in sentences and scenarios scoped to a
 local host, and the rest of this document describes that host.
 
 Igor's direction is for workers to run as cloud Claude Code sessions, coordinated by
-`igor serve`. Cloud workers are outside this change's scope, and nothing here depends on them.
+`igor serve`. No mechanism for cloud workers is specified here, and nothing here depends on them.
 Claude Code's documentation, read on 2026-11-13, gives a cloud session no status or completion
 signal a caller can read, and no API to stop or cancel it (issue #244 records the reading). Without the signal the Igor could not tell when its worker
 had finished, and it reads and publishes the tree only after every model step has exited. Without
@@ -212,9 +212,10 @@ affects only the worker.
 ### The Igor runs nothing the worker wrote
 
 - Every git command the Igor runs in a tree passes `-c core.hooksPath=/dev/null`,
-  `-c core.fsmonitor=false` and `-c submodule.recurse=false`, and `--ignore-submodules=all` where
-  the command takes it. The first two are redundant while the git directory is read-only to the
-  worker, and stay because the cost of being wrong is running code as the Igor. The submodule
+  `-c core.fsmonitor=false` and `-c submodule.recurse=false`, and `--ignore-submodules=dirty` where
+  the command takes it, which still reports a moved gitlink but never reads a submodule's working
+  tree (proposal, decision 13). `core.hooksPath` and `core.fsmonitor` are redundant while the git directory is read-only to
+  the worker, and stay because the cost of being wrong is running code as the Igor. The submodule
   flags are for nested repositories, below.
 - Filter, merge and diff drivers are defined only in configuration. `.gitattributes`, which the
   worker can write, can name a driver but not define one, and the tree's configuration is not
@@ -222,7 +223,10 @@ affects only the worker.
   such as `filter.lfs`, which a name in `.gitattributes` would then run. So the Igor's git calls
   for a tree, its clone and checkout included, and the signing scripts run with
   `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null` (proposal, decision 33; task 3.6).
-  Two costs follow. A Git LFS repository is not supported until a change defines filters the
+  Under `igor serve` the only configuration left is the Igor's own git directory's, which
+  defines no driver and which the worker cannot write; under `igor run` the worker, as the same
+  user, can write it. Leaving out the system and global configuration, in both modes, has two
+  costs. A Git LFS repository is not supported until a change defines filters the
   Igor trusts: an LFS file is checked out, read and published as its pointer. And #137 publishes
   a file stored through a clean filter as the filter's output, which with no filter defined is
   the pointer; whether #137 expects that or means the real content is open.
@@ -239,6 +243,11 @@ affects only the worker.
   `160000`, as the commit it names. The Igor never enters the submodule's directory or runs git
   in it. #137 is built first (*The Igor reads changes without following links*).
 - The Igor does not run `npm`, `node` or any command in the tree. Only the worker user does.
+
+#153's model steps that have no tree, such as one writing a pull request description, run as the
+worker user too, in an empty directory the Igor makes under `/var/lib/igor/trees/<role>`, named
+`igor-step-<id>`, with the system prompt file in `igor-step-<id>-prompt` beside it; the startup sweep finds
+both by that name after a crash (proposal, decision 58).
 
 ### Every model step in the tree runs as the worker, and checks run on a recorded tree
 
@@ -267,7 +276,8 @@ a second commit on top of the first run's signed commit, as #153 and #189 say.
 #153 binds each commit's trailers to a staged tree. `git add` writes objects into the git
 directory, which is read-only to the worker user, and the only index the worker can write is its
 copy in the outbox. So the steps neither stage nor sign, and the Igor runs every signing call as
-the service user, in this order:
+the service user. The order of the steps is #153's, in *A commit is signed by bug-hunter and the
+prose pass before it is committed*; under it, each runs as follows:
 
 1. Bug-hunter runs, edits the tree, and ends by reporting its `Bug-hunter:` value. The step does
    not run `caller-result.sh`: as the worker, with nothing staged, that script mints its tree
@@ -401,8 +411,11 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
 1. The user exists, its uid is not 0, and it is not the Igor's own user.
 2. `sudo -n -u <worker> -- true` succeeds.
 3. The Igor's groups include the worker's primary group.
-4. As the worker, `test -x` succeeds on the absolute path of the `claude` the Igor resolves.
-   Without it, every item would fail at spawn instead of the Igor refusing to start.
+4. As the worker, `test -x` succeeds on the absolute path of the `claude` the Igor resolves, and
+   `pkill --version` exits 0. Without the first, every item would fail at spawn instead of the
+   Igor refusing to start; without the second, every kill would exit 1 like one that found nothing,
+   so a failed kill would pass as a clean one and the Igor would read the tree while worker
+   processes still ran (proposal, decision 37).
 5. As the worker, one `sudo` call runs `test -r`, `test -w` or `test -x` on each path below and
    reports which succeed. Each path that succeeds is a refusal naming it.
    - not readable: `/proc/<igor pid>/environ` (Linux); the file `GITHUB_APP_PRIVATE_KEY_FILE`
@@ -419,8 +432,9 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
      sits below them; the unit's `StateDirectoryMode=0711` and the Igor's own `mkdir` make them
      so
    - not writable: the lore checkout, and the worktree of it this process reads its
-     configuration from (#208, `lore-pull`); the directory holding the running `igor`; the `node`
-     executable; #174's home template, each of its files and directories; and each script the
+     configuration from (#208, `lore-pull`); every file and directory under the one holding the
+     running `igor`, found with `find <dir> -writable -print -quit`; the `node` executable; the
+     `claude`, `git` and `gh` the Igor runs, and the directory it finds each in; #174's home template, each of its files and directories; and each script the
      Igor runs from `skills_dir`, prose's and bug-hunter's among them
    - `skills_dir`, #174's directory of pinned skills: in a second `sudo` call the worker tries to
      create a file in it and delete it, and a create that succeeds is a refusal. The worker never
@@ -562,7 +576,8 @@ own user can read it with `coredumpctl`. These stop it:
 Node has no `prctl` and no `setrlimit`, and none of Igor's four dependencies is native, so Igor
 ships a native addon of three calls: `prctl(PR_SET_DUMPABLE, 0)`, `setrlimit(RLIMIT_CORE, 0)`
 and `prctl(PR_GET_DUMPABLE)` to read the flag back. It is written in Rust through `napi-rs`, with
-prebuilt Linux binaries for x64 and arm64, so installing needs no compiler (proposal, decision
+prebuilt Linux binaries for x64 and arm64, each for glibc and for musl, so installing needs no
+compiler (proposal, decision
 43). Under `serve`, an addon that fails to load, a call that fails, or a flag that reads back as
 anything but 0 refuses the start with status 78 (start check 11). Under `igor run` the Igor makes
 the two setting calls where it ships the addon, Linux on x64 and arm64, and elsewhere, such as on macOS,
@@ -617,8 +632,9 @@ evidence and why `ProtectProc=invisible` alone is not enough. Two things close i
 
 ### `serve` always has a worker user, `run` never does
 
-- **`serve` always runs its worker as its worker user**, and refuses to start if that user does
-  not exist (*What each start checks*). An unattended Igor on issues anyone can file is the case
+- **`serve` always runs a local worker as its worker user**, and refuses to start if that user does
+  not exist. This change specifies the mechanism only for a local worker; a worker elsewhere must
+  meet the same properties by means this change does not specify (*What each start checks*). An unattended Igor on issues anyone can file is the case
   the issue says must not run without isolation.
 - **`run` always runs the worker as the same user**, with a notice. It is the one-shot command
   for development: a person at a terminal, usually on a laptop with their own login, where a
@@ -787,7 +803,8 @@ and `openspec/specs/stuck-conditions/decisions.md`. These have none beyond the r
 - **The sudoers condition puts the host's name on the state branch.** The cure key
   `instance:<role>@<host>:sudoers` is per host, so one host's broken sudoers line stops only that
   host's `igor serve`, and another host's clean runs and passing checks neither end its count nor
-  clear it. The key and the stop carry the host's name to the state branch, which may be public.
+  clear it. `<host>` is the host name the operating system reports, which the compose file fixes
+  per service in #192's container (task 8.3). The key and the stop carry the host's name to the state branch, which may be public.
 - **With `Defaults:igor !log_allowed`, the journal does not record which commands the Igor ran
   as a worker user.** The pam session lines remain, holding no command and no environment
   (measurement 6.5).
@@ -867,6 +884,5 @@ Igor's pid in a pid file instead of with `ps`.
   owner. The Igor read every one through the group. The worker's directories are not group
   writable, which the release's first pass, as the worker, handles. No umask needs setting.
 
-Not measured: a published artifact, since nothing publishes without Igor's code (task 6.14); a
-server's kernel for 6.8 (task 6.11); task 8.4's commands with decision 28's `Defaults` line (task
-6.12); and the start check in #192's container (task 8.3).
+Not measured yet: every task the proposal's *Still open* lists under owed measurements (6.11,
+6.12, 6.14 to 6.20, and 8.3's container run), with 6.13 for information only.

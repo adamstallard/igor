@@ -2,12 +2,12 @@
 
 ### Requirement: A failed worker spawn is a condition on its instance
 
-Under `igor serve`, each failed `sudo` spawn of the worker, and each refused check
-`task-execution` counts as one, SHALL be recorded under the cure key
-`instance:<role>@<host>:sudoers`, `<host>` being the host's name. A role's *instance* is its
-`igor serve` processes on one host; a condition on it SHALL stop only that instance taking new
-items. Each run row SHALL name its instance, so a clean run ends its count. The stop SHALL name the
-sudoers line for `igor-worker-<role>` and the host.
+Under `igor serve`, each failed `sudo` spawn of the worker, and each refused check that
+`task-execution` counts as a failed spawn, SHALL be recorded under
+`instance:<role>@<host>:sudoers`, `<host>` being the system's host name. A role's
+*instance* is its `igor serve` processes on one host; a condition on it SHALL stop new items only for
+that instance. Each run row SHALL name its instance, and a clean run ends the instance's count. The stop SHALL
+name the worker user's sudoers line and the host.
 
 #### Scenario: A recurring spawn failure stops only its instance
 
@@ -99,47 +99,11 @@ row whose `kind` is `check`, naming the key, only where the check clears the con
 
 ### Requirement: A condition's scope is its cure's scope
 
-A condition SHALL be keyed by what would cure it, and SHALL stop exactly what that cure governs:
-a refused command stops the role whose `commands` refused it, an unreadable seat stops every
-role drawing on that seat, a credential belonging to an Igor stops that Igor, and a failed worker
-spawn stops its instance, a role's `igor serve` processes on one host. A condition
-SHALL be rebuilt from the execution log on the state branch, with no stored record of its own:
-from the run rows that carry its cure key, and from condition rows the loop appends for what no
-run shows, such as a probe being taken. Every Igor appends to the one log, so the same cure met
-by several Igors is one condition.
-
-Where the cure key does not by itself identify what is stuck, each occurrence SHALL also carry a
-discriminator: an opaque value naming what the condition was observed against, absent wherever
-the key already says it. Occurrences observed against different discriminators are different
-occurrences of the same condition — one does not count toward the other, and a handoff carrying
-a new one closes the open occurrence and starts a new count rather than extending it. The
-discriminator qualifies the occurrence and never the scope: a key naming a seat is seat-scoped
-however many discriminators that seat has been observed against.
-
-For most cures the key is the identity. `role:web:commands` fully says what is stuck and what a
-person would edit, and two Igors meeting it met the same thing. A key naming a seat's credential
-names the seat and not the credential, so one seat's two tokens produce the identical key — and a
-condition rebuilt from that key with a count and an open state cannot answer the question its own
-stop turns on: is this about the credential resolving now? The discriminator answers it. A condition is an occurrence and not a
-thing; a cure key opens, clears and reopens over its life, so a condition keyed on the cure alone
-answers for the last occurrence when asked about this one. The discriminator is the part of an
-occurrence's identity the cure key cannot express, which is why it is on every row of that
-occurrence rather than alongside it as context.
-
-**No condition state is stored apart from the log.** A summary written beside a log can disagree
-with it, a run logged and its summary not updated or the reverse, and that disagreement is a bug
-nobody can diagnose from either side. Rebuilding every condition from one log rules it out, and
-appends from several Igors cannot overwrite each other. Rows that are not runs carry a kind, so
-every reader that counts runs, such as spend attribution, skips them.
-
-Keying by the process that hit the condition would count one cure five times, back off five
-times over, and clear five times — with the fifth Igor still discovering for itself something
-four others already recorded. The cure is the thing that is singular; everything else is a
-witness to it.
-
-Scoping by cure also keeps the stop as small as it can honestly be. A role refused one command
-is the only thing that refusal says anything about, and stopping the fleet for it wastes
-capacity that was never affected.
+A condition SHALL be keyed by its cure and stop exactly what that cure governs: a refused command
+its role, an unreadable seat every role on it, an Igor's credential that Igor, and a failed worker
+spawn its instance. It SHALL be rebuilt from the execution log alone. Where the key does not say
+what is stuck, each occurrence SHALL carry a discriminator naming what it was observed against;
+occurrences are counted apart by it, and it SHALL never change the scope.
 
 #### Scenario: One cure met by several Igors is one condition
 
@@ -177,39 +141,12 @@ capacity that was never affected.
 
 ### Requirement: A condition clears by not recurring, and a probe is what observes that
 
-An open condition SHALL clear when it stops recurring, with nothing external required to
-announce the cure. After a cooldown the affected scope SHALL take exactly one item; where that
-item does not meet the condition it SHALL clear, and where it does the scope SHALL stop again
-for a longer cooldown. A sudoers condition on an instance is the exception: it clears only as *A
-sudoers condition clears only on a passing check at a cycle's start* says, with no cooldown and no
-probe item.
-
-A condition carrying a discriminator SHALL clear by that rule and by one more: it SHALL also
-clear the moment the scope resolves a different discriminator, with no cooldown waited and no
-item spent. Both hold together. A credential condition clears on a probe that does not meet it,
-as every condition does, and it clears on the credential changing, which needs no probe to see.
-
-The probe is the general observation because for most conditions nothing else is observable
-from inside the loop: an allowlist edited on some other surface announces nothing, so running is
-the only way to find out. A discriminator is observable. A seat resolving a credential other
-than the one the condition was observed against is the cure having happened, visible before any
-item is claimed — and holding such a scope for a cooldown it no longer needs keeps an operator
-who has already fixed the thing waiting out a backoff that lengthens each time. That second
-clear is the whole reason a credential-shaped stop was worth having, and it is kept here rather
-than left to a mechanism of its own.
-
-Nobody sends a fixed signal, and nobody should have to: the cure is a configuration change made
-by whoever reads the stop, on a surface that has no channel back to the loop, and a condition
-that waits to be told is a condition somebody has to remember to close. But a stopped scope runs
-nothing and therefore observes nothing, so that the condition no longer recurs can never be
-established from inside the stop. The probe is the only way out of that: one run buys the observation, and the cooldown
-bounds what it costs to be wrong.
-
-The probe SHALL be the next item the scope would ordinarily take, not the item that was being
-worked when the condition opened. A condition is scoped to its cure and says nothing about any
-item, and the item that first met it may be legitimately unworkable for its own reasons — an
-Igor waiting for that one item to become available again is stopped on something unrelated to
-the cure it is trying to observe.
+An open condition SHALL clear when it stops recurring. After a cooldown the scope SHALL take one
+item, the next it would take: if that item does not meet the condition, the condition SHALL
+clear; if it does, the scope SHALL stop for a longer cooldown. A condition with a discriminator
+SHALL also clear at once when the scope resolves a different one. A sudoers condition on an
+instance clears only as *A sudoers condition clears only on a passing check at a cycle's start*
+says.
 
 #### Scenario: A cured condition clears itself
 
