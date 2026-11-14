@@ -11,8 +11,8 @@ Igor SHALL NOT work a private repository while its lore store is public. The lor
 repository `igor.config.yaml` names as `destination`. A *mismatch* is a private worked repository
 paired with a public store.
 
-Igor SHALL read each visibility from the `visibility` field GitHub's API returns, asked with the
-role's App installation token. An `internal` repository SHALL count as private, store or worked.
+Igor SHALL read each visibility, as the role's GitHub App, from the `visibility` field GitHub's API returns. An
+`internal` repository SHALL count as private, store or worked.
 Igor SHALL NOT read the `publicStore` setting for this comparison.
 
 #### Scenario: An internal repository counts as private
@@ -69,11 +69,11 @@ in both cases.
 ### Requirement: A candidate from a private repository is skipped while the store is public
 
 Each cycle Igor SHALL read the visibility of the store, of each repository a candidate of that
-cycle comes from, and of each repository with an open visibility condition, so the condition can
-clear. A candidate's repository is its item's, as the tracker reports it, not its source's. A
-candidate whose repository and the store are a mismatch SHALL be skipped before triage and any
-claim: Igor posts nothing on it, runs no model step on it, and writes no record of it but its
-repository's condition.
+cycle comes from, and of each repository with an open visibility condition. A candidate's
+repository is the code-host repository its run would work: a GitHub item's own, not its
+source's. A candidate whose repository and the store are a mismatch SHALL be skipped
+before triage and any claim: Igor posts nothing on it, runs no model step on it, and writes no
+record of it but its repository's condition.
 
 #### Scenario: An item from a repository no source names
 
@@ -82,6 +82,13 @@ repository's condition.
 - **THEN** Igor skips the item without triaging or claiming it
 - **AND** a condition on `repo:acme/payroll:visibility` opens, naming `acme/payroll` and the
   store
+
+#### Scenario: A skipped candidate leaves no record but the condition
+
+- **WHEN** a candidate is skipped for a mismatch
+- **THEN** no triage decision, claim, transcript or other record of it is written
+- **AND** the only row the skip writes is its repository's condition, and only where the skip
+  opens that condition
 
 #### Scenario: A store made public while Igor runs
 
@@ -107,6 +114,12 @@ defines. It is on the worked repository, with the cure key `repo:<owner>/<name>:
 SHALL name the worked repository and the store and say that making the store private or the
 repository public cures it.
 
+#### Scenario: The condition names its cure
+
+- **WHEN** a condition on `repo:acme/payroll:visibility` opens
+- **THEN** it names `acme/payroll` and the store, and says that making the store private or
+  `acme/payroll` public cures it
+
 #### Scenario: The cure clears the condition
 
 - **WHEN** a condition on `repo:acme/payroll:visibility` is open, no candidate of `acme/payroll`
@@ -116,9 +129,10 @@ repository public cures it.
 
 ### Requirement: An unanswered visibility read at a cycle leaves its repository unworked
 
-A visibility read at a cycle that GitHub does not answer SHALL leave the candidates of the
-repository whose read went unanswered unworked for the cycle, and SHALL NOT open or clear the
-visibility condition. The cycle's report SHALL say which read failed.
+A visibility read at a cycle that GitHub does not answer SHALL leave unworked for the cycle every
+candidate of that repository, or of every repository where the unanswered read is the store's. It SHALL NOT open or clear the visibility condition, and SHALL hold each such
+candidate's source watermark back, as an untriaged candidate's is. The cycle's report SHALL say
+which read failed.
 
 #### Scenario: A visibility read GitHub does not answer
 
@@ -126,14 +140,20 @@ visibility condition. The cycle's report SHALL say which read failed.
 - **THEN** Igor works none of `acme/web`'s candidates in that cycle, opens no condition, and
   says in the cycle's report that the read failed
 
+#### Scenario: An unanswered store read leaves every candidate unworked
+
+- **WHEN** at a cycle GitHub does not answer the store's visibility read
+- **THEN** Igor works no candidate in that cycle, from any repository
+- **AND** at the next cycle whose store read is answered, those candidates are considered again, though
+  none of them was updated
+
 ### Requirement: Nothing from a private repository is written to a public state branch
 
 Igor SHALL NOT write a private repository's content to a public store's `igor-state` branch. Just
 before writing a run's records to the store's branch, Igor SHALL re-read the store's and the run's
 repository's visibility. On a mismatch or unanswered read, it SHALL write the records without
-their content and no transcript file, and a pull request the run publishes SHALL name no
-transcript path. On a mismatch it SHALL also open the condition a skipped candidate opens; on an
-unanswered read, none.
+their content and no transcript file. On a mismatch it SHALL also open the condition a skipped
+candidate opens; on an unanswered read, none.
 
 #### Scenario: A store made public during a run
 
@@ -149,12 +169,30 @@ unanswered read, none.
 - **WHEN** GitHub does not answer the store's visibility read just before a run's records are
   written
 - **THEN** Igor writes the run's records without their content, and no transcript
+- **AND** no condition opens
+
+### Requirement: A pull request names no transcript its run did not write
+
+A pull request a run publishes SHALL name a transcript path only where a visibility read just
+before publishing found no mismatch and was answered. Where the read before the records are
+written then withholds the transcript, Igor SHALL remove the path from the pull request's body.
+
+#### Scenario: A pull request from a withheld run names no transcript
+
+- **WHEN** a run's visibility read just before publishing finds a mismatch
+- **THEN** its pull request's body names no transcript path
+
+#### Scenario: A repository made private between publishing and the write
+
+- **WHEN** a run on a public repository published its pull request naming a transcript in a
+  public store, and the repository is made private before the run's records are written
+- **THEN** no transcript is written
+- **AND** Igor removes the transcript path from the pull request's body
 
 ### Requirement: What a run's content is
 
 Igor SHALL count as a run's *content* any text the run produced or read: its transcript, the log
-of its tool calls, the text of a firing record (`lore-firing`'s record of the lore entries a run
-was given), and any text of a failure or from the worker in a record's fields. A record's
+of its tool calls, and any text of a failure, such as an error message, or from the worker in a record's fields. A record's
 structured fields, such as the item's id, the run's cost, its outcome and its exit code, SHALL NOT
 count as content.
 
@@ -163,8 +201,8 @@ count as content.
 - **WHEN** Igor writes a run's records without their content
 - **THEN** the records keep the structured fields they hold, such as the item's id, the run's cost,
   its outcome or its exit code
-- **AND** they hold no transcript, no log of the run's tool calls, no firing record's text, and
-  no text of a failure or from the worker
+- **AND** they hold no transcript, no log of the run's tool calls, and no text of a failure or
+  from the worker
 
 ### Requirement: igor doctor reports a mismatch through the start check
 

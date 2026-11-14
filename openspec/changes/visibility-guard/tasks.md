@@ -1,8 +1,7 @@
 ## 0. Order and measurement
 
-- [ ] 0.1 Build and archive this change after #101 (`condition-backoff`), #171 (`seat-files`),
-      #113 (`check-a-lore-repository`) and #82 (`stopped-scope-visible`). Issue #204 holds the
-      whole order.
+- [ ] 0.1 Build and archive this change after the changes its proposal builds on: #143, #113,
+      #171 and #82. Issue #204 holds the whole order.
 - [ ] 0.2 Measure whether a source's query can return an item of a repository other than the
       source's `repo`: on `main`, `src/github-adapter.ts` prefixes every query with
       `repo:<source.repo>`, and `normalizeIssue` sets each candidate's repository from the
@@ -38,8 +37,10 @@
       `repo:<owner>/<name>:visibility` condition
 - [ ] 3.2 Skip each candidate whose repository is a mismatch: no triage, no claim, no record
 - [ ] 3.3 A read GitHub does not answer leaves that repository's candidates unworked for the
-      cycle, opens and clears no condition, and is named in the cycle's report
-- [ ] 3.4 Add the condition scope kind `repo` to `scopeOf` in #101's `src/conditions.ts`, for the
+      cycle, or every candidate where it is the store's read. It opens and clears no condition,
+      holds each such candidate's source watermark back as an untriaged candidate's is, and is
+      named in the cycle's report
+- [ ] 3.4 Add the condition scope kind `repo` to `scopeOf` in `src/conditions.ts`, for the
       key `repo:<owner>/<name>:visibility`, as #171's read-cleared kind: one failing read opens
       it. It stops no scope itself: the skip in 3.2, not the condition, keeps the repository's
       candidates from being worked
@@ -52,7 +53,12 @@
       visibilities again. On a mismatch, or a read GitHub does not answer, write the records
       with their structured fields only (item id, cost, outcome, exit code), write no
       transcript, and open the 3.4 condition where the read found a mismatch
-- [ ] 4.2 A pull request from such a run names no transcript path in its body
+- [ ] 4.2 Read both visibilities just before publishing a pull request, and name a transcript
+      path in its body only where that read found no mismatch and was answered. Where 4.1 then
+      withholds the transcript, edit the pull request's body to remove the path
+- [ ] 4.3 `recordExecution` writes no transcript where 4.1 withholds content, and still writes the
+      run's cost and outcome, as the modified *Transcripts and outcomes are captured to the state
+      branch* says
 
 ## 5. igor doctor
 
