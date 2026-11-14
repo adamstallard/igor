@@ -1,7 +1,9 @@
 # Design
 
-The requirement says a rename arrives whole or not at all. Two things about *how* had more than
-one defensible answer.
+The requirement *A path execution cannot read is never silently omitted* makes execution refuse
+to publish, and name the path, when a changed path cannot be read. The next two sections settle the two
+choices that had more than one defensible answer: refusing rather than publishing without the
+path, and stating the rule over paths rather than over renames.
 
 ## Refusing, rather than publishing without the rename
 
@@ -24,17 +26,19 @@ Two weaker alternatives, for the record:
 - **Emit the removal and record a warning.** Rejected: it still publishes a deletion of a file the
   worker meant to keep. A warning in a record nobody opens is what
   [#79](https://github.com/adamstallard/igor/issues/79) is filed about.
-- **Refuse only where the unreadable path is a rename destination, and otherwise keep today's
-  silent `continue`.** This was the first draft's scope and it is rejected: it depends on knowing
-  which paths are halves of one change, which is exactly what #118 removed. See below.
+- **Refuse only where the unreadable path is a rename destination, and otherwise keep the
+  `continue` in the parser's catch block that today skips an unreadable path with no error or
+  record.** Rejected: it depends on knowing which paths are
+  halves of one change, and since [#118](https://github.com/adamstallard/igor/pull/118) the parser
+  does not know that. The next section says why.
 
 ## Stated over paths, not over renames
 
-The first draft of this requirement said *a rename reaches the artifact whole or not at all*, and
-described an ordering within a pair: the source's removal must not be emitted before the
-destination has been read.
+Phrasing the requirement over renames is rejected: both the rule *a rename reaches the artifact
+whole or not at all* and its ordering rule, that the source's removal must not be emitted before
+the destination has been read.
 
-That was written against a model [#118](https://github.com/adamstallard/igor/pull/118) removed.
+That phrasing assumes the parser pairs a rename's two records, and #118 removed the pairing.
 `changes()` now passes `--no-renames`, so porcelain emits no `R` or `C` record, and `PAIRED`,
 `RENAME`, `indexOnly` and the `from`/`++i` pairing are gone as unreachable. A rename is now an
 unrelated `D` and `A`, and the failure survives by a route the pairing language
@@ -43,9 +47,8 @@ deletion. The scope clause was worse than the rest: excluding "an unreadable fil
 of a rename" is undecidable once nothing knows the two records are halves of anything.
 
 So it is phrased over paths. **A requirement states what must be true of the artifact, not what the
-parser currently looks like.** Phrased over paths it was correct before #118 and is correct after
-it, and it needed no amendment when the pairing went — which is the argument for phrasing it this
-way, now demonstrated rather than predicted.
+parser currently looks like.** A rule over paths holds whether or not the parser pairs a rename's
+two records, so it would hold with the pairing #118 removed and holds without it.
 
 The widening is real and is accepted rather than incidental: an addition that cannot be read now
 refuses too, where today it is skipped by the same bare `continue`. That is the same failure with
