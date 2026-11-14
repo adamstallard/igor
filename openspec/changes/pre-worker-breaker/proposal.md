@@ -22,7 +22,7 @@ Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
    codes, and replace item references, repository names, timestamps, temporary paths,
    hexadecimal identifiers and longer digit runs. So
    `HTTP 404` and `HTTP 500` from the same call differ. *Rejected:* the source alone, and the raw message,
-   which names the working tree's path, a path that differs between worker slots and between runs.
+   which can name the working tree's path, a path that differs between worker slots and between runs.
 4. **Only a tracker or code host that did not answer counts toward the surface-failure rule**,
    which ends a cycle on two such failures in a row and which the spec calls the *outage rule*. Which surface failed is known from which surface's call threw. Whether it
    answered is read from the response's status, as `unanswered` in `src/claiming.ts` reads it: a refused call, such as a 404 for an item deleted since discovery, is not an outage, and
@@ -48,7 +48,7 @@ Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
     known only when the next run in the same cycle fails. The breaker decides and posts during
     the failing run, so an item with two genuine failures behind it can be set down by the first
     failure of an outage. It comes back when answered. *Rejected:* holding the decision until the
-    next run, which a crash between the two runs loses, since it was never written to the log.
+    next run, which keeps a pending post in memory across items.
 11. **A failure that #101 records as a condition never counts toward the breaker**. Such a failure is one whose run records a *cure key*, #101's name for a fault in
     the Igor's own setup, such as a seat whose token is unset. #101's `condition-backoff` says an
     item SHALL NOT be suppressed for such a fault. This holds for an item alone in its cycle too,
@@ -99,7 +99,8 @@ Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
     readable as #99 (`structured-failure-record`) asks. The full message, after #213's credential
     redaction, goes to the Igor process's own log on its server. *Rejected:* the masked message as
     readable text, which can carry a private repository's text onto a branch that may be public;
-    and the raw message, which names the working tree's path (decision 3).
+    and the raw message, which carries the same text and, where it names the working tree's
+    path, cannot match repeats either (decision 3).
 16. **A count that cannot be read sets nothing down.** Where the log cannot be read, or any of
     its day files fails to read, the run is refused. It still tries to write its `pre-worker`
     row, since an append can succeed where a read failed; a write that fails is lost, as any
@@ -229,9 +230,22 @@ Builds on: read-seat-windows-from-the-stream (adamstallard/igor#143)
   modifies three: *Two runs in a row that the surface failed stop a cycle*, *A claim that cannot
   be kept is given back, out loud* and *Watermarks reduce reconsideration without governing it*.
   #242's design should name all three.
+- **#242's delta, for #242.** It adds *Two runs in a row that the surface failed stop a cycle*,
+  which `main` already holds: #245 split it off *A claim that cannot be kept is given back, out
+  loud* with three scenarios. #242 should modify it instead. This change's copy keeps those three
+  scenarios; in each one that counts runs, a run that records a cure key does not count. #242's
+  copy of *A claim that cannot be kept is given back, out loud* also still holds what #245 moved
+  out of that requirement: those three scenarios, and the rule text and two scenarios now in
+  `main`'s *Giving a claim back never takes back a person's hand-over*. This change's copy keeps them while #242's
+  does, since `openspec archive` refuses a copy that drops them, and drops them once #242's
+  copy does.
 - **#106 (`role-keyed-watermark`), for #106.** It archives after this change and modifies
-  *Watermarks reduce reconsideration without governing it*, so its copy must keep what this change's copy adds: the two cycles it holds the watermark back
-  for, those either two-in-a-row rule ended, the cure-key exception and three scenarios.
+  *Watermarks reduce reconsideration without governing it*, so its copy must keep what this change's copy adds: holding the watermark back below items a
+  cycle never reached when either two-in-a-row rule ended it, holding it at a claim refused with
+  a cure key although a refused claim otherwise passes it, and three scenarios. #106
+  also creates `openspec/specs/work-discovery/decisions.md`; its copy must carry this change's
+  entry word for word inside its own Rationale entry for that requirement, and when #106 merges
+  `main` after this change, its version of the file replaces this one's.
 
 ## Why
 

@@ -49,9 +49,9 @@ Whether a refused token mint inside a clone records one at all is unmeasured (ta
 Three places could hold the count: memory, `deferred.json` and the log. `work-claiming`'s decision
 record turns down the first two.
 
-- **Chosen: rows in the log.** An append never overwrites a row another process wrote:
-  `appendRecord` reads the day's file and writes it back with one line added, and the code host
-  refuses the write if the file changed since the read. The refused append is then lost unless
+- **Chosen: rows in the log.** An append never overwrites a row another process wrote: the code
+  host refuses an append to a file that changed since the append read it, as `work-claiming`'s
+  decision record shows. A refused append is then lost unless
   something retries it, and in the in-force code nothing does. #242 (`one-process-per-role`),
   which archives before this change, adds a retry: *A state write refused because the branch
   moved is retried*, re-applying the write on what the branch now holds. Task 0.3 checks that
@@ -246,7 +246,10 @@ during the run. The function both cycles call to apply the two-in-a-row rules (*
 apply both rules*, below) keeps the previous run, and `runItem` asks that function before
 counting, so that run neither counts nor sets its item down.
 
-Why the set-down does not wait for the next run is in `work-claiming`'s decision record.
+The set-down does not wait for the next run to show whether a two-in-a-row rule ends the cycle.
+Waiting would need code to carry a pending post across items, and a crash or shutdown would lose
+that post, leaving it to the item's next identical failure. The cost of not waiting is a set-down
+posted for a failure a later run excludes, which a person's change lifts.
 
 A single item that meets an outage, or a failure every item meets, alone in its cycle has no
 second run to end the cycle, so its failure counts. That costs it one place in its count per
@@ -481,8 +484,15 @@ These settle what the proposal's decisions leave open. Each is cheap to reverse.
 
 ## Open Questions
 
-Both are for gate two, the implementation, which is pushed onto this change's branch once the
-specification, gate one, is approved; neither needs an answer before then.
+All are for gate two, the implementation, which is pushed onto this change's branch once the
+specification, gate one, is approved; none needs an answer before then.
+
+- **Facts that tasks measure.** Task 0.1: whether real repeated failures give one signature
+  after the masks; which field of a 403 tells a missing App permission from other 403s; whether
+  a refused App credential inside a clone reaches #101's App condition; and how a clone tells
+  that the code host did not answer. Task 0.3: whether #242's retry covers appends to
+  `executions.ndjson`. Task 3.7: how a role tells another role's successful run from its other
+  posts. Each requirement built on one of these says what holds until it is measured.
 
 - **Three is unmeasured.** Decision 1 fixes the breaker's threshold at three identical failures in
   a row, by reasoning (one trips on a blip, two can be coincidence), not by a measurement of how

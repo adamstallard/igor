@@ -26,8 +26,9 @@ Igor's own code SHALL NOT count, save a clone or its token mint the code host di
 
 #### Scenario: A refusal is not an outage
 
-- **WHEN** two runs in a row fail because the tracker answered and refused a call, each with a
-  403 that is neither a rate limit nor a permission the App lacks, and with different messages
+- **WHEN** two runs in a row fail before the worker because the tracker answered and refused a call, each with a
+  403 that is neither a rate limit nor a permission the App lacks, and with different messages,
+  so that neither two-in-a-row rule could apply
 - **THEN** the outage rule does not end the cycle
 - **AND** each failure counts toward its own item's count of failures before the worker, its
   *breaker* (*A failure before the worker that repeats sets the item down*)
@@ -419,7 +420,9 @@ key naming the permission, scoped to the role; until then it counts as a refused
 
 - **WHEN** the GitHub App lacks the permission to add the claim label, and a 403 for it cannot yet
   be told from other 403s
-- **THEN** each refused claim counts toward its own item's breaker, as a refused call does
+- **THEN** each refused claim counts toward its own item's breaker, as a refused call does: a
+  tracker or code-host call outside the working tree answered and refused, as *Two identical
+  failures before the worker on different items end the cycle* defines it
 
 #### Scenario: A missing App permission sets no item down
 
@@ -515,8 +518,8 @@ tracker or code-host call outside the working tree answered and refused, SHALL N
 
 #### Scenario: A refused call between two identical failures separates them
 
-- **WHEN** an item fails before the worker, the next item's claim is answered and refused, and the
-  item after that fails before the worker the same way as the first
+- **WHEN** an item fails before the worker, the next item's claim is answered and refused with no
+  cure key recorded, and the item after that fails before the worker the same way as the first
 - **THEN** the cycle continues to the remaining items
 
 #### Scenario: Two items failing in different ways do not end the cycle
@@ -543,6 +546,22 @@ remaining items, counting runs in the order they end, each toward the cycle runn
 or, where none is, the next; a run that records a cure key is neither one of the two nor between
 them. A cycle that met one such run, then one ending otherwise without a cure key, SHALL NOT be
 recorded as failed.
+
+#### Scenario: A cycle stops when the surface stops answering
+
+- **WHEN** two runs in a row end because a surface did not answer, and neither records a cure key
+- **THEN** the cycle is recorded as failed and the remaining items are not attempted
+
+#### Scenario: One run ending that way does not stop the cycle
+
+- **WHEN** a run ends because a surface did not answer, and the next run to end ends otherwise
+  and records no cure key
+- **THEN** the cycle continues and is not recorded as failed
+
+#### Scenario: A refusal about the item does not stop the cycle
+
+- **WHEN** a claim is refused because the tracker answered and did not record it
+- **THEN** the cycle continues to the remaining items
 
 #### Scenario: Runs that end out of order are counted as they end
 
@@ -593,7 +612,9 @@ that frees it.
 #### Scenario: A claim that could not be verified is given back and withdrawn
 
 - **WHEN** a claim was announced and verifying it fails
-- **THEN** the claim is released, the announcement is withdrawn on the item, and the run is refused
+- **THEN** the claim is released, the announcement is withdrawn on the item, and the run is
+  refused, or, on the item's third identical failure before the worker, set down as *A failure
+  before the worker that repeats sets the item down* says
 
 #### Scenario: A release that did not take is said so
 
@@ -614,12 +635,13 @@ that frees it.
 
 #### Scenario: One run ending that way does not stop the cycle
 
-- **WHEN** a run ends because a surface did not answer and the next run to end does not
+- **WHEN** a run ends because a surface did not answer, and the next run to end ends otherwise
+  and records no cure key
 - **THEN** the cycle continues and is not recorded as failed
 
 #### Scenario: A refusal about the item does not stop the cycle
 
-- **WHEN** a claim is refused because the tracker did not record it
+- **WHEN** a claim is refused because the tracker answered and did not record it
 - **THEN** the cycle continues to the remaining items
 
 #### Scenario: A catch-up gives its claim back and keeps a person's label

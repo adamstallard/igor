@@ -53,6 +53,8 @@ records a cure key, the item SHALL NOT be suppressed. A refused run is not hande
 
 #### Scenario: A refused run is not handed back
 
-- **WHEN** a run fails before the worker, releases its claim, and does not set the item down
+- **WHEN** a run fails before the worker, releases its claim, and does not set the item down, and
+  its role has not already set the item down (a set-down item stays deferred, as `work-claiming`
+  says)
 - **THEN** no deferral is recorded for the item in `deferred.json`, and the next cycle may work it
   again
