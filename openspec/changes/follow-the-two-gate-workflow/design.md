@@ -16,7 +16,7 @@ Two-gate needs the loop to stop after a specification, wait for a person, and co
 same branch. This change reuses the catch-up's shape for coming back, and the loop's existing
 control over the worker's files for stopping.
 
-## Decided (Adam, 2026-09-28)
+## Decided before this change
 
 These are settled and are not reopened here.
 
@@ -45,9 +45,9 @@ Also stated as requirements in the brief for this change:
 
 The brief also gave three recommendations: a fresh claim at gate two, noting an edited item and
 continuing, and treating an approval with comments as a go. The spec is written to them, and
-they were listed as questions 11–13, and Adam confirmed them.
+they are settled as questions 11–13.
 
-## Decided (Adam, 2026-10-04)
+## Decided: every Igor is a GitHub App
 
 - **An approval from an Igor never counts as the go signal.** Only an approving review from a
   person with authority does. This reverses settled question 5, and matches
@@ -60,7 +60,7 @@ they were listed as questions 11–13, and Adam confirmed them.
   named the assignee, and the rediscovery scenario in `work-triage` says the Igor released its
   claim where it said it unassigned itself. Amended 2026-10-04.
 
-## Decided (Adam, 2026-10-11)
+## Decided: how a gate-one pull request stays in flight
 
 - **A gate-one spec pull request keeps its issue in flight because it is recognisable as the
   Igor's own, not through a link.** It is recognised by its author, the Igor's App (`Bot`), and
@@ -105,6 +105,17 @@ nothing", and is not deferred the same way.
 **The confinement binds the worker, not the base.** Catching up a gate-one artifact merges the
 base in, and the resolution commit names the base as a parent. The base's own changes under
 `src/` come with it, as they must. Confinement applies to what the Igor authors on top.
+
+### Outside gate one's confinement, every removal is carried
+
+These are the reasons behind `task-execution`'s carry rule, which this change modifies only to
+make gate one's confinement its exception. Everywhere else, an artifact that carries the edits and drops the
+removals is worse than one not published at all: it looks complete to a reviewer and is not. A
+refactor still has the module it removed; a rename has the file in two places. A rule refusing
+a change made only of removals would show itself only after the worker had run, so a
+deletion-shaped task would spend a whole run to learn it could not be published. Opening an
+artifact and bringing it up to date carry removals the same way: both build their commit by
+editing the base tree, and a removal deletes that path's entry from it.
 
 ### The phase is read from the artifact, not from the state branch
 
@@ -199,6 +210,15 @@ approved could veto them. The stop gate and the deferral gate still run.
 
 Lane predicates run (settled question 9).
 
+### An actionable spec of one's own is not duplicated work
+
+Work in flight is skipped, by every role and with no setting to turn it off, because no
+organization wants work already in review duplicated. Both exceptions to the skip fit that
+reason rather than weaken it. An artifact of one's own that cannot merge is not duplication: it
+is the same work, unfinished, which nothing else will bring back. A specification of one's own
+that a person has approved or asked to change is the same work too, waiting on the Igor rather
+than on a reviewer.
+
 ### An approval on a draft counts
 
 **Measured 2026-10-04: GitHub accepts an approving review on a draft pull request.** In
@@ -263,11 +283,12 @@ It is noted: gate two's body says the item was edited after the approval, and li
 The reviewer then knows to check the spec against the new text. "Edited" means the item's own
 edit time (`lastEditedAt`) is later than the approval. A comment is not an edit.
 
-## Settled questions (Adam, 2026-09-28)
+## Settled questions
 
-Adam accepted every recommendation below on 2026-09-28. The requirements were already written to
-them, so none changed. Question 3 was settled by task 1.1's measurement on 2026-10-04. Adam
-reversed question 5 on 2026-10-04.
+Every *Recommend:* below is accepted, and the requirements are written to them, so none of
+these questions is open. Questions 3 and 5 are settled differently, as their entries say:
+question 3 by task 1.1's measurement (*An approval on a draft counts*), and question 5 against
+its recommendation.
 
 1. **The gate-one title marker.** An Igor can't know a repository's `TYPE(Scope):` convention,
    and its title is the issue title today. *Recommend:* gate one titles the pull request
@@ -279,20 +300,20 @@ reversed question 5 on 2026-10-04.
    it is already in the search results, but a reviewer who tidies the title stalls the item
    forever, and that is the unsafe direction. The diff costs one file listing per own gate-one
    artifact that has an actionable review.
-3. **Draft or ready at gate one.** **Settled by measurement on 2026-10-04: keep the role's
-   choice.** GitHub accepts an approving review on a draft (*An approval on a draft counts*), so
-   a role that allows `draft-pr` opens gate one as a draft, and a role that allows only
-   `draft-pr` may use `two-gate`. The branch not taken was to open gate one ready for review
+3. **Draft or ready at gate one.** **Settled by measurement: keep the role's choice.** GitHub
+   accepts an approving review on a draft (*An approval on a draft counts*), so a role that
+   allows `draft-pr` opens gate one as a draft, and a role that allows only `draft-pr` may use
+   `two-gate`. The branch not taken was to open gate one ready for review
    and refuse `two-gate` for a `draft-pr`-only role.
 4. **Role-level `reviewers`.** §5.4 says "per-role lists once roles exist", and roles now
    declare `reviewers`. Your decision named the store-level list. *Recommend:* role `reviewers`
    do **not** confer authority. They say whom to ask, and the store list says who may decide. A
    role reviewer with write access has authority anyway.
-5. **An approval from another Igor.** **Reversed by Adam on 2026-10-04:** an Igor's review
-   never counts, and only a person with authority starts gate two. The 2026-09-28 answer
-   followed §5.4 because no list of Igor accounts existed. None is needed: every Igor is a
-   GitHub App, and its review's author is a `Bot` account (see *Authority is checked per
-   reviewer*).
+5. **An approval from another Igor.** **Reversed:** an Igor's review never counts, and only a
+   person with authority starts gate two. Its recommendation, that another Igor's account with
+   write access has authority, followed §5.4 because no list of Igor accounts existed. None is
+   needed: every Igor is a GitHub App, and its review's author is a `Bot` account (see
+   *Authority is checked per reviewer*).
 6. **Changes requested at gate two.** *Recommend:* the same revise loop, without the confinement,
    on the same branch. It is specified as its own requirement, *A change request at gate two is
    answered on the same branch*, and by the in-flight skip's "past gate one, a change request"
@@ -372,7 +393,7 @@ reversed question 5 on 2026-10-04.
 - **An Igor that is not an App breaks the `Bot` test.** Today's build runs an Igor as a machine
   user, whose reviews are authored by a `User` and would count. `igor doctor` (#113) reports any
   role whose GitHub identity is not an App as a finding (task 2.5). An approving review stays the
-  only go signal (Adam, 2026-09-28), with no fallback from the pull request's author.
+  only go signal: nothing the pull request's author posts can stand in for one.
 - **Review data widens the discovery request.** `latestOpinionatedReviews` and `headRefOid` on
   every cross-referenced pull request add to the GraphQL cost of each page. Measure before and
   after on a real query (task 3.4).
@@ -386,10 +407,11 @@ reversed question 5 on 2026-10-04.
   and `inFlightFrom` returns the first open pull request it finds. So an issue that an unrelated
   open pull request merely discusses is skipped as work in flight. Observed on 2026-09-28: issue
   #139 reads as in flight because open PR #140 mentions it. Filed as #151. Counting only real
-  links (`willCloseTarget`) would make gate one's `Answers #n` pull request invisible, so an
-  Igor's own gate-one pull request is recognised by its author and branch instead (Decided,
-  2026-10-11). Until #151 lands, gate one relies on the mention event, so this change neither
-  fixes nor worsens the problem; a spec pull request that discusses another issue still makes
+  links (`willCloseTarget`) would make gate one's `Answers #n` pull request invisible. So once
+  #151 stops counting a bare mention, an Igor's own gate-one pull request is recognised by its
+  author and branch instead (see *Decided: how a gate-one pull request stays in flight*). Until
+  #151 lands, gate one relies on the mention event, so this change neither fixes nor worsens the
+  problem; a spec pull request that discusses another issue still makes
   that issue skip.
 
 ## Roads not taken

@@ -2,23 +2,13 @@
 
 ### Requirement: The artifact carries every change the worker made, including removals
 
-An artifact SHALL carry every change execution read out of the working tree — files added,
-files modified, and files removed. A removal SHALL NOT be dropped, and a change consisting only
-of removals SHALL be published rather than refused.
+An artifact SHALL carry every change that execution read out of the working tree — files added,
+modified and removed — whether opened or brought up to date. A removal SHALL NOT be dropped, and
+a change consisting only of removals SHALL be published rather than refused.
 
-The one exception is gate one of the two-gate workflow, where the artifact SHALL carry only
-changes under `openspec/changes/**` and SHALL name every change it did not carry. Outside gate
-one this requirement applies unchanged.
-
-An artifact that carries the edits and drops the removals is worse than one that is not
-published at all: it looks complete to a reviewer and is not. A refactor still has the module
-it removed; a rename has the file in two places.
-
-The limit this replaces was discovered after the worker had run, which is what made it
-expensive — a deletion-shaped task spent a whole run to learn it could not be published.
-
-Whether the artifact is being opened or brought up to date makes no difference: both build
-their commit from the base tree, and a removal is an entry in that tree with nothing behind it.
+The one exception is gate one of the two-gate workflow, and any revision confined as gate one
+is, where the artifact SHALL carry only changes under `openspec/changes/**` and SHALL name every
+change it did not carry.
 
 #### Scenario: A removal alongside edits
 

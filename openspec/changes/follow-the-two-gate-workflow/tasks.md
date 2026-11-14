@@ -66,8 +66,9 @@ Line numbers are as of `main` at `511e519`.
 
 - [ ] 5.1 A pure `actionableReview(candidate, as, authority)` beside `staleOwnArtifact`
       (`src/predicate.ts:39`). It returns `revise`, `go` or nothing, following *An approving
-      review from someone with authority is the go signal*: an actionable change request
-      outweighs an actionable approval
+      review from someone with authority is the go signal* and *A review stays current through
+      merges of the base and is answered only by name*: an actionable change request outweighs an
+      actionable approval
 - [ ] 5.2 `universalSkip` (`src/predicate.ts:64`) admits an own gate-one artifact with an
       actionable review, alongside a stale one
 - [ ] 5.3 `planCycle` finds these by scanning every result, next to the catch-up scan
@@ -105,8 +106,9 @@ Line numbers are as of `main` at `511e519`.
       keyword for the item. The title carries the specification marker (settled question 1)
 - [ ] 6.7 Gate one releases the claim and skips `complete` (`src/loop.ts:193`,
       `src/execute.ts:1743`)
-- [ ] 6.8 Tests for each scenario in *Gate one publishes a specification and nothing else* and
-      *A gate-one artifact says it is a specification and closes nothing*, including a `Fixes #n`
+- [ ] 6.8 Tests for each scenario in *Gate one publishes a specification and nothing else*, *A
+      gate one with nothing to publish hands off* and *A gate-one artifact says it is a
+      specification and closes nothing*, including a `Fixes #n`
       in the transcript and a closing keyword in the item's title
 
 ## 7. Committing onto an existing branch
@@ -152,7 +154,9 @@ Line numbers are as of `main` at `511e519`.
       release, and take `complete`
 - [ ] 9.6 The budget gate is consulted exactly as `runItem` does. No seat means no claim, and
       nothing is recorded against the item
-- [ ] 9.7 Tests for each scenario in *Gate two implements on the same branch*
+- [ ] 9.7 Tests for each scenario in *Gate two implements on the same branch*, *Gate two runs
+      bug-hunter before publishing and hands back after*, *Gate two rewrites the artifact's title
+      and body* and *A gate two that implements nothing hands off*
 
 ## 10. Closed and merged specifications
 

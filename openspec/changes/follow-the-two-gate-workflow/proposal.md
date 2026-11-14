@@ -22,7 +22,7 @@ release. Each part of the workflow runs into something built for that shape.
 
 ## What Changes
 
-Everything below applies only to a role that opts in, and was decided by Adam on 2026-09-28.
+Everything below applies only to a role that opts in, and all of it is settled.
 
 - **A role opts in with `workflow: two-gate`.** A role without it behaves exactly as today.
 - **Gate one publishes a specification and nothing else.** The worker is asked for an OpenSpec
@@ -47,8 +47,8 @@ Everything below applies only to a role that opts in, and was decided by Adam on
   current approval or change request is resumed rather than skipped, as an artifact of its own
   that stopped merging already is.
 
-Also specified, each as its own requirement so it can be dropped at review, and each an open
-question in `design.md`:
+Also specified, each as its own requirement so it can be dropped at review, and each settled as
+a question in `design.md` (questions 6 and 7):
 
 - A change request at gate two is answered the same way, without the gate-one confinement.
 - A spec pull request merged before gate two ran defers its item and asks why, as a closed one
@@ -58,7 +58,7 @@ Explicitly out of scope:
 
 - **Running bug-hunter.** #139 makes it a pipeline step, and gate two invokes that step where
   it is configured.
-- **Merging.** A person merges after the second review, as today.
+- **Merging.** A person merges after the gate-two review, as today.
 - **Any workflow other than two-gate.** The setting names a workflow so that another could be
   added, not because one is planned.
 
