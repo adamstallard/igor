@@ -28,7 +28,8 @@ Where `workers` is 2 or more, so that `igor serve` runs workers on its host as s
 users (`role-process`), loading a
 role SHALL refuse it where `igor-worker-<role>-<workers>` would pass Linux's 32-character limit on
 a user name, naming the role and the limit, and nothing SHALL start for it. With one worker,
-#175's own check on `igor-worker-<role>`, a role name of at most 20 characters, applies alone.
+only #175's refusal at start applies, where `igor-worker-<role>` does not exist, as for a role
+name over 20 characters, for which #175 creates no user.
 
 #### Scenario: A long role name with two workers is refused
 

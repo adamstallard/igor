@@ -218,9 +218,11 @@ behind it.
     is stricter only for several workers. `igor-worker-` takes 12 characters and `-<k>` two or
     more, so a role name may have at most 18 characters for up to 9 workers, and 17 for 10 to 99.
     *One good option.*
-29. **What Igor guarantees about a worker is stated as properties, not as Linux users.** A worker
-    has no access to the credentials Igor acts with, nor to another worker's run, and Igor can end
-    the worker's run and everything it started (*Every worker is kept apart and can be ended*).
+29. **What Igor guarantees about a worker is stated as properties, not as Linux users.** #175's
+    *The worker runs as a separate, unprivileged user* already keeps a worker from the Igor's
+    credentials and from another role's worker; *Every worker is kept apart and can be ended*
+    extends it to every other worker of the same role, and requires that Igor can end the
+    worker's run and everything it started.
     The worker users, their groups, the unit's paths, the takeover kill and the tree removals are
     how a process meets those on its own host, and each requirement for them is scoped to workers
     on the process's host. Igor intends to run workers as cloud Claude Code sessions, with
@@ -325,7 +327,17 @@ guard, and TLC finds a violation in it:
   surface failures beside *Two runs in a row that the surface failed stop a cycle*; neither
   modifies the other's, so nothing is merged by hand, but #173's rules have to read the count in
   the order runs end. This change
-  archives after #171, and its `seat-budget` delta waits for #171 (decision 27).
+  archives after #171, and its `seat-budget` delta waits for #171 (decision 27). It also
+  archives after #175, four of whose requirements name the role's one worker user: one for the
+  kill, the release and the startup sweep, one for the start check, and two for the sudoers
+  condition. Once #175 is on `main`, this change adds `MODIFIED` copies of those four that cover
+  every slot user (task 6.12). #204 archives #175 first, so this
+  change's copy of *Igor forwards the termination it is sent* is the one left in force and must
+  carry #175's kill by worker user (task 6.12). #175 also runs `igor serve` workers only on a
+  local host, whereas this change's *Every worker is kept apart and can be ended* allows workers
+  elsewhere. #175 is being reworded, by its own author, to state its guarantees as properties
+  too (decision 29); until it is, the two disagree on where a worker may run, and they must agree
+  before this change archives.
 - **The open change `directed-interaction` on `main` assumes one item at a time.** Its proposal
   reasons from ranks, and says *"a process already working an item is not planning a cycle"*,
   which is false once a cycle runs while workers run.
@@ -336,9 +348,11 @@ guard, and TLC finds a violation in it:
 - **A paused `igor serve`'s workers can run beside a process on another host that took over**, each working the same item, until they end (*What the model assumes*).
 - **A worker that could write the lock directory could delay a restart.** By changing the
   directory's id, it would make a restart from that checkout watch for 30 minutes instead of
-  taking over, and leave its old slot trees to the age-based sweep. An `igor serve` worker cannot
-  write it (*Every worker is kept apart and can be ended*). An `igor run` worker that runs as
-  the Igor's own user (#175) can, which decision 3 accepts for a dev tool.
+  taking over; and since the restart's trees would then be named for an id that no longer matches,
+  they would be left to the age-based sweep. No requirement here or in
+  #175 keeps an `igor serve` worker from writing it: #175's write barrier names the lore
+  checkout, not a directory beside it. An `igor run` worker, which #175 always runs as the
+  Igor's own user, can write it; decision 3 accepts that, since `igor run` is a dev tool.
 - **The takeover kill is by worker user, not by process group.** It reaches every process of the
   role's slot worker users on the host, including the workers of a paused process from another
   checkout on the same host, which is the intent: that process has been replaced. A process group

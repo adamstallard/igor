@@ -309,12 +309,12 @@ built from what it read before. The serving record is excepted: its writes stay 
 
 ### Requirement: Every worker is kept apart and can be ended
 
-Wherever an `igor serve` worker runs, on the process's host or elsewhere, it SHALL have no access
-to the credentials Igor acts with, nor to another worker's run: its tree, its outgoing work and
-its processes. The process SHALL be able to end a worker's run and everything that run started.
-`task-execution`'s *The worker is given an explicit environment holding no credential but its
-seat's* and *A kill reaches the worker's whole process tree* are part of how a local worker
-meets this.
+An `igor serve` worker, wherever it runs, SHALL be kept from every other worker of its own role:
+from that worker's tree, outbox and processes. This extends #175's *The worker runs as a
+separate, unprivileged user*, which keeps a worker from the Igor's credentials and from another
+role's worker. The process SHALL be
+able to end a worker's run and everything that run started, as *A kill reaches the worker's
+whole process tree* requires.
 
 #### Scenario: A worker cannot reach Igor's credentials
 

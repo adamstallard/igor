@@ -91,10 +91,22 @@ approved.
   the most headroom* that chooses among the seats the process's running workers do not hold.
 - [ ] 6.10 Where `workers` is 2 or more, refuse a role at
   load where `igor-worker-<role>-<workers>` passes 32 characters, naming the role and the limit;
-  keep #175's 20-character check for every role.
+  keep #175's refusal to start where a role's worker user does not exist.
 - [ ] 6.11 Test that a local worker meets *Every worker is kept apart and can be ended*: it
   cannot read the App's private key or a token the process holds, nor another slot's tree, and
   ending its run ends every process it started.
+- [ ] 6.12 Once #175 is on `main`, add to this change `MODIFIED` copies of these #175
+  requirements, each changed from the role's one worker user to every slot user:
+  - *A kill, a release and a sweep reach what the worker owns* (its kill, release and startup
+    sweep);
+  - *Isolation is proved before any work is taken* (the start check);
+  - *A failed worker spawn is a condition on its instance* and *A sudoers condition clears only
+    on a passing check at a cycle's start* (the sudoers condition);
+  - *The worker runs as a separate, unprivileged user*, whose isolation this change's *Every
+    worker is kept apart and can be ended* extends, and which names the one worker user.
+
+  Also rewrite this change's copy of *Igor forwards the termination it is sent* to start from
+  #175's, keeping #175's kill of every process the worker user owns.
 
 ## 7. `igor run`
 
