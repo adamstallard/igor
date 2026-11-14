@@ -139,10 +139,9 @@ Inheritance SHALL apply three merge semantics, selected per field:
 
 ### Requirement: A role's `allow` names only actions from a closed vocabulary
 
-A role's `allow` SHALL list only actions from a closed set: `comment`, `review-comment`,
-`draft-pr`, `pr`, `label`, `merge`, `send`. A role that lists any other word SHALL be refused at
-load, naming the valid actions. The safe default for an org base to ship with is
-`[draft-pr, comment]`: everything reversible, nothing final.
+A role's `allow` SHALL list only actions from a closed set: `comment`, `review-comment`, `draft-pr`,
+`pr`, `label`. A role that lists any other word SHALL be refused at load, naming the valid actions.
+An org base is advised, not required, to ship with `[draft-pr, comment]`.
 
 #### Scenario: An action outside the vocabulary is refused
 
