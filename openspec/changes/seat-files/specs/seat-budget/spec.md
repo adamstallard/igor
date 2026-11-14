@@ -432,9 +432,7 @@ its `encrypted_token`. The token SHALL reach no disk, argument list or process e
 ### Requirement: A lent seat is decrypted only where the worker has a user of its own
 
 No worker of a process decrypting `encrypted_token` SHALL be able to read the key `seatKey`
-names. A local host meets it with a worker user per worker (#175's `task-execution`). Igor SHALL
-decrypt none under `igor run`, whose worker runs as the Igor's own user, or under an `igor serve`
-without worker users, where a lent seat SHALL serve no role. An undecrypted lent seat SHALL raise
+names. A host running workers itself meets it with a worker user per worker (#175's `task-execution`). Igor SHALL decrypt none under `igor run`, whose worker runs as the Igor's own user. An undecrypted lent seat SHALL raise
 no condition. Where `igor run` can read the key, it SHALL refuse to start before any model call,
 naming the path.
 
@@ -444,26 +442,10 @@ naming the path.
 - **THEN** it refuses before any model call, naming that path
 - **AND** no worker starts
 
-#### Scenario: `igor serve` without worker users decrypts no lent seat
+#### Scenario: A worker of `igor serve` cannot read the server's key
 
-- **WHEN** `igor serve` runs its workers as its own user, because its code has no worker users,
-  and the seats serving a role are one naming `encrypted_token` and one naming `token_env`
-- **THEN** the `encrypted_token` is not decrypted, and that seat is neither drawn on nor probed,
-  and no condition is raised for it
-- **AND** the role draws on the `token_env` seat
-
-#### Scenario: A role whose only seat is lent is refused without worker users
-
-- **WHEN** `igor serve` runs its workers as its own user, because its code has no worker users,
-  and the only seat serving a role names `encrypted_token`
-- **THEN** the role is refused at load, as a role with no seat is, and the refusal says that
-  this `serve` has no worker users, so it uses no lent seat
-
-#### Scenario: igor budget shows a lent seat unused without worker users
-
-- **WHEN** `igor budget` runs from code that has no worker users, and a seat names
-  `encrypted_token`
-- **THEN** it shows that seat as not used, saying that this version of Igor has no worker users
+- **WHEN** `igor serve` decrypts a lent seat and spawns a worker that draws on it
+- **THEN** the worker runs as its worker user, and cannot read the file `seatKey` names
 
 #### Scenario: `igor run` decrypts no lent seat
 
@@ -594,23 +576,16 @@ the token. This covers what Igor writes, not what a worker does with the token.
 
 ### Requirement: A removed seat file always takes effect
 
-When a pull of the lore checkout (#208) removes a seat file, the removal SHALL apply
+When a pull of the lore checkout (`lore-pull`, #208) removes a seat file, the removal SHALL apply
 at the next cycle start's lore read, even where the startup checks refuse the rest of the pull.
 Igor SHALL drop its token from memory, give the seat to no new worker, end every worker
-using it and all it started, but no other, hand off their items, and keep running. A local host meets this by killing the `claude -p` child and its #175 worker user's processes, or without such users, the
-child's process group.
+using it and all it started, but no other, hand off their items, and keep running. A host running workers itself meets this by killing the `claude -p` child and every process its #175 worker user owns.
 
 #### Scenario: Removing a seat file stops Igor's use of the seat
 
 - **WHEN** a pull removes `seats/bob.yaml` while a worker is using `bob`
 - **THEN** Igor kills that worker and every process its worker user owns, and hands off its item
 - **AND** no new worker is given `bob`, and the Igor process keeps running
-
-#### Scenario: Without worker users, a removal kills the worker's process group
-
-- **WHEN** `igor serve` runs its workers as its own user, because its code has no worker users,
-  and a pull removes `seats/adam.yaml`, naming `token_env`, while a worker is using `adam`
-- **THEN** Igor kills that worker's `claude -p` child and its process group, and hands off its item
 
 #### Scenario: A removal reaches no other worker
 
@@ -817,10 +792,7 @@ itself.
 
 ### Requirement: A seat's token is decrypted only on a lore read
 
-`igor serve` SHALL decrypt a seat's token only on a lore read: `lore-pull`'s (#208) term for an Igor
-process loading its configuration, role files and seat files from one commit, at start and at each
-cycle start where #208 makes one. `igor run` decrypts nothing, and neither does an `igor serve`
-without worker users (*A lent seat is decrypted only where the worker has a user of its own*).
+`igor serve` SHALL decrypt a seat's token only on a lore read: `lore-pull`'s (#208) term for an Igor process loading its configuration, role files and seat files from one commit, at start and at each cycle start, as #208 provides. `igor run` decrypts nothing (*A lent seat is decrypted only where the worker has a user of its own*).
 Starting a worker or a probe SHALL decrypt nothing: each gets the plaintext Igor holds from its last
 read.
 
@@ -954,8 +926,7 @@ and appends no condition row. It MAY decrypt seat files itself if it can read th
 Where it cannot, it SHALL show a lent seat as not checked, naming the path, not as unreadable for
 that failure.
 Where it cannot decrypt a seat, it SHALL say its credential hash was not computed. Where the
-execution log holds an open `seat:<id>:decrypt`, the seat's line SHALL also name it, as #82
-specifies.
+execution log holds an open `seat:<id>:decrypt`, the seat's line SHALL also name it.
 
 #### Scenario: A person's command that cannot read the key shows the seat not checked
 
@@ -1122,8 +1093,7 @@ token SHALL be limited to reading contents and writing pull requests.
 
 ### Requirement: Igor's own seat-file notice comes only after the change lands
 
-Igor SHALL NOT comment on an open lore pull request about a seat file; its own notice comes only
-after a seat-file change lands and Igor pulls it (`lore-pull`, #208).
+Igor SHALL NOT comment on an open lore pull request about a seat file; its own notice comes only after a seat-file change lands and Igor pulls it (`lore-pull`, #208).
 
 #### Scenario: Igor itself does not comment on an open seat-file pull request
 

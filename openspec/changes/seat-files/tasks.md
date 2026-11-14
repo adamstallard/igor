@@ -206,10 +206,9 @@ contradicts it, and then `design.md` records the measurement.
       Test: *`igor run` refuses where it can read the server's key*
 - [ ] 3.8b `igor serve` decrypts no seat's `encrypted_token`, and neither draws on nor probes a
       lent seat, raising no condition for it, while its code has no worker users (#175's
-      `task-execution`; proposal, decision 78). Test: *`igor serve` without worker users decrypts
-      no lent seat*. Such a seat serves no role there: a role whose only seats are lent is
+      `task-execution`; proposal, decision 78). Test that such a `serve` decrypts no lent seat; the spec carries no scenario for this interim state (`design.md`, *Settled by the agents*), so the test carries no spec-trace `@scenario` tag. Such a seat serves no role there: a role whose only seats are lent is
       refused at load, and `igor budget` shows the seat as not used, saying this `serve` has no
-      worker users. Test: *A role whose only seat is lent is refused without worker users*.
+      worker users. Test that refusal and that `igor budget` display too, linking them to no scenario.
       Task 8.4a lifts this guard with #175's build. Until #175's code lands, no `serve` decrypts
       a seat, so the tests of decryption under `serve`, such as task 3.9's, stand in a fake
       worker-user setup for #175's, passed to the code under test.

@@ -558,6 +558,29 @@ or the release fails, naming the package and its licence. The allowlist is
 MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0, 0BSD, CC0-1.0, Unlicense and BlueOak-1.0.0.
 Any other licence, copyleft included, fails the release until someone adds it on purpose.
 
+## Settled by the agents
+
+These were open questions until the agents settled them, each from the specs and issue #204's
+rules, or because it is cheap to reverse.
+
+- **The interim rules for an `igor serve` without worker users leave the spec.** #204 archives
+  #175 eighth and this change eleventh, and #175's in-force rule runs every `igor serve` worker
+  as its worker user. A spec rule for a `serve` without worker users could then never hold, and
+  no test could reach it. Decision 78 still governs this change's code, which is built before #175's: task 3.8b builds the guard decision 78 asks for, with the two consequences decision 78 names, and task 8.4a removes that guard once #175 is built. The
+  spec keeps the lasting rule, that no worker of a process decrypting a token can read the key,
+  now with a scenario under `igor serve`. The clause and four scenarios that described the
+  interim state are removed: *`igor serve` without worker users decrypts no lent seat*, *A role
+  whose only seat is lent is refused without worker users*, *igor budget shows a lent seat
+  unused without worker users* and *Without worker users, a removal kills the worker's process
+  group*. They sat in `ADDED` requirements, which are not in force until this change archives, so dropping them removes nothing anyone relies on.
+- **Requirement titles stay as they are.** *The worker is given an explicit environment holding no
+  credential but its seat's token* and *A seat probe is one minimal call on the seat's own token
+  alone* say less than their bodies, which also allow the proxy URL's user info. A title names a
+  requirement and its body states the rule. Renaming one would change #216's task 5.1 and other
+  changes' citations for no gain in correctness, and a later rename costs no more.
+- **Decision 80 and choices 47 to 56 no longer wait for Adam's approval.** The proposal listed them as awaiting it. Decision 80 follows from decision 79, as the proposal says. Each of 47 to 56 is a detail inside rules already decided, none narrows another decision, and each can change at gate two, the review of the implementation, without touching another change.
+- **Decision records are left to spec-check's archive pass**, as #143 leaves its own. A decision record is a capability's `decisions.md`, holding the reasoning behind its requirements; at archive, spec-check moves such reasoning out of `design.md` into it. This file no longer repeats the reasoning for *A condition clears by not recurring, and a probe is what observes that* and *A condition's scope is its cure's scope*: #175 creates the `stuck-conditions` decision record holding it, and #175 archives before this change.
+
 ## Reasoning the requirements do not carry
 
 Each paragraph explains the requirement it names in bold, including requirements of #101 and of triage that this change modifies. The requirement states the rule; this
@@ -598,8 +621,7 @@ only by having less to spend, which can make the process take no work but cannot
 wrongly.
 
 **A removed seat file always takes effect.** The rule kills the workers spending from a removed seat. With #175's worker users, killing every process a
-worker's user owns reaches only that worker, since that user runs nothing else. Without them the
-worker's user is the Igor's own, so the kill is by the `claude -p` child's process group instead.
+worker's user owns reaches only that worker, since that user runs nothing else.
 
 **Seats are named configuration entities with an owner and a reserve.** A reserve is one setting,
 read by one rule, on every seat. On a lent seat it holds capacity back for the holder. On a seat
@@ -640,31 +662,11 @@ own observation of the cure. A probe item takes work to find out whether a fault
 that reads cleanly has already shown it. A seat under such a condition is never chosen and never
 probed, so reading its file again is the only observation there is.
 
-**A condition clears by not recurring, and a probe is what observes that.** Nobody sends a fixed
-signal: the cure is a configuration change made on a surface with no channel back to the loop,
-and a condition that waits to be told is one somebody has to remember to close. A stopped scope
-runs nothing and so observes nothing; the probe buys the observation with one run, and the
-cooldown bounds the cost of being wrong. A discriminator, a per-occurrence tag such as a credential's hash, is the exception to "nothing is
-observable": a seat resolving a different credential is the cure having happened, visible before
-any item is claimed, and holding the scope for a lengthening cooldown would keep an operator who
-has already fixed it waiting. The probe is the next ordinary item, not the one that tripped the
-condition, because a condition is scoped to its cure and that item may be unworkable for its own
-reasons.
-
 **A condition that recurs stops the affected scope from taking new work.** An Igor stuck on its
 own configuration is not stuck on anything an item can fix: the loop claims, spends a worker and
 hands back every poll interval, and each attempt notifies a person who cannot act on it either. A first occurrence is information: the handoff naming, say, a refused command is how the cure is found. The twentieth is waste. A refused
 App credential opens at once because an Igor whose App is refused can do nothing on GitHub, so no
 item it takes could find the cure.
-
-**A condition's scope is its cure's scope.** Keying by the process that hit a condition would count
-one cure five times, back off five times and clear five times; the cure is singular and every Igor
-is a witness to it. Scoping by cure keeps the stop as small as it honestly can be. A key naming a
-seat's credential names the seat, not the credential, so a condition rebuilt from the key alone
-answers for the most recent occurrence in the log, not the one being checked; the discriminator is
-the part of an occurrence's identity the key cannot express, which is why it is on every row. No
-state is stored beside the log because a summary can disagree with the log it summarises, a bug
-nobody can diagnose from either side, and appends from several Igors cannot overwrite each other.
 
 **A seat's refused credential is a condition on that seat.** Nothing on the machine separates a
 revoked credential from a working one: `/usage` exits zero for either, and `claude auth status`

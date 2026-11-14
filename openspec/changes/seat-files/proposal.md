@@ -275,7 +275,7 @@ Builds on: check-a-lore-repository (adamstallard/igor#113)
     *The lender hears about a change to their seat file*). *Rejected:* keeping the filter and
     documenting the gap.
 
-Smaller choices this change makes, which approving the change approves (they await that approval):
+Smaller choices, which no longer wait for Adam's approval (`design.md`, *Settled by the agents*, says why):
 
 47. **A seat's headroom is the smaller of its two windows' headroom.** Where a seat may be drawn
     on with no reading, because its line's reserve is 0, a window with no unreset reading counts
@@ -408,7 +408,7 @@ Further answers:
     `serve` raises no condition, as under `igor run`, and serves no role. Two consequences
     follow, both confirmed by Adam on 2026-10-21: a role whose only seats are lent is refused at
     load, as a role with no seat is; and `igor budget` shows each lent seat as not used.
-    *Rejected:* relying on decision 11's instruction that no seat be lent until #175 is built.
+    The spec states only the lasting rule, that no worker of a process decrypting a token can read the key; the interim guard lives in tasks 3.8b and 8.4a (`design.md`, *Settled by the agents*). *Rejected:* relying on decision 11's instruction that no seat be lent until #175 is built.
     Nothing in the code enforced that instruction, and the lender guide and `igor-agent`, which
     invite lending, ship with this change.
 79. **A proxy URL's user info is the one credential besides the seat's token that the worker
@@ -417,21 +417,13 @@ Further answers:
     network setting is a credential. But #217 registers a forwarded proxy URL's password and
     whole URL as credentials to redact, and a user name with no password as `<user>@<host>`,
     never on its own. That requirement now says a network setting can carry this user info,
-    which #217 registers. Its title is unchanged for now (see *Still open*).
-80. **A seat probe's environment carries the proxy URL's user info too**. The probe's
+    which #217 registers. Its title is unchanged (`design.md`, *Settled by the agents*).
+80. **A seat probe's environment carries the proxy URL's user info too**, which follows from decision 79. The probe's
     environment is built as a worker's, and on a host whose proxy needs the user info, a probe
     without it could not reach Anthropic, so the seat would never be read. *Rejected:* keeping the
     probe to the seat's token alone, which would break every probe on such a host.
 
-**Still open.** The smaller choices 47 to 56 await Adam's approval with the change. Besides them:
-
-- **For Adam: the title of *The worker is given an explicit environment holding no credential
-  but its seat's token*.** Since decision 79 the body also allows a proxy URL's user info, so
-  the title says less than the rule. Renaming it would also change one line of #216's task 5.1,
-  which cites this title. *Recommendation:* rename it to *The worker is given an explicit
-  environment holding no credential but its seat's token and its proxy URL's user info*, and
-  report the new name to #216.
-- **For Adam: decision 80**, the seat probe's proxy user info, proposed for approval.
+**Still open.** `design.md`'s *Settled by the agents* records what the agents settled after the consistency reads, among them choices 47 to 56, decision 80 and the requirement titles. What remains open is listed below:
 
 - **Findings of a further consistency read on 2026-10-21, new and not fixed here,** for whoever
   next edits this change. A read-cleared condition that opens only after several failing reads
@@ -441,10 +433,7 @@ Further answers:
   file, against two unqualified rules that every seat is a file and every role spends only from
   seats whose files list it. Two servers whose reads of the same seat file disagree for good,
   such as servers without the same `seatKey`, open and clear its condition every cycle, and
-  nothing says every server must hold the same key. Decision 78's interim rules describe a
-  `serve` without worker users. Once this change and #175 have both archived, #175's rule that
-  `igor serve` always runs its worker as its worker user forbids such a `serve`, and after task
-  8.4a removes the guard no test can reach those rules. Until #175's code lands, the operator and lender guides
+  nothing says every server must hold the same key. Until #175's code lands, the operator and lender guides
   invite lending a seat that serves nothing. `igor budget` under #82 (`stopped-scope-visible`)
   shows a malformed-file seat as stopped, though its condition stops nothing. When the last seat
   file serving a role is removed, the role hands its item back to the tracker with no handoff
@@ -470,13 +459,15 @@ Further answers:
   - **Decision 42 and #143's probe.** #143's probe is minimal: it runs with no tools and loads
     nothing. The skills check loads the skills it checks. #174 asks Adam whether the check may
     differ from #143's probe in that way; decision 42 holds as written either way.
-  
   - **Against #228 (`probe-claim`),** whose *A due probe is eventually taken* covers every
     condition: a read-cleared condition takes no probe item, so #228's requirement should except
     it (reported to #228).
   - **The archive commit, for Adam.** #143's decision 16 archives this change and #143 in one
-    commit, which now holds the seven changes #204 places between them. Issue #148 records that
-    one-commit note as superseded by #204. Which stands is Adam's call.
+    commit, which would now also hold the seven changes #204 places between them. Issue #148
+    marks that one-commit rule as superseded (2026-10-18), with #204 as the one place the order
+    is stated. The two records disagree.
+  - **Citing #208 ahead, for Adam.** This change uses #208's *lore read*, its pulls, its startup
+    checks and its lore read at each cycle start, and #208 archives after it; #204 records no leave (Adam's permission to cite a change that archives later) for that.
   - **Against #208 (`lore-pull`),** four rules differ: the notice for a seat file pushed with
     no pull request, when a removed seat file takes effect, whether a restart that removes a
     role's last seat still starts, and which reads clear a read-cleared condition.
@@ -668,10 +659,9 @@ it archives first.
   `pinned-skills` (#174), whose code is built after this change's (decision 11, and #174's
   decision 30). Build order and archive order differ for
   #175 and #174: each is built after this change but archives before it. The archive order is the
-  one issue #204 holds (decision 32). #143's decision 16 archives this change and #143 in one commit, which *Still open* asks Adam to confirm; in it the seven changes #204 places between them, #75,
-  #120, #137, #217, #175, #174 and #113, archive too. No commit then
-  leaves one of the two archived without the other, so no in-force requirement text names
-  `capacity_estimate`, which #143 removes, or `dedicated`, which this change removes. The word
+  one issue #204 holds (decision 32). #143's decision 16 archives this change and #143 in one commit, and issue #148 records that rule as superseded, a conflict *Still open* puts to Adam; under decision 16 the seven changes #204 places between them, #75,
+  #120, #137, #217, #175, #174 and #113, archive too. Under decision 16, no commit leaves one of the two archived without the other, so no in-force requirement text names
+  `capacity_estimate`, which #143 removes, or `dedicated`, which this change removes. If #148's note stands instead, each change archives in its own commit, and between #143's archive and this change's an in-force requirement names `capacity_estimate`. The word
   "dedicated" survives only as plain English in two in-force scenario titles, which openspec
   will not rename: *A role reserve with a dedicated seat is valid* (decision 16) and #143's *A
   dedicated seat runs uncalibrated*. #143 also withdraws the open changes
