@@ -1,7 +1,13 @@
 # role-config Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Define what an Igor does. An Igor holds exactly one role: a YAML file in the repository that holds
+the team's lore and roles, whose name is the Igor's identity on GitHub, Linear and any other
+tracker. The file names the tracker queries to run, the lane predicates that decide which items
+are in scope, the worker's instructions and permissions, the seat (the paid model subscription)
+it spends from, and its reviewers. This spec covers that file, how it inherits from a single base
+file of the same shape, the refusal of any key Igor does not read, `igor role explain`, which
+shows a role's effective settings, and `igor run <role> --plan`, which shows what it would claim.
 ## Requirements
 ### Requirement: A role is a file whose name is its identity
 
