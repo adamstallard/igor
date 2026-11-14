@@ -43,6 +43,15 @@ describe('what gh says, read back whole', () => {
     expect((error as GhError).status).toBe(409)
   })
 
+  it('carries the status where the response had no JSON body, which gh prints bare', async () => {
+    // With no JSON to read a message from, gh prints only `gh: HTTP <code>`. If `GhError.status`
+    // were left unset here, a claim GitHub refused would look like one GitHub never answered,
+    // and the discovery watermark would be held below that item, triaging it again every cycle.
+    fakeGh('<html>Forbidden</html>', { stderr: 'gh: HTTP 403\n', code: 1 })
+    const error = await gh(['api', 'repos/o/r/issues/1/labels', '--method', 'POST']).catch((e: unknown) => e)
+    expect((error as GhError).status).toBe(403)
+  })
+
   it('leaves the status unset where gh named none', async () => {
     fakeGh('', { stderr: 'gh: could not resolve host', code: 1 })
     const error = await gh(['api', 'repos/o/r/merges']).catch((e: unknown) => e)

@@ -1,7 +1,13 @@
 # graceful-handoff Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Keep a claimed item from going quiet when an Igor gives up work it has claimed: the seat that
+pays for its model calls runs out, it hits a failure it cannot recover from, or something else it
+detects stops it. The claim told people and other Igors to stand off, so before releasing it the
+Igor posts a handoff on the item: what was done, what remains, who could continue, and, when the
+seat ran out, when capacity returns. The handoff is built from what the run recorded, with no
+model call, so it can still be posted when no model call can be made. Releasing the claim, and a
+stop a person issues, which releases it with no handoff, are in `work-claiming`.
 ## Requirements
 ### Requirement: An Igor never goes silent on a claimed item
 
