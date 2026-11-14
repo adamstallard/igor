@@ -1,10 +1,11 @@
 ## Decisions for the reviewer
 
 1. **What counts as named is read from text, by fixed rules, with no model call.** The rules are
-   in the requirement *A pull request states which changed paths its item does not name*. Rejected:
-   asking a model whether each path is relevant. It costs a call per run, gives different answers
-   on the same input, and reads the same item text a planted instruction would sit in, so the
-   steering this check exists to expose could steer the check too.
+   in the requirements *What an item names*, *Naming a capability or change names what its files
+   name* and *A file sharing a named file's stem is named*. Rejected: asking a model whether each
+   path is relevant. It costs a call per run, gives different answers on the same input, and reads
+   the item text where an injected instruction would sit, so text written to steer the worker, which
+   this check exists to expose, could steer the check too.
 2. **The role's lane paths do not count as named.** `lane.paths.under` says which items a role
    takes, not where any one item's change belongs. Rejected: counting them. A role whose lane is
    `src/api/**` would then never be flagged for editing `src/api/auth.ts` on an issue about
@@ -40,7 +41,7 @@
    Rejected: a table mapping each capability to source paths. Nothing would keep it current, and a
    stale table hides exactly the paths it forgot.
 
-**Decided (Adam, 2026-10-13): the check understands both gates of the two-gate workflow**
+**Decided: the check understands both gates of the two-gate workflow**
 (`follow-the-two-gate-workflow`, #150; this part applies only once that change ships):
 
 - **Gate one** expects only the pull request's own change directory under `openspec/changes/`.
@@ -56,7 +57,7 @@
   *Rejected:* leaving gate two unchecked, which leaves the implementation, the push most likely
   to stray, with no scope check at all.
 
-**Also decided (Adam, 2026-10-13):**
+**Also decided:**
 
 - The pull request's own change is the one directory the gate-one artifact adds. An artifact
   that adds none, or more than one, is reported as not checked rather than guessed at.
@@ -102,8 +103,14 @@ None.
 
 ### Modified Capabilities
 
-- `task-execution`: one added requirement, a pull request states which changed paths its item does
-  not name.
+- `task-execution`: eleven added requirements:
+  - the comparison itself, *A pull request states which changed paths its item does not name*;
+  - three for what counts as named: by the item's text, through a named capability or change, and
+    by stem;
+  - where the result is stated, and that it never blocks publishing;
+  - two for pushes onto a pull request: which are checked, and what #190's evidence table states
+    when no result is recorded;
+  - three for the two-gate workflow: gate one, gate two, and when gate two is not checked.
 
 ## Overlaps
 
