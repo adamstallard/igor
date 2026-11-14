@@ -1,99 +1,108 @@
 # Design
 
-The requirement *A path execution cannot read is never silently omitted* makes execution refuse
-to publish, and name the path, when a changed path cannot be read. The next two sections settle the two
-choices that had more than one defensible answer: refusing rather than publishing without the
-path, and stating the rule over paths rather than over renames.
+The requirement *A path execution cannot read is never silently omitted* makes execution publish
+nothing, and hand the item off naming the path, when a path the worker added or modified cannot
+be read. This file settles the choices that had more than one defensible answer.
 
-## Refusing, rather than publishing without the rename
+## Decisions
 
-When the destination cannot be read, the change list can hold neither half instead of one. That
-publishes the rest of the worker's output, leaves the file where it was, and loses nothing.
+### Refusing, rather than publishing without the path
 
-Rejected, on the project's own stated ground. *"An artifact that carries the edits and drops the
-removals is worse than one that is not published at all: it looks complete to a reviewer and is
-not"* — the harm named in the in-force requirement is **silent incompleteness**, and dropping both
-halves is silently incomplete in exactly that way. It trades a destructive diff for a missing
-change, and a reviewer cannot see either.
+When a destination cannot be read, the change list could drop the rename's removal too, and
+publish the rest of the worker's output with the file left where it was. That is rejected: the
+in-force removals requirement names **silent incompleteness** as the harm (*"An artifact that
+carries the edits and drops the removals is worse than one that is not published at all: it looks
+complete to a reviewer and is not"*), and dropping both halves is silently incomplete in exactly
+that way. Dropping both halves would trade a deletion that looks deliberate for a change that is missing,
+and a reviewer could notice neither.
 
-It is also the wrong response to what actually happened. The destination is a file the worker just
-wrote, and execution could not read it. That is not a tidy edge case to route around; it is a
-working tree execution does not understand. Publishing the parts it does understand, from a read
-that already failed once, is how a subtler instance of this class arrives later.
+Two weaker alternatives are rejected too:
 
-Two weaker alternatives, for the record:
+- **Emit the removal and record a warning.** It still publishes a deletion of a file the worker
+  meant to keep, and a warning written only to the run's record goes unseen:
+  [#79](https://github.com/adamstallard/igor/issues/79) reports exactly that.
+- **Refuse only where the unreadable path is a rename destination.** Since
+  [#118](https://github.com/adamstallard/igor/pull/118) the parser does not know which paths are
+  halves of one rename, so this cannot be decided.
 
-- **Emit the removal and record a warning.** Rejected: it still publishes a deletion of a file the
-  worker meant to keep. A warning in a record nobody opens is what
-  [#79](https://github.com/adamstallard/igor/issues/79) is filed about.
-- **Refuse only where the unreadable path is a rename destination, and otherwise keep the
-  `continue` in the parser's catch block that today skips an unreadable path with no error or
-  record.** Rejected: it depends on knowing which paths are
-  halves of one change, and since [#118](https://github.com/adamstallard/igor/pull/118) the parser
-  does not know that. The next section says why.
+### Stated over paths, not over renames
 
-## Stated over paths, not over renames
+A rule over renames, *a rename reaches the artifact whole or not at all*, assumes the parser pairs
+a rename's two records. #118 removed the pairing: `changes()` passes `--no-renames`, so porcelain
+emits no `R` or `C` record, and a rename is an unrelated `D` and `A`. A rule over paths holds
+without the pairing.
 
-Phrasing the requirement over renames is rejected: both the rule *a rename reaches the artifact
-whole or not at all* and its ordering rule, that the source's removal must not be emitted before
-the destination has been read.
+The widening is accepted: an addition or modification that cannot be read refuses too, where
+today the bare `continue` skips it. That is the same failure with one path instead of two, and
+carving it out would need to know which paths belong together.
 
-That phrasing assumes the parser pairs a rename's two records, and #118 removed the pairing.
-`changes()` now passes `--no-renames`, so porcelain emits no `R` or `C` record, and `PAIRED`,
-`RENAME`, `indexOnly` and the `from`/`++i` pairing are gone as unreachable. A rename is now an
-unrelated `D` and `A`, and the failure survives by a route the pairing language
-cannot describe — the removal is emitted, the addition's read throws, the artifact carries a lone
-deletion. The scope clause was worse than the rest: excluding "an unreadable file that is not half
-of a rename" is undecidable once nothing knows the two records are halves of anything.
+### The requirement overrides what the rename and removal rules would publish
 
-So it is phrased over paths. **A requirement states what must be true of the artifact, not what the
-parser currently looks like.** A rule over paths holds whether or not the parser pairs a rename's
-two records, so it would hold with the pairing #118 removed and holds without it.
+*A rename leaves no duplicate*, *A rename is carried however git reports it* and *A publish is not
+lost to a removal nobody asked for* each say what a run publishes, with no condition on the
+destination being readable. The requirement says it holds whatever those rules would publish, so
+an unreadable destination refuses the run rather than publishing the rename's other half. Each of
+those rules still governs every run whose changed paths can all be read.
 
-The widening is real and is accepted rather than incidental: an addition that cannot be read now
-refuses too, where today it is skipped by the same bare `continue`. That is the same failure with
-one path instead of two, and carving it out would have reintroduced the dependency on knowing which
-paths belong to each other.
+### A removal is outside the rule
 
-## The mechanism, which the requirement does not fix
+Every removed path is a changed path the working tree cannot read, and the in-force removals
+requirements already decide what happens to it. One of them covers an unmerged `DU` path: the
+artifact's own branch deleted the file, the base modified it, and the worker deletes it to keep
+the deletion. *A removal the worker did ask for is not published where the base lacks the path*
+publishes no removal for it and still publishes the rest. So this rule covers only paths the
+working tree still holds.
 
-Read every path a change touches before committing any of it to the change list, so a throw leaves
-nothing behind. Whether that is a read-first ordering or a buffer flushed on success is an
-implementation choice; the invariant is that a failure cannot leave a partial change already
-emitted. The bug being fixed *is* an early emit surviving a path that forgot about it, and this
-function has three `continue`s in one catch.
+The unmerged branch of the catch in `changes()` (`src/worktree.ts:560-563`) emits a deletion for
+any unmerged path whose read throws, whether or not the path is gone. That branch is changed to tell
+the two apart (task 2.3): a path gone from disk is the worker's removal, and a path still present but unreadable,
+such as a `UU` path the worker resolved and left unreadable, falls under this requirement.
+
+### Where the refusal sits
+
+`changes()` keeps an entry for an unreadable path, marked as unreadable, and the publishing step
+in `src/execute.ts` refuses on it, as it refuses a name that is not text (*A change is not
+published under a name that is not text*). A throw inside `changes()` would be wrong: a run killed
+for a limit reads the tree with `tree.changes().catch(() => [])` (`src/execute.ts:1662`), so one
+unreadable path would make that run record that it changed nothing.
+
+### A lost claim
+
+Where the claim was lost during the run, the loss rules decide what is published: a draft of what
+exists, no reviewers, and a message naming what exists, with nothing else done to an item another
+party now holds. A handoff would act on that item. So the loss rules govern, and the loss message
+names the unreadable path, which keeps the omission visible.
+
+### Naming the path
+
+The path is chosen by the worker, and an item's text can steer the worker, so the handoff names it
+in a form markup in it cannot alter, such as a code span whose fence is longer than any run of
+backticks in the path.
 
 ## Not settled here: why the destination is unreadable
 
-A dangling symlink is the cause reachable today, because `readFile` follows the link. Reading the
-link itself rather than following it would publish it correctly — a tree can hold a symlink as mode
-`120000` with the target as content — and that is very likely a better answer for that specific
-cause. It is a different change: this one is about what happens when a path cannot be read, not
-about reducing the set of paths that cannot be.
+A dangling symlink is the cause reachable on `main`, because `readFile` follows the link.
+[#137](https://github.com/adamstallard/igor/pull/137) and
+[#175](https://github.com/adamstallard/igor/pull/175) each read the link itself and publish it as
+mode `120000`, so after either lands a dangling symlink no longer reaches this requirement. A file
+without read permission does, so the tests use one.
 
-## Not a design decision: which failures count as unreadable
+The requirement says "cannot be read" and names no errno: enumerating causes would tie it to a
+filesystem rather than state what must be true of the artifact.
 
-The requirement says "cannot be read" and names no errno. A dangling symlink is the case reachable
-today, reached through `git mv` on a link whose target is gone. Enumerating causes would date the
-requirement against a filesystem rather than state what must be true of the artifact.
+## Open Questions
 
-## Why this is not folded into one guard with #68 and #116
-
-The three are one class — *the published artifact does not match what the worker did, and review
-cannot see it* — and three instances has twice been this project's argument for treating the shape
-rather than the instance.
-
-It was considered and does not work here. The natural guard is *compare what is published against
-what the worker did, before publishing*, and the only thing available to compare against is
-`changes()` output. That is the very thing
-[#116](https://github.com/adamstallard/igor/issues/116) corrupts: a deletion that never reaches
-`git status` never enters the list, so the guard would compare a list missing a removal against a
-tree built from that same list, and find them in agreement. Catching #116 means comparing against
-the working tree itself, which is a different and much larger mechanism than any of the three
-fixes.
-
-[#103](https://github.com/adamstallard/igor/pull/103) is the nearest thing to the general guard and
-is narrower than it looks: it is scoped to conflict resolutions and compares what the **base**
-changed against what the resolution publishes. Neither this instance nor #116 falls inside it.
-
-So: three routes, three fixes, and the class recorded here rather than pursued.
+- **The unmerged branch, shared with #125.** [#125](https://github.com/adamstallard/igor/pull/125)
+  rewrites the same catch branch: its task 5.2 tells *gone from disk* from *present but
+  unreadable*, as task 2.3 here does, and it publishes no entry for a path the worker did not
+  touch that is not a regular file, such as an unmerged submodule's gitlink. Whichever builds
+  second builds on the other's branch. #125 treats an unmerged gitlink as a path the worker did
+  not touch; this requirement refuses a path the worker modified. Which an unmerged gitlink is
+  must be settled by #125's authors and this change's together (task 4.3); until then this
+  requirement refuses an unmerged gitlink it cannot read.
+- **Gate one, shared with #150.** [#150](https://github.com/adamstallard/igor/pull/150) modifies
+  the removals requirement so that gate one carries only changes under `openspec/changes/**` and
+  names the rest, and drops the sentence quoted under *Refusing* above. *Refusing* stands without
+  that sentence, since the failure it rejects is still silent incompleteness. Whether an unreadable path
+  outside `openspec/changes/` should refuse a gate-one run, when gate one would not carry it, is
+  for #150's authors and this change's to settle; until then this requirement refuses it.
