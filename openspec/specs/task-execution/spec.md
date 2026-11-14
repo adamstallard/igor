@@ -182,22 +182,11 @@ wedged one costs idle minutes, so each window errs long.
 ### Requirement: The window depends on what the worker is waiting for
 
 Execution SHALL read from the stream whether a tool the worker dispatched is still outstanding,
-and SHALL apply a longer window while one is than when none is.
-
-A worker blocked on a tool it dispatched is legitimately silent for as long as that tool runs,
-which for a build, a test suite or a fetch is long, and the tool's own timeout bounds it
-independently. A worker waiting on nothing but the model's next turn is silent only through
-retries or a hang, and nothing legitimate takes long there.
-
-Outstanding work SHALL be tracked per dispatched call rather than inferred from the most recent
-event, because tools dispatched together return one at a time and a result arriving while a
-sibling still runs must not shorten the window under it.
-
-A turn that has resumed proves every tool it dispatched has come back, and execution SHALL take
-that as clearing the outstanding set, so that one call whose result never arrives cannot hold
-the longer window open for the rest of the run. Only the run's own turn counts: a subagent
-produces its own events while the call that spawned it is still outstanding, and those prove
-nothing about the turn above them.
+and SHALL apply a longer window while one is outstanding than when none is. Outstanding work
+SHALL be tracked per dispatched call, so a result arriving while a sibling still runs does not
+shorten the window. When the run's own top-level turn resumes, which shows that every tool it
+dispatched has returned, execution SHALL clear the outstanding set; a subagent's events SHALL
+NOT clear it.
 
 #### Scenario: A long tool call is not a wedged worker
 
@@ -266,10 +255,6 @@ Where a worker is killed for a limit, execution SHALL keep what the run had alre
 A worker that had reported its result before the kill SHALL settle with that result and its
 cost rather than as a failure, and a worker killed mid-edit SHALL have its working tree read so
 the recorded outcome names what it changed.
-
-A silence window can expire on a run that is finished but whose process has not exited, and a
-kill can land hours into real editing. Recording either as having produced nothing records the
-wrong failure.
 
 #### Scenario: A finished run survives a kill
 
@@ -414,19 +399,9 @@ something else entirely when it is missing.
 ### Requirement: A published artifact is kept mergeable
 
 Where an artifact an Igor produced can no longer merge into its base, the Igor SHALL bring it
-up to date, and SHALL do so on the artifact that exists rather than by replacing it.
-
-A base moves while an artifact waits. Nothing else notices: the item reports work in flight,
-the working tree was released when the run ended, and the worker never held a branch to begin
-with — it edits files, and the loop publishes what changed. So an artifact left behind goes
-stale in a state only a person can see.
-
-Resolution happens on the existing artifact because replacing it would discard whatever review
-has accumulated against it, which is a cost paid by the reviewer rather than the Igor.
-
-Bringing it up to date starts with the code host: the base is merged into the artifact's branch
-server-side. Where that comes out clean the cycle for the item ends there; where it conflicts,
-a worker resolves it.
+up to date, and SHALL do so on the artifact that exists rather than by replacing it. It SHALL
+first have the code host merge the base into the artifact's branch. Where that comes out clean
+the cycle for the item ends there; where it conflicts, a worker resolves it.
 
 #### Scenario: A conflict that has cleared costs no model
 
@@ -485,25 +460,12 @@ their commit from the base tree, and a removal is an entry in that tree with not
 
 ### Requirement: A change is not published under a name that is not text
 
-A filename is bytes. Where a changed file's name is not valid UTF-8, execution SHALL publish
-nothing for that run, and SHALL hand off naming the file by the bytes git wrote rather than by
-the spelling decoding left behind.
-
-An artifact names a path as text, so a name that is not text has no faithful form in one.
-Published at the decoded spelling, a modified file lands at a path no file on disk has — the
-original is left untouched and the branch carries the file twice; a deletion removes nothing;
-and two names differing only in the bytes that did not decode arrive as one path, so one
-replaces the other or the host rejects the whole change. Each of those is a change that is
-wrong rather than one that is missing, and nothing in the artifact tells a reader which file
-was meant.
-
-A name SHALL be judged by re-encoding the decoded name and comparing it to the bytes, and MUST
-NOT be judged by searching the decoded name for the replacement character. A file may
-legitimately be named with that character, and refusing it would take a working run away over
-a name nothing is wrong with.
-
-What the run changed SHALL still be recorded, and SHALL name such a file by its bytes there
-too. A refusal that cannot say which file it refused is one nobody can act on.
+Where a changed file's name is not valid UTF-8, execution SHALL publish nothing for that run,
+and SHALL hand off naming the file by the bytes git wrote rather than by its decoded spelling.
+Whether a name is valid UTF-8 SHALL be judged by re-encoding the decoded name and comparing it
+to the bytes, and MUST NOT be judged by searching for the replacement character, which a valid
+name may contain. What the run changed SHALL still be recorded, naming such a file by its bytes
+there too.
 
 #### Scenario: A file whose name is not text is not published under another one
 
@@ -537,29 +499,8 @@ too. A refusal that cannot say which file it refused is one nobody can act on.
 Execution SHALL read the working tree in a way that reports every changed path separately, and
 SHALL NOT lose a removal because git paired it with another path. Where a worker removed a file,
 that removal SHALL be read whatever else changed in the tree, and SHALL be carried into the
-artifact.
-
-Rename detection is what folds two paths into one. During a conflicted merge, a deletion the
-worker made can be detected as the source of a rename whose destination is an unmerged path, and
-the porcelain output then names only the unmerged path — with its own unmerged flags, not as a
-rename — so the deletion is absent from the input rather than misread in it. Measured at roughly
-one in a hundred conflicted merges.
-
-**An incomplete read is not an excuse.** *"The artifact carries every change the worker made,
-including removals"* is satisfied by carrying whatever execution read; this requirement says what
-execution must be able to read, so a removal that never reached the record is a failure of this
-requirement rather than a case the other one permits.
-
-A removal lost this way is the most expensive thing that can go missing. The resolution's commit
-names the base as a parent, so a file left in it is restored the moment the artifact merges, and
-review sees a file that is still there rather than a change that is wrong.
-
-Nothing downstream recovers it. A guard comparing what the base changed against what the
-resolution publishes has no entry for a path the base never touched, and what the resolution
-publishes is itself built from this read.
-
-How the tree is read is not fixed here. What is fixed is that no changed path may be reported
-only as part of another.
+artifact. How the tree is read is not fixed here; what is fixed is that no changed path may be
+reported only as part of another.
 
 #### Scenario: A removal folded into a conflicted path is still read
 
@@ -592,41 +533,12 @@ only as part of another.
 
 ### Requirement: No removal is published for a path the base does not hold
 
-An artifact SHALL carry a removal only for a path the tree it is laid over already holds.
-
-**The base here is that tree**, and not the set of changes the base branch made — the branch head
-a resolution commits onto, or the base branch a new artifact is cut from. *"A base change is
-undone only where the resolution says so"* is about the second; this requirement is about the
-first.
-
-**And it is the tree the work was cut from**, not the branch as it stands when the artifact is
-published. A branch head read at publish time is a different tree whenever the branch moved while
-the work was being done, so a removal that was correct against what the worker saw arrives as a
-removal of a path that tree no longer holds. Publishing over an older base is what the artifact's
-catch-up merge exists for; publishing over a base nobody read the work against is not.
-
-Where reading the working tree offers a removal of a path the base does not hold, execution SHALL
-NOT publish it. **Whether the worker asked for the removal makes no difference.** Sometimes it did
-not — the run's own index brought the path into being, as the destination of a rename that was then
-moved again, or as a staged addition the worker then deleted. Sometimes it did: a merge can leave a
-path in the tree that the artifact's own side had deleted, and removing it is the resolution the
-worker is invited to make. Either way no tree the artifact is published against ever held the path,
-and the host refuses the removal the same.
-
-**So the obligation is a question about the tree, not about the status of the path.** A mechanism
-that decides from how the path came to be in its current state is enumerating the ways a path can be
-absent from the base, and is complete only until the next one is found.
-
-**This is the opposite half of the requirement above it.** That one says the read may not lose a
-removal; this one says it may not invent one. A mechanism satisfying either by breaking the other
-satisfies neither, and the two are stated separately so that a future read is measured against
-both.
-
-**The host refuses an invented removal outright.** Dropping a path the base tree does not hold
-returns `422 GitRPC::BadObjectState`, and the refusal is of the whole tree request: nothing is
-published, not even the changes that were correct. So this is not a tidiness rule about extra
-entries. A single invented removal costs the run everything it produced, which is why the
-obligation is stated rather than left to whichever mechanism reads the tree.
+An artifact SHALL carry a removal only for a path held by the tree its commit is built on: the
+tree the work was cut from, not any branch as it stands at publish time. For a resolution, that
+is the head of the artifact's branch it commits onto, when the work was cut; for a new artifact,
+the base branch it is cut from. Where reading the working tree offers a removal of a path that
+tree does not hold, execution SHALL NOT publish it, whether or not the worker asked for the
+removal.
 
 #### Scenario: A path only the run's own index ever held is not removed
 

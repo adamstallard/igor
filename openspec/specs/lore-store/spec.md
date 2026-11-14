@@ -11,12 +11,11 @@ entries into force is `lore-review`; delivering them to a worker is `lore-firing
 ## Requirements
 ### Requirement: Entry files are markdown with frontmatter, named by id
 
-The store SHALL be at the root of its repository, under the configured `destination`, which is
-required and has no default, because lore belongs to the operating team and nothing in Igor can
-guess where that is. A `destination` that resolves below the root of its repository SHALL be
-refused when the configuration is loaded. Beneath the destination the store SHALL keep one
-markdown file per lore entry in `entries/`, and the filename SHALL be the entry's `id` plus
-`.md`, so an entry is locatable directly from a supersession pointer or a provenance reference.
+The configured `destination`, which is required and has no default, SHALL be the root of the
+repository that holds it, so the store's access and visibility are that repository's own. A
+`destination` that resolves below that root SHALL be refused when the configuration is loaded.
+The store SHALL keep one markdown file per lore entry in `<destination>/entries/`, named by the
+entry's `id` plus `.md`.
 
 #### Scenario: Entry written to disk
 
@@ -32,15 +31,11 @@ markdown file per lore entry in `entries/`, and the filename SHALL be the entry'
 ### Requirement: Frontmatter conforms to a validated schema
 
 Every entry's frontmatter MUST contain `id`, `claim`, `scope`, `status`, `conditions`,
-`provenance`, and `supersedes`. `reviewed` MUST be present when `status` is `active` and MAY
-be absent otherwise, since a provisional entry has not been reviewed by definition.
-`conditions` MUST contain a `prose` string and MAY contain a `paths` array of glob patterns.
-`scope` MUST be `global`, `role:<name>`, or `project:<name>`. `status` MUST be `provisional`,
-`active`, or `deprecated`. Entries failing validation SHALL be rejected rather than written.
-
-Dates MUST be accepted whether or not they are quoted in the source YAML, because a person
-authoring an entry will not quote them and a YAML parser turns an unquoted date into a
-timestamp rather than a string.
+`provenance`, and `supersedes`, and MUST contain `reviewed` when `status` is `active`.
+`conditions` MUST hold a `prose` string and MAY hold `paths`, an array of globs. `scope` MUST be
+`global`, `role:<name>` or `project:<name>`, and `status` `provisional`, `active` or
+`deprecated`. The tool SHALL reject an invalid entry, not write it. A date anywhere in the
+frontmatter MUST be accepted quoted or unquoted.
 
 #### Scenario: Provisional entry needs no review block
 
@@ -247,15 +242,6 @@ presented as one.
 
 The config SHALL refuse a key outside the set it reads, naming the offending key and the
 accepted ones, and SHALL do so before reporting a required key missing.
-
-Every key in this file turns something on. Dropped in silence, a misspelt one leaves the
-operator with a file whose text says what they meant and a tool doing something else: no
-reviewers where reviewers were named, provenance unguarded where `publicStore` was declared, a
-destination reported as absent while it is on the page one letter wrong.
-
-Order matters for that last one. "destination is required" over a file whose second line is
-`destinaton: .` sends somebody looking for the key they can already see, so the spelling is
-checked first and the requirement second.
 
 #### Scenario: An unreadable key is named
 
