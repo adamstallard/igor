@@ -18,8 +18,8 @@
 - [x] 1.5 One mark per role and source; no mark is kept per process start or per seat
 - [x] 1.6 This change's block is #173's copy of *Watermarks reduce reconsideration without
       governing it*, itself on #242's and #101's, with "per source" made "per role and source",
-      lane skips named beside triage's, its terms pointed at `stuck-conditions`, every scenario of
-      #173's copy with the seat case added to the slot scenario, and this change's own scenarios
+      and the other edits proposal decision 6 lists, every scenario of #173's copy with the seat
+      case added to the slot scenario, and this change's own scenarios
 - [ ] 1.7 Before archive, compare this block with the archived text of #242's and #173's copies,
       and carry any change either made to its copy after 2026-11-13
 - [x] 1.8 *A role's watermark is its own* states what identifies a mark, the first run of a role
@@ -66,3 +66,6 @@
       `@scenario work-discovery: <Scenario name>`, as `AGENTS.md` requires
 - [ ] 4.11 A role's cycle that acted, whose lane rejects an item, advances that role's mark past
       the item, as past one triage skipped (*An item a role's lane skipped is passed*)
+- [ ] 4.12 A cycle that decides to work three items with three free worker slots but a seat for
+      only two claims two, and the next cycle reconsiders the third (*An item left for want of a
+      slot or seat is seen again*)

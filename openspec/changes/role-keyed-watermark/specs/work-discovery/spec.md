@@ -70,9 +70,10 @@ stopped it. A refused claim SHALL advance it unless its run records a
 
 #### Scenario: A claim refused for a missing App permission is seen again
 
-- **WHEN** a cycle decides to work an item, and its claim is refused with a 403 for a permission
-  the App lacks, whose run records a cure key
-- **THEN** the next cycle after the condition clears reconsiders that item
+- **WHEN** a cycle decides to work an item, its claim is refused with a 403 because the App lacks a
+  permission, and that run records a `stuck-conditions` cure key
+- **THEN** the watermark does not pass the item, and the first cycle after the condition clears
+  reconsiders it
 
 ## ADDED Requirements
 

@@ -30,10 +30,22 @@ below a dependency listed too; this change takes nothing from them directly.
    `work-claiming`'s two-in-a-row rules ended it, adds an exception for a refused claim whose run
    records a cure key (#101's name for a fault in the Igor's own setup), and adds three scenarios.
    #242 and #173 both archive before this change, in the order issue #204 sets for archiving the
-   open changes. So its block carries #173's text with "per source" made "per role and source",
-   lane skips named beside triage's, and the terms it uses pointed at `stuck-conditions`; every
-   scenario of #173's copy; and this change's own scenarios. This change's sentence,
-   one mark per role and source, is the one that survives.
+   open changes. So this change's block is #173's text with these edits:
+   - "per source" made "per role and source";
+   - lane skips named beside triage's;
+   - *condition* and *cure key* written as `stuck-conditions`' terms, since that capability
+     defines them;
+   - "free" before "worker slot", and "as for an item taken" after "A refused claim SHALL advance
+     it", cut to keep the requirement within OpenSpec's 500 characters. The requirement's
+     scenarios still state both: the slot scenario counts free slots, and the refused-claim
+     scenario advances the mark as past an item the cycle took;
+   - the cure-key scenario says which run records the cure key, and that the first cycle after
+     the condition clears reconsiders the item.
+
+   It keeps every other scenario of #173's copy as written, adds to the slot scenario the case
+   where seats run out before slots, and adds this change's own scenarios. Because this change
+   archives last, its block is the text left in force, so the requirement ends with one mark per
+   role and source.
 7. **The requirement states the mark's scope, not its key format.** A composite key,
    `role:tracker:repo:hash`, is how `tasks.md` builds it. *Rejected:* naming the key string in
    the requirement, which would forbid other shapes that keep the promise, such as a state file
