@@ -1,7 +1,13 @@
 # work-triage Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Decide which candidate items an Igor takes, cheaply enough to run every cycle. Triage filters in
+three stages, cheapest first: the tracker's own query, which discovery runs, then declarative
+lane predicates over the normalized item, then a model call for only the items left. The outcome
+is proceed or skip, with no confidence score, and every decision records its reason. This spec
+also covers the skips every role applies (an item closed, held by someone else, with work
+already in flight, or handed back by an Igor and not yet answered by anyone) and a cycle in which
+no seat can pay for the model call.
 ## Requirements
 ### Requirement: Triage runs in three stages, cheapest first
 

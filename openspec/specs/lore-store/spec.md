@@ -1,7 +1,13 @@
 # lore-store Specification
 
 ## Purpose
-TBD - created by archiving change lore-store. Update Purpose after archive.
+Hold a team's lore: the lessons it has learned, kept as markdown files in git, one entry per file,
+at the root of a repository the team owns rather than Igor's own. An entry states a claim, the
+scope it applies to, its review status, the conditions under which it applies, and its
+provenance: the sources it rests on. This spec covers the entry format and its validation, ids
+derived from the claim and then frozen, which repository the store may use, its configuration,
+and the CLI that creates, validates and lists entries and sets up that repository. Reviewing
+entries into force is `lore-review`; delivering them to a worker is `lore-firing`.
 ## Requirements
 ### Requirement: Entry files are markdown with frontmatter, named by id
 
