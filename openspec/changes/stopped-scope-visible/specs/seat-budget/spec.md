@@ -2,28 +2,12 @@
 
 ### Requirement: A seat a condition has stopped reads as stopped
 
-Budget reporting SHALL show a seat that an open condition has stopped as stopped, on a line of the
-seat's own, naming the cure key and what would clear it. That line SHALL be distinguishable from
-every other state that keeps a seat unspent: a credential that could not be read, a credential
-the provider refused, no headroom left, no unreset reading of its windows where its reserve is
-above 0, a seat lent through a seat file and shown as not checked because the command cannot read the
-key file that decrypts it (#171),
-and holding back at its reserve line, the fullness above which #143 starts no new work on the seat (#143's *Holding
-back at the line is distinguishable from having nothing to do*). A stopped seat that has headroom
-SHALL show that headroom too, against the seat's reserve line as #143's report shows it, per role
-where a role reserves more than the seat.
-
-Two kinds of seat under a condition are not shown as stopped. A seat whose only open condition is its
-refused credential SHALL be shown on the line `condition-backoff`'s *Reporting tells a refused
-credential from an unreadable one, and clears nothing* gives it. A seat whose only open condition
-is that Igor could not decrypt its seat file SHALL be shown as #171 (`seat-files`) reports an
-undecryptable seat: on the line for a credential that could not be read, or, where the command
-cannot read the key file, as not checked. Either line SHALL name the condition. A seat with more than one open condition, or with one of any other kind, SHALL
-be shown as stopped, its line naming every open condition on the seat.
-
-A condition scoped to a role, or to the Igor's own GitHub App credential, SHALL NOT appear in
-budget reporting. Reading the report SHALL
-clear nothing: no condition cleared, no count reset, no cooldown shortened.
+Budget reporting SHALL show a seat an open condition has stopped as stopped, on the seat's own
+line, naming each open condition on it and what would clear it, with any headroom it has against
+its reserve line. A seat whose only condition is its refused credential, or whose conditions are
+all read-cleared, SHALL NOT be shown as stopped, but as `condition-backoff` shows a refused credential or #171 a
+read-cleared condition,
+naming each condition. A condition not scoped to a seat SHALL NOT appear.
 
 #### Scenario: A stopped seat says so on its own line
 
@@ -32,17 +16,46 @@ clear nothing: no condition cleared, no count reset, no cooldown shortened.
 
 #### Scenario: Stopped is not unreadable and not refused
 
-- **WHEN** a seat is stopped by a condition
+- **WHEN** a seat is stopped by a condition keyed `seat:<id>:<setting>` that is neither its
+  token's read nor its refused credential, a kind no requirement in force defines yet
 - **THEN** it is not reported as a credential that could not be read
-- **AND** it is not reported as a credential the provider refused, nor as not checked
+- **AND** it is not reported as a credential the provider refused, nor as not checked in place
+  of stopped
 
 #### Scenario: A seat Igor could not decrypt reads as unreadable
 
-- **WHEN** a seat's only open condition is that Igor could not decrypt its seat file
-- **THEN** the report shows it on the line for a credential that could not be read, naming the
-  decryption failure and the condition, or, where the command cannot read the key file, as not
-  checked, naming the condition
+- **WHEN** a seat's only open condition is that Igor could not decrypt its seat file, and the
+  command running the report cannot decrypt it either
+- **THEN** the report shows the seat as unreadable where the command could read the key file,
+  and as not checked where it could not, as #171 requires, naming the condition in both
 - **AND** it does not show the seat as stopped
+
+#### Scenario: A malformed seat file's seat reads as #171 shows it
+
+- **WHEN** a seat's only open condition is `seat:<id>:file`, for its malformed seat file
+- **THEN** the report shows the seat with its file's refusal, as #171 shows it, naming the
+  condition
+- **AND** it does not show the seat as stopped
+
+#### Scenario: A seat stopped on its unreadable token says both
+
+- **WHEN** a seat's token cannot be read, and the condition that opens on it, one no later read
+  clears, has stopped the seat
+- **THEN** the seat's line shows it as stopped, naming the condition, and also says its credential
+  could not be read
+
+#### Scenario: A stopped seat the command cannot decrypt says both
+
+- **WHEN** a lent seat is stopped, and the operator running `igor budget` cannot read the key
+  file that decrypts seat files
+- **THEN** the seat's line shows it as stopped, naming each open condition, and also says it was
+  not checked, as #171 requires
+
+#### Scenario: A role's reserve sets a stopped seat's line
+
+- **WHEN** a stopped seat declares reserve 0, and a role it serves declares reserve 0.3
+- **THEN** that role's headroom on the seat is shown against the line #171's *A role may hold
+  back more of a seat than the seat does* sets for it
 
 #### Scenario: A refused credential alone is not a stop
 

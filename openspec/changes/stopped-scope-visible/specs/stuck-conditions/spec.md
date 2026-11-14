@@ -2,23 +2,11 @@
 
 ### Requirement: An open condition never ends a running service
 
-`igor serve` SHALL NOT exit because of a condition, whatever its scope. While conditions are open
-it SHALL go on polling, take no new item in a stopped scope, and state in each cycle's report (the
-summary of the cycle that `igor serve` prints) which scopes are stopped, on which
-`condition-backoff` cure keys, and what would cure each. Each condition SHALL clear while the
-process runs, in every way the requirement defining that kind of condition says it clears, such as
-by `condition-backoff`'s probe, by a token minted again for a refused GitHub App credential, or by
-a later passing read for a read-cleared condition, the kind #171's *A read-cleared condition opens
-on a failing read and clears on a passing one* adds to `stuck-conditions`.
-
-A fix the process does not reread SHALL take effect at the process's next start, including every
-fix in the environment its supervisor gives it: the unit's environment file, or the compose file's
-`environment:`. A fix in the lore repository SHALL take effect once a person has updated the
-server's lore checkout to hold it: at the next cycle for a file the process rereads at each cycle,
-such as `igor.config.yaml` under `work-claiming`'s *A process reads the roster and its
-configuration at each cycle start*, and at the next start for a file it reads only at start.
-Refusing to start on a bad setup falls under *A process that refuses to start exits with status
-78*, not this requirement.
+`igor serve` SHALL NOT exit because a condition is open. It SHALL go on polling, and state in each
+cycle's report, the summary it logs for the cycle, which scopes are stopped, on which cure keys,
+and what would cure each. Each condition SHALL clear as its kind's requirement says. A fix the
+process does not reread SHALL take effect at the first start whose environment holds it, and a fix to a lore
+file read only at start at its first start after a person has updated the server's lore checkout.
 
 #### Scenario: A condition on the Igor's own credential leaves the service running
 
@@ -59,42 +47,115 @@ Refusing to start on a bad setup falls under *A process that refuses to start ex
 - **THEN** the running process keeps the value it read at start
 - **AND** the fix takes effect when the operator restarts the unit
 
+#### Scenario: A fix in compose's environment waits for the container to be recreated
+
+- **WHEN** the operator fixes the App's key path in the service's `.env` while the service runs,
+  and compose then restarts the container after a crash
+- **THEN** the restarted process still has the value the container was created with
+- **AND** the fix takes effect when the operator runs `docker compose up -d`, which recreates the
+  container
+
+#### Scenario: A process that cannot rewrite its serving record still stops
+
+- **WHEN** a condition on the Igor's own credential is open, and the process's last landed write
+  of its serving record is 20 minutes old
+- **THEN** the process stops its workers and exits as `role-process`'s *A serving process that
+  cannot rewrite its record stops its workers* requires, which is not an exit because of the
+  condition
+
 ### Requirement: A process that refuses to start exits with status 78
 
-When `igor serve` refuses to start, it SHALL log the reason and exit with status 78. A refusal is
-the failure of a check a requirement says refuses a start, when that check runs as the process
-starts: before the first cycle, such as config validation, or before the first model call, such
-as #174's check that the pinned skills load. A check that fails because GitHub or the model
-provider did not answer, or because GitHub refused the App's credential, is not a refusal: the
-process SHALL exit with status 1, which the shipped supervisors restart. The same check failing on a later reread, such as #179's reread of
-`igor.config.yaml` at a cycle, is not a refusal. Nor is a failing check at start where another
-requirement has the process start instead on a configuration that passed before, as #208
-(`lore-pull`) does for a process restarting after a failing lore commit landed. The process
-SHALL NOT exit with status 78 for any other reason.
+When a check a requirement says refuses a start fails as `igor serve` starts, before the first
+cycle or the first model call, the process SHALL log the reason and exit with status 78, a
+*refusal*, and SHALL NOT exit 78 otherwise. Such a check failing because GitHub or the model
+provider did not answer, or GitHub refused the App's credential, SHALL exit 1 instead and is not
+a refusal, nor is an outcome another requirement gives status 1, nor a failure on a later reread.
 
-The systemd unit this repository ships SHALL set `Restart=on-failure` and SHALL list 78, and no
-other status, in `RestartPreventExitStatus=`, so that systemd restarts a crash, leaves a refusal
-down with the unit failed, and leaves a clean exit down with the unit inactive. It SHALL set
-`RestartSec=30s`, so that systemd waits 30 seconds before it restarts a start that exited 1.
+#### Scenario: A refused App credential at start exits 1
 
-The compose file this repository ships SHALL set `restart: unless-stopped` on each Igor's
-service, and SHALL mark the process as running under compose. A process so marked that refuses
-to start SHALL, after logging its reason, wait before it exits 78. The wait SHALL grow with each
-refusal in a row of that container, and SHALL reset once a start passes every check that
-refuses a start. A process not so marked, such as one the systemd unit runs, SHALL exit 78
-without waiting. A signal to stop SHALL end the wait at once, and the process SHALL then exit as
-it does on that signal at any other time.
+- **WHEN** GitHub refuses the App's credential as `igor serve` starts
+- **THEN** the process logs the refusal and exits with status 1, not 78
 
 #### Scenario: A bad setup still refuses to start
 
 - **WHEN** a process starts for the first time with a configuration that fails validation
 - **THEN** it logs which check failed and exits with status 78 before its first cycle
 
+#### Scenario: A start check GitHub did not answer is not a refusal
+
+- **WHEN** `igor serve` starts while GitHub does not answer `surface-adapter`'s start check that
+  the App can act on the lore repository
+- **THEN** it exits with status 1, not 78
+
+#### Scenario: A start check the model provider did not answer is not a refusal
+
+- **WHEN** a check that refuses a start makes a model call, and the model provider does not
+  answer it
+- **THEN** the process exits with status 1, not 78
+
+#### Scenario: A crash is restarted
+
+- **WHEN** a running `igor serve` ends on an uncaught error
+- **THEN** its exit status is not 78, which the shipped supervisors restart
+
+#### Scenario: A configuration error raised while running is not a refusal
+
+- **WHEN** an error of a kind a startup check also raises, such as a configuration error, ends
+  `igor serve` while it runs, raised by anything but a check that refuses a start
+- **THEN** its exit status is not 78
+
+#### Scenario: A configuration refused at a cycle is not a refusal
+
+- **WHEN** a running process rereads a file it read at start, and the reread fails a check that
+  refuses a start
+- **THEN** the process does not exit, and the failure is handled as the requirement making the
+  reread says
+
+#### Scenario: A start that falls back to a configuration that passed is not a refusal
+
+- **WHEN** a process restarts after its configuration came to fail validation, and a requirement
+  has it start instead on a configuration that passed before
+- **THEN** it does not exit with status 78, and starts on that configuration
+
+#### Scenario: A check that runs before the first model call is still a refusal
+
+- **WHEN** #174's check that the pinned skills load fails before the first model call, after the
+  first cycle has begun
+- **THEN** the process exits with status 78
+
+### Requirement: The shipped systemd unit restarts a crash and leaves a refusal down
+
+The systemd unit this repository ships SHALL set `Restart=on-failure`, `RestartSec=30s`, and
+`RestartPreventExitStatus=78` naming no other status, so that systemd restarts a crash or an exit
+1 after 30 seconds, leaves a refusal down with the unit failed, and leaves a clean exit down with
+the unit inactive.
+
 #### Scenario: systemd does not restart a refusal
 
 - **WHEN** `igor serve`, run by the shipped unit, exits with status 78
 - **THEN** systemd does not restart it
 - **AND** the unit shows as failed, and its journal holds the reason Igor logged
+
+#### Scenario: systemd retries an exit 1 slowly
+
+- **WHEN** `igor serve`, run by the shipped unit, exits with status 1 at each start because GitHub
+  refuses the App's credential
+- **THEN** systemd starts it again 30 seconds after each exit, and its start-rate limit does not
+  stop the unit
+
+#### Scenario: A clean exit is not restarted
+
+- **WHEN** `igor serve`, run by the shipped unit, exits with status 0
+- **THEN** systemd does not restart it, and the unit shows as inactive, not failed
+
+### Requirement: Under the shipped compose file, a failed start waits before it exits
+
+The shipped compose file SHALL set `restart: unless-stopped` and, unlike the shipped unit,
+`IGOR_REFUSAL_WAIT=1` on each Igor's service. With it set, a refusal, or a start's exit 1 for no
+answer from GitHub or the model provider or a refused App credential, SHALL log its reason, wait,
+then exit: 30 seconds after the first such start in a row, doubling, at most 30
+minutes, kept across restarts, not recreation. A crash SHALL NOT wait. A passing start
+SHALL reset the count, a stop signal the wait.
 
 #### Scenario: Compose retries a refusal more slowly each time
 
@@ -105,11 +166,41 @@ it does on that signal at any other time.
 - **AND** compose restarts it after each exit, and `docker compose logs` holds every attempt's
   reason
 
+#### Scenario: Compose retries a start GitHub refused slowly
+
+- **WHEN** `igor serve`, run by the shipped compose file, exits with status 1 at each start
+  because GitHub refuses the App's credential
+- **THEN** each attempt waits longer than the one before it, at most 30 minutes, before it exits
+  with status 1
+
+#### Scenario: A first refusal waits 30 seconds
+
+- **WHEN** a container under the shipped compose file refuses a start, after a start that passed
+- **THEN** the process waits 30 seconds after logging its reason, then exits with status 78
+
 #### Scenario: A start that passes resets the wait
 
 - **WHEN** a container under the shipped compose file has refused three starts in a row, and
   the next start passes every check
 - **THEN** a later refusal of that container waits as long as a first refusal does
+
+#### Scenario: The count of failed starts is kept off every volume
+
+- **WHEN** a container under the shipped compose file has refused twice in a row, and the
+  operator removes it and creates it again, its volumes kept
+- **THEN** the new container's first refusal waits as long as a first refusal does
+
+#### Scenario: A crash during a start check's window does not wait
+
+- **WHEN** a process under the shipped compose file has begun its first cycle, has not yet run
+  #174's check, and ends on an uncaught error
+- **THEN** it exits without waiting
+
+#### Scenario: A takeover GitHub does not answer waits
+
+- **WHEN** `igor serve`, run by the shipped compose file, exits with status 1 at start because
+  GitHub does not answer #242's takeover write
+- **THEN** it waits as a refusal does before it exits
 
 #### Scenario: A stop signal ends the wait
 
@@ -117,79 +208,31 @@ it does on that signal at any other time.
   runs `docker compose stop`
 - **THEN** the process stops at once, without waiting out the interval
 
-#### Scenario: A start check GitHub did not answer is not a refusal
-
-- **WHEN** `igor serve` starts while GitHub does not answer `surface-adapter`'s start check that
-  the App can act on the lore repository
-- **THEN** it exits with status 1, and systemd restarts it
-
-#### Scenario: systemd retries an exit 1 slowly
-
-- **WHEN** `igor serve`, run by the shipped unit, exits with status 1 at each start because GitHub
-  refuses the App's credential
-- **THEN** systemd starts it again 30 seconds after each exit, and its start-rate limit does not
-  stop the unit
-
 #### Scenario: systemd does not wait on a refusal
 
 - **WHEN** `igor serve`, run by the shipped unit, refuses to start
 - **THEN** it exits with status 78 as soon as it has logged the reason
 
-#### Scenario: A clean exit is not restarted
-
-- **WHEN** `igor serve`, run by the shipped unit, exits with status 0
-- **THEN** systemd does not restart it, and the unit shows as inactive, not failed
-
-#### Scenario: A crash is restarted
-
-- **WHEN** a running `igor serve` ends on an uncaught error
-- **THEN** its exit status is not 78, it exits without waiting, and systemd or compose restarts
-  it
-
-#### Scenario: A configuration error raised while running is not a refusal
-
-- **WHEN** an error of a kind a startup check also raises, such as a configuration error, ends
-  `igor serve` while it runs, raised by anything but a check that refuses a start
-- **THEN** its exit status is not 78, and systemd restarts it
-
-#### Scenario: A configuration refused at a cycle is not a refusal
-
-- **WHEN** a running process rereads its configuration at a cycle and the reread fails a check it
-  passed at start
-- **THEN** the process does not exit, and the failure opens a condition, as #179, the change
-  that rereads the configuration at each cycle, specifies
-
-#### Scenario: A check that runs before the first model call is still a refusal
-
-- **WHEN** #174's check that the pinned skills load fails before the first model call, after the
-  first cycle has begun
-- **THEN** the process exits with status 78
-
 ### Requirement: Every open condition is readable without naming a role
 
-Every open condition SHALL be readable from `igor conditions`, a command run with no argument, so that its reader need not know which role to ask about,
-stating for each one: the cure key, the scope it stops, how many times it has recurred, what would
-cure it, and when its probe is due. Some conditions clear without a probe: a read-cleared
-condition clears on a passing read and keeps no recurrence count, and one on a refused GitHub
-App credential clears when a token is minted again, as `surface-adapter` says. For such a
-condition the listing SHALL say what clears it in place of a probe time. It SHALL show a count
-only for a condition whose kind keeps one, as the requirement defining that kind says. A seat's
-refused credential, unlike the App's, keeps a count and a probe; for it, the count and the probe
-time SHALL be the ones `condition-backoff`'s
-*Reporting tells a refused credential from an unreadable one, and clears nothing* has budget
-reporting print, read from the same conditions.
-
-A condition is one cure key in the execution log every Igor appends to, so a condition several
-Igors met SHALL appear once, with the one count the log holds for its cure key. Where no
-condition is open, the command SHALL say so, and where the execution log the conditions are
-rebuilt from cannot be read, it SHALL say that instead. Reading the listing SHALL change
-nothing: no condition cleared, no count reset, no cooldown shortened.
+`igor conditions`, run with no argument, SHALL list every open condition once, however many Igors
+met it, with its cure key, the scope it stops or that it stops nothing, what would cure it, its recurrence count where its
+kind keeps one, and when its probe is due or, for a kind that clears without a probe, what clears
+it, each as the requirement defining that kind says. It SHALL say when none is open, distinctly
+from an execution log it cannot read. Reading the listing SHALL change nothing.
 
 #### Scenario: A role-scoped stop is visible to somebody who did not know which role
 
 - **WHEN** a condition stops one role of several
 - **THEN** it is listed by a command that was given no role
 - **AND** the listing names the cure key, the role it stops, and what would cure it
+
+#### Scenario: A condition that stops nothing says so
+
+- **WHEN** a seat's `seat:<id>:decrypt` is open, and it is #171's read-cleared kind, which stops
+  nothing by itself
+- **THEN** the listing names the seat, says the condition stops nothing, and says a passing read
+  clears it
 
 #### Scenario: One cure met by several Igors reads as one condition
 
@@ -204,7 +247,23 @@ nothing: no condition cleared, no count reset, no cooldown shortened.
 #### Scenario: A condition with no probe says what clears it
 
 - **WHEN** a read-cleared condition is listed
-- **THEN** the listing shows no probe time and no count, and says a passing read clears it
+- **THEN** the listing shows no probe time, and says a passing read clears it
+
+#### Scenario: A refused App credential says a minted token clears it
+
+- **WHEN** a condition on the Igor's refused GitHub App credential is open
+- **THEN** the listing shows no probe time, and says a token minted again clears it
+
+#### Scenario: A sudoers condition says a passing check clears it
+
+- **WHEN** #175's condition `instance:dev@host-a:sudoers` is open
+- **THEN** the listing shows its count and no probe time, and says a passing check at the start
+  of a cycle on `host-a` clears it
+
+#### Scenario: A seat's refused credential shows what budget reporting shows
+
+- **WHEN** a seat's refused-credential condition is open
+- **THEN** the listing shows the same count and probe time that budget reporting prints for it
 
 #### Scenario: Reading changes nothing
 
