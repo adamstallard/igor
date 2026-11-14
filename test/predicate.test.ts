@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import type { Candidate } from '../src/adapter.js'
+import type { Candidate, InFlight } from '../src/adapter.js'
 import type { Lane } from '../src/role.js'
-import { countStages, laneVerdict, screen, universalSkip } from '../src/predicate.js'
+import { countStages, heldByOthers, laneVerdict, screen, staleOwnArtifact, universalSkip } from '../src/predicate.js'
+
+function inFlight(over: Partial<InFlight> = {}): InFlight {
+  return {
+    kind: 'pull-request',
+    ref: '#99',
+    url: 'u',
+    draft: false,
+    author: 'someone-else',
+    mergeable: 'clean',
+    branch: 'igor/fixer/1-a-bug',
+    base: 'main',
+    ...over,
+  }
+}
 
 function candidate(over: Partial<Candidate> = {}): Candidate {
   return {
@@ -16,6 +30,7 @@ function candidate(over: Partial<Candidate> = {}): Candidate {
     state: 'open',
     labels: [],
     assignees: [],
+    holders: [],
     paths: [],
     createdAt: '2026-09-01T00:00:00Z',
     updatedAt: '2026-09-12T00:00:00Z',
@@ -36,9 +51,54 @@ describe('universal skips', () => {
 
   it('skips an item with work in flight and names the artifact', () => {
     const v = universalSkip(
-      candidate({ inFlight: { kind: 'pull-request', ref: '#99', url: 'u', draft: false } }),
+      candidate({ inFlight: inFlight() }),
     )
     expect(v?.reason).toContain('#99')
+  })
+
+  it('admits an artifact of the Igor\'s own that no longer merges', () => {
+    // The rule narrows rather than gains an exception. Work in flight is skipped because
+    // duplicating work in review is never an organizational preference — and an artifact of
+    // one's own that cannot merge is not duplication, it is the same work, unfinished.
+    const own = candidate({ inFlight: inFlight({ author: 'igor-bot', mergeable: 'conflicting' }) })
+    expect(universalSkip(own, 'igor-bot')).toBeUndefined()
+    expect(staleOwnArtifact(own, 'igor-bot')?.ref).toBe('#99')
+  })
+
+  it('still skips an artifact of its own that merges cleanly', () => {
+    const own = candidate({ inFlight: inFlight({ author: 'igor-bot', mergeable: 'clean' }) })
+    expect(universalSkip(own, 'igor-bot')?.reason).toContain('#99')
+    expect(staleOwnArtifact(own, 'igor-bot')).toBeUndefined()
+  })
+
+  it('does not adopt somebody else\'s conflicting artifact', () => {
+    // Theirs. The holder rule already says so, and nothing here wants an exception to it.
+    const theirs = candidate({ inFlight: inFlight({ author: 'alice', mergeable: 'conflicting' }) })
+    expect(universalSkip(theirs, 'igor-bot')?.reason).toContain('in flight')
+    expect(staleOwnArtifact(theirs, 'igor-bot')).toBeUndefined()
+  })
+
+  it('treats unknown mergeability as not yet, never as conflicted', () => {
+    // GitHub computes it asynchronously, so a freshly opened artifact answers nothing. Read
+    // as a conflict, that is a worker run per artifact on the cycle it was born.
+    const fresh = candidate({ inFlight: inFlight({ author: 'igor-bot', mergeable: 'unknown' }) })
+    expect(universalSkip(fresh, 'igor-bot')?.reason).toContain('in flight')
+    expect(staleOwnArtifact(fresh, 'igor-bot')).toBeUndefined()
+  })
+
+  it('claims nothing as its own without an identity', () => {
+    // A preview that does not know who would be running must not decide an artifact is ours.
+    const own = candidate({ inFlight: inFlight({ author: 'igor-bot', mergeable: 'conflicting' }) })
+    expect(universalSkip(own)?.reason).toContain('in flight')
+    expect(staleOwnArtifact(own, '')).toBeUndefined()
+  })
+
+  it('leaves a stale artifact alone once somebody else has taken the item', () => {
+    const taken = candidate({
+      assignees: ['alice'],
+      inFlight: inFlight({ author: 'igor-bot', mergeable: 'conflicting' }),
+    })
+    expect(universalSkip(taken, 'igor-bot')?.reason).toContain('alice')
   })
 
   it('passes an ordinary open item through', () => {
@@ -178,5 +238,26 @@ describe('screening a whole discovery result', () => {
     // universal, or an org could believe its lane is doing the work.
     const only = screen(lane, [candidate({ state: 'closed', labels: ['ai'] })])
     expect(only[0]!.verdict.stage).toBe('universal')
+  })
+})
+
+describe('who holds an item, by label', () => {
+  const holding = { holder: 'igor:reviewer', distinctFromAssignee: true }
+
+  it('takes an item with neither an assignee nor an igor label', () => {
+    expect(universalSkip(candidate(), 'r[bot]', holding)).toBeUndefined()
+  })
+
+  it('leaves an item assigned to a person that carries no label of its own', () => {
+    expect(universalSkip(candidate({ assignees: ['alice'] }), 'r[bot]', holding)?.reason).toBe('held by alice')
+  })
+
+  it('takes an item a person assigned to themselves and handed to it by label', () => {
+    expect(universalSkip(candidate({ assignees: ['alice'], holders: ['igor:reviewer'] }), 'r[bot]', holding)).toBeUndefined()
+  })
+
+  it("leaves an item with another Igor's label, even where a person added its own too", () => {
+    expect(universalSkip(candidate({ holders: ['igor:backend'] }), 'r[bot]', holding)?.reason).toBe('held by igor:backend')
+    expect(heldByOthers(candidate({ holders: ['igor:reviewer', 'igor:backend'] }), 'r[bot]', holding)).toEqual(['igor:backend'])
   })
 })
