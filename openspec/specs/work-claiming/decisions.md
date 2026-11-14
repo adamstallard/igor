@@ -1,0 +1,33 @@
+# work-claiming: constraints, rejected alternatives and rationale
+
+## Rationale
+- **Rationale: Only a tracker or code host failing counts as the surface failing.**
+  A 403 is not always a refusal: GitHub can answer a rate limit with a 403 as well as a 429, so a 403's message is read to tell a rate limit, which is no answer, from a refusal. A status not on the requirement's list counts as answered. The archived `release-a-claim-that-cannot-be-kept` design rejected deciding by a list of statuses because an unlisted status falls through; here it falls through to a refused call, which counts toward its own item's breaker and ends no cycle. That is the cheaper error: an outage misread as refusals sets items down one by one over three cycles, where refusals misread as an outage would end every cycle.
+  Evidence: GitHub documents that exceeding a rate limit returns a 403 or a 429 response, https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit
+  Evidence: the archived design of `release-a-claim-that-cannot-be-kept`, https://github.com/adamstallard/igor/blob/b4f8ac0/openspec/changes/archive/2026-10-10-release-a-claim-that-cannot-be-kept/design.md
+  Both cycles, `serve`'s and the one `igor run` runs, apply both rules ending a cycle: the two share no cycle code, `serve` keeping its surface-failure count and `igor run` running its own loop with no surface rule, so a rule in only one would let the other set the whole backlog down.
+  Evidence: `serve`'s surface-failure count, https://github.com/adamstallard/igor/blob/b4f8ac0/src/serve.ts, and `igor run`'s own loop, https://github.com/adamstallard/igor/blob/b4f8ac0/src/cli.ts
+- **Rationale: A failure before the worker that repeats sets the item down.**
+  A tracker or code-host call during the claim counts like any other failure before the worker: left uncounted, a claim that fails the same way on every run would be retried forever, which is the loop the breaker exists to end.
+  Evidence: a failure before the worker is refused and retried every cycle with nothing remembering it, #155
+- **Rationale: The breaker's count is rebuilt from the execution log.**
+  A count in memory does not survive a restart, and a deterministic failure does, so an Igor restarted by a deploy or a crash would post three more times per item before setting it down. A count in `deferred.json`, or a store beside it, is written whole, so two writers in one interval can overwrite each other, and it can disagree with the log; `condition-backoff` rejected a separate store for its conditions for both reasons. The log's rows can land late or be lost, and the count reads only rows that have landed, so a late or lost row can set an item down after fewer than three failures in a row; that is accepted, since a person's change lifts the set-down, rather than have each run wait for its rows to land.
+  Evidence: `condition-backoff`'s rejection of a separate store, #101
+  Evidence: TLC v1.7.4 finds the early set-down when rows may land late, in `pre-worker-breaker`'s `model/findings/LateRows.cfg`, run on 2026-11-13, #173
+- **Rationale: The breaker's row holds no message text.**
+  A tracker's error message is free text the tracker writes, which credential redaction strips only of credentials the Igor knows, onto a branch that may be public, so the row holds structured fields and an unkeyed fingerprint, and the full message goes to the process's own log. The fingerprint is unkeyed, so a secret shorter than redaction registers stays in the masked text and can be recovered from the fingerprint by trying every short string; that is accepted rather than key the hash under a key every process of the role holds.
+  Evidence: credential redaction replaces only credentials the Igor knows, and registers no value shorter than 8 characters, #217
+- **Rationale: Identical failures share a source and a masked message.**
+  By source alone, a clone that fails on a full disk and then on a refused token is one failure, and a person fixing the first finds the item set down by the second. By the raw message, a clone's message, where it names its working tree's path, would differ between worker slots and between runs, so failures would rarely match; whether real messages name it is unmeasured until task 0.1 of `pre-worker-breaker` captures them. Masking every digit run made a 404 and a 500 from the same call identical, and removed the status `structured-failure-record` asks to be readable, so runs of three digits or fewer stay.
+  Evidence: `structured-failure-record` asks a fault's status to be readable, #99
+  The working tree's path is masked by replacing the path the code provisioned, not by a pattern for tree names: a pattern written for the in-force `igor-tree-` prefix stops matching under `one-process-per-role`, which names trees by role and worker slot.
+  Evidence: the in-force tree prefix, `TREE_PREFIX` in `src/worktree.ts`, https://github.com/adamstallard/igor/blob/b4f8ac0/src/worktree.ts#L22
+  Evidence: `one-process-per-role` names trees by role and worker slot, #242
+  Evidence: a failed clone's temporary tree has a random suffix, from `mkdtemp` in `provision`, https://github.com/adamstallard/igor/blob/b4f8ac0/src/worktree.ts
+- **Rationale: A fault in the Igor's own setup is not the item's failure.**
+  A missing App permission's cure key is scoped to the role, not to the Igor's App: an App-scoped key would name a fresh token as its cure and clear whenever `serve`'s mint check, asked each cycle, mints one. Minting a token does not test a permission, so the key would clear while the permission is still missing, reopen at the next refused call, and never name the real cure. Scoped to the role, the key takes `stuck-conditions`' threshold, cooldown and probe, and the probe's claim sees the permission granted.
+  Evidence: `thresholdFor` and `cureFor` in `src/conditions.ts` on `main`, https://github.com/adamstallard/igor/blob/b4f8ac0/src/conditions.ts
+  Evidence: the App condition's mint check is asked each cycle, https://github.com/adamstallard/igor/blob/b4f8ac0/src/serve.ts#L131-L133
+- **Rationale: An outage is not the item's failure.**
+  The breaker decides and posts during the failing run, rather than waiting until the next run shows whether the cycle continued: waiting holds the decision in memory across items, and a crash or a shutdown between items loses it, since it was never written to the log. The cost is a set-down posted for a failure a later run excludes, which a person's change lifts.
+  Evidence: `serve` records a run without waiting for its row and keeps no decision across items, https://github.com/adamstallard/igor/blob/b4f8ac0/src/serve.ts

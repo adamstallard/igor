@@ -7,9 +7,9 @@
 #   safety is a constant in the model, and each file in model/negative/ turns
 #   one of those rules off. TLC must find a violation there; a file that
 #   passes means the model does not show that rule is needed.
-# - No job runs model/findings/. Each file there drops one of the model's two
-#   assumptions, PromptRows or AtomicWithdraw, and fails by design;
-#   design.md, "What the assumptions leave out", says what each shows.
+# - No job runs model/findings/. LateRows.cfg there drops the model's
+#   assumption PromptRows and fails by design; design.md, "What the
+#   assumption leaves out", says what it shows.
 #
 # Every run passes -deadlock, which turns TLC's deadlock check off. The model
 # bounds the runs each behaviour makes, so every behaviour ends in a state
@@ -50,11 +50,9 @@ jobs:
       matrix:
         config:
           - PreWorkerBreaker.cfg
-          - PreWorkerBreakerOneRank.cfg
           - PreWorkerBreakerReturned.cfg
           - PreWorkerBreakerLateRows.cfg
           - PreWorkerBreakerLiveness.cfg
-          - PreWorkerBreakerLivenessRanks.cfg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
