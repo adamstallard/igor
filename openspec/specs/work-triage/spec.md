@@ -51,16 +51,9 @@ lane and worth doing. The system MUST NOT compute, store, or act on a confidence
 ### Requirement: Every decision records its reason, including skips
 
 Triage SHALL record, for each candidate, the outcome, the stage that decided it, and a
-human-readable reason. Skips MUST be recorded as fully as proceeds.
-
-A cycle that decided nothing SHALL write no record. A record is what the Igor decided, and one
-written by a cycle that had no option to act makes the ledger lie about which cycles acted — both
-to somebody asking what an Igor has been doing, and to the skip ratio below, which is a ratio over
-records and would count previews as decisions.
-
-This is about the cycle, not about any candidate within it. Where a cycle acted, every candidate
-it examined is recorded, skips as fully as proceeds, and a candidate the cycle declined to act on
-is a decision like any other.
+human-readable reason. Skips MUST be recorded as fully as proceeds. A cycle that decided nothing,
+such as a preview, SHALL write no record. Where a cycle could have acted, every candidate it
+examined is recorded, and a candidate it decided not to act on is a decision like any other.
 
 #### Scenario: Skip reason recorded
 
@@ -121,11 +114,6 @@ surface-supplied fields exclude it from, nor grant any permission.
 Triage SHALL skip any item the adapter reports as having work already in flight, unless that
 artifact is the Igor's own and cannot merge. This rule is universal and MUST NOT be
 configurable; only its detection is adapter-supplied.
-
-The exception preserves the reason rather than qualifying it. Work in flight is skipped because
-duplicating work in review is never an organizational preference — and an artifact of one's own
-that cannot merge is not duplication, it is the same work, unfinished, which nothing else will
-bring back.
 
 #### Scenario: Item with an open linked artifact skipped
 
@@ -193,29 +181,10 @@ issue every cycle — noise directed at exactly the people a claim exists to inf
 ### Requirement: An item handed back is not re-worked until something answers
 
 Where an Igor has handed an item back rather than producing something, that outcome SHALL be
-recorded, and the item SHALL NOT be worked again while nothing has answered it.
-
-An Igor's own handoff comment moves the item's timestamp past the watermark, so the item looks
-fresh next cycle. Nothing else stops it: the claim was released, no pull request exists, the
-lane still admits it and the model gives the same verdict on the same text. The Igor re-claims
-and re-works it every poll interval, at full worker cost, forever.
-
-An answer is anything that could change the outcome: a reply from anyone other than the Igor,
-or an edit to the item itself. Both are required, because a handoff *invites* a reply — an item
-suppressed until its title or labels change would stay silent precisely where a person supplied
-the missing context in a comment.
-
-Suppression follows from the item having produced the outcome. Where the cause was a fact about
-the Igor — a seat whose token is unset, a command its allowlist refuses, a capacity never
-observed — the item SHALL NOT be suppressed: it did not produce that outcome, and nothing
-anyone could say on it would cure one. Budget is one instance of this rule and not the whole of
-it.
-
-Written as a rule rather than an enumeration, because such causes are indistinguishable from
-the item's side and identical in consequence: each recurs on the next item and every one after
-until somebody changes a configuration. Suppressing on one parks a backlog behind a cure nobody
-has been told to make, and every parked item then has to be answered individually to release
-it. A cause arriving later has a rule to satisfy rather than a list to be added to.
+recorded, and the item SHALL NOT be worked again while nothing has answered it. An answer is a
+reply from anyone other than the Igor, or an edit to the item itself. The item SHALL NOT be
+suppressed where the cause was a fact about the Igor rather than the item, such as a seat whose
+token is unset, a command its allowlist refuses, a capacity never observed, or an exhausted budget.
 
 #### Scenario: A handed-back item does not return unanswered
 
@@ -256,27 +225,12 @@ it. A cause arriving later has a rule to satisfy rather than a list to be added 
 
 ### Requirement: The model stage does not run where no seat can pay for it
 
-Triage's model call is a spend, and SHALL be charged to the seat the budget gate chooses for the
-role, using that seat's credential where the seat names one. Where the gate names no seat —
-every seat in the pool spent to its bound, or the pool unusable for any other reason — the model
-stage SHALL NOT run, and no credential SHALL be substituted for the seat the gate did not name.
-
-Every stage before the model call SHALL be unaffected: discovery, reading an item's comments,
-the stop gate, the deferral gate, the universal skips and the lane predicates all run as they
-otherwise would. The gate is consulted where the model call is made, after those have run, so a
-cycle in which nothing survives to the model stage still reads no seat's usage.
-
-The boundary sits there because it is the only place it can sit. Comments are fetched per
-discovered candidate, and both the stop gate and the deferral gate read that fetch. An Igor that
-stopped discovering while out of capacity would stop reading comments with it, and a stop
-directed at it, or the reply that answers a handed-back item, arrives as a comment on a
-discovered item. It would go deaf exactly when somebody is most likely to be trying to reach it,
-and could not process the message that would change what it does next.
-
-Cost is not the reason. Triage is a small call — cents against items costing dollars — and a
-rule derived from those figures would say it is too cheap to gate. The reason is that finding
-work it cannot take is wasted motion, and that a spend no seat can be named for is a spend
-outside every ceiling the budget exists to impose.
+Triage's model call SHALL be charged to the seat the budget gate chooses for the role, with that
+seat's credential where it names one. Where the gate names no seat, for any reason, the model
+stage SHALL NOT run, and no credential SHALL be substituted. Every earlier stage SHALL run as
+usual: discovery, reading comments, the stop gate, the deferral gate (holding a handed-back item
+until answered), the universal skips and the lane predicates. The gate is consulted at the model
+call, after those.
 
 #### Scenario: A held pool stops the model stage
 
@@ -318,51 +272,11 @@ outside every ceiling the budget exists to impose.
 
 ### Requirement: A candidate left untriaged is not a candidate triage decided about
 
-Where the model stage does not run, each candidate that reached it SHALL be recorded as
-untriaged, with the reason, and SHALL hold its source's watermark back so that the next cycle
-with capacity considers it again. It MUST NOT be recorded as a skip, and MUST NOT be suppressed
-on any ground.
-
-An item dropped before anything examined it holds the mark back; every other skip was a
-decision, and the edit or the reply that reverses one lifts the item by itself. Nothing about
-these items produced this outcome and nothing about them will change to lift them, so a mark
-allowed past them drops them from the pool for good. That would make skipping the call worse
-than the spend it prevents: today such an item at least gets a verdict.
-
-This is the same reading as "Running out of budget is not a decision about the item", one stage
-earlier — there an item handed back for want of budget is not suppressed, here an item never
-triaged for want of budget is not marked as seen.
-
-The rule is about the outcome and not about its cause. A held pool is one way the model stage
-does not run; a seat whose credential will not resolve and a cycle that reaches its own cap on
-model calls are others, and an item left by any of them is in the same position — nothing about
-it produced this, and nothing about it will lift it.
-
-Where the cap is the cause, **the candidates left over SHALL be the newest of them**. This is
-not a preference about which work comes first: a mark held below an arbitrary remainder is
-pulled under candidates the same cycle triaged, so the next cycle triages them again and the
-mark never advances — a full cap's worth of calls every cycle on a backlog that never drains.
-Taking the oldest first puts the cap above everything decided, so the mark moves and the
-backlog clears a cap's worth at a time.
-
-A coarse clock is the one case the hold cannot serve. A mark held below an untriaged candidate
-still has to sit above every candidate that source triaged, and where the two share an
-`updatedAt` no instant lies between them. Tracker timestamps are seconds, so one bulk edit ties
-a page of items and this is not a corner. Such a candidate SHALL be passed over rather than
-held: being dropped is the outcome it already had, where holding it would buy the same verdicts
-again every cycle for as long as the tie lasted. This is a limit the clock imposes, not a result
-worth keeping — a candidate that can be separated from everything its source decided is always
-held, and narrowing what counts as separable is how the loss comes back.
-
-Separable **by that source's own verdicts**, because marks advance per source. What one source
-triaged is nothing another source's mark has to clear, so a tie measured across the whole cycle
-concedes candidates their own source could have been held below cleanly — the same permanent
-loss stated above, reached from the other side. A comparison recomputed over every source's
-verdicts is that loss, however the tie is worded.
-
-The reason has to be that no call was made. A call that was made and failed is a different
-fact — the item was examined and paid for — and what becomes of it is #78, not this
-requirement.
+Where no model call is made about a candidate that reached the model stage, it SHALL be recorded as
+untriaged, with the reason, and SHALL hold its source's watermark back. It MUST NOT be recorded as a
+skip, and MUST NOT be suppressed on any ground. Where a cycle's cap on model calls is the cause, the
+candidates left over SHALL be the newest. A candidate sharing its `updatedAt` with one its own
+source triaged that cycle SHALL be dropped: the mark passes it, and it returns only if it changes.
 
 #### Scenario: Untriaged is not decided
 
@@ -421,16 +335,7 @@ requirement.
 Where a cycle makes no triage call because the gate named no seat, it SHALL report that,
 distinguishably from a cycle with nothing to triage, and SHALL say how many candidates were left
 untriaged. The report SHALL distinguish a pool whose seats are spent from a pool that could not
-be used at all — a name resolving to nothing, a seat nothing can read, a seat never observed —
-and where a reset is known it SHALL state when capacity returns.
-
-An Igor that goes quiet for hours without explaining itself is a second failure on top of the
-first. The distinction is the difference between a fault an operator fixes and a wait they only
-have to understand: only spend means the budget ran out, and an operator sent to look at spend
-for an unresolvable pool name looks in the wrong place. Saying it at all is what keeps a
-correctly configured machine from reporting that it is not logged in — the message the ambient
-fallback produces where no login exists, which sends an operator to re-authenticate a host whose
-only problem is that every seat is held.
+be used at all (a name resolving to nothing, a seat nothing can read, a seat never observed). Where a reset is known, it SHALL state when capacity returns.
 
 #### Scenario: Silence is explained
 

@@ -71,6 +71,8 @@ Their values are the starting point for task 6.2: a threshold of 3, because one 
 blip, two can be coincidence, and three items is a tolerable cost against holding a working seat
 out; and a cooldown of 15 minutes doubling to 6 hours, because a revoked credential can stay revoked
 for days, where a fixed hour spends twenty-four items a day and doubling spends about six in total.
+The ceiling bounds the wait once a condition's cause has been repaired, say overnight: the next
+probe comes within six hours, not later than an operator would wait before retrying by hand.
 
 **Decided (Adam, 2026-10-11): no stored record.** #65 derived its count from
 `executions.ndjson` and rejected a separate store, because a summary beside a log can disagree
@@ -155,6 +157,20 @@ seat would get, and `execute` hashes the one it built, so both hash the same str
 **`serve` records a run without waiting for it, and the gate waits.** The wiring tracks each run
 row still being written, and the next gate reads the log only once they have landed, so the item
 after the one that opened a condition is not taken.
+
+**The credential is recorded as a full SHA-256 hash, never a prefix, a suffix or a short
+digest** (*A seat's refused credential is a condition on that seat*). Execution records are
+committed, so a prefix or suffix of the token would publish credential material. A short digest
+is cheap to collide, even by accident. A collision would make the record mistake one credential for another, and
+which credential resolved is what decides whether a credential condition clears.
+
+**A refused credential is reported once per seat, and nothing resets it** (*Reporting tells a
+refused credential from an unreadable one, and clears nothing*). The budget report's line for it is the seat's, not
+each window's, because a refused credential is true of both windows at once and of a seat with no
+window figures at all. There is no reset command because replacing a revoked credential always
+means presenting a different string, which hashes differently, so the next resolution and hash
+of the seat's credential already show that it was replaced. A command that cleared the condition on request would clear it for an operator who believed they had fixed the
+credential and had not, and the seat would go straight back to failing items.
 
 ### What the build contradicted
 
