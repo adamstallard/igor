@@ -59,15 +59,16 @@ must now carry do not share a content type:
 
 - a **regular file** is bytes, which may or may not be text
 - a **symbolic link** is a target path, which is bytes that happen to be a name
-- a **submodule** has no content at all — it is a commit id
+- a **submodule** has no content at all: it is the commit id its gitlink names in the index. The
+  Igor works in a clone of its own, apart from the worker's process, and that clone never checks
+  a submodule out, so there is no submodule checkout to read
 - a **deletion** already carries `content: ''`, a sentinel the shape tolerates
 
 Three shapes, and the choice is not obvious:
 
 - **Widen `content` to `string | Buffer`.** Smallest diff. Every consumer must then ask which it
   holds, and the ones that forget get the wrong answer silently — `.length` and `+` both work on
-  either. Rejected: this is the mistake the name side already made and fixed, where a `Buffer`
-  decoded to a string lost bytes no filesystem could give back.
+  either. Rejected, because nothing in the type forces a consumer to ask.
 - **Discriminate on kind** — a union where a link carries a target, a submodule carries a sha, and
   a file carries bytes. Most honest, and it makes every consumer handle the cases or fail to
   compile. Largest diff, and it reaches `carried()`, `undone()`, the publish path and the handoff
@@ -82,13 +83,13 @@ the abstract, because the cost is entirely in how many of them must change.
 ## Where the mode comes from
 
 `git status --porcelain` reports flags, not modes: it will say a path was modified and not that it
-is a gitlink. So the read needs a second source — `git ls-files -s`, or the `--raw` diff the
-`guard-silent-reverts` work already runs, both of which give the mode on each side.
+is a gitlink. The mode comes from the Igor's own index after staging (*How the content git stores
+is obtained*, below), where each staged path has one entry with its mode.
 
-Whichever it is, it must not reintroduce what has already been paid for twice in this file: the
+That index read must not reintroduce what has already been paid for twice in this file: the
 read is byte-exact on names, and it must not fold a rename, which is why `changes()` passes
-`--no-renames`. A second read that disagrees with the first about either would be worse than the
-defect it fixes.
+`--no-renames`. An index read that disagrees with the porcelain read about either would be worse than
+the defect it fixes.
 
 ## What the comparison does with a submodule
 
@@ -102,41 +103,87 @@ specifically bump a submodule would notice.
 
 ## How the content git stores is obtained
 
-A clean filter makes the checkout differ from the blob, so the read has to ask git rather than
-open the file, and the options differ in cost and in what they leave behind.
+A filter makes the checked-out bytes differ from the stored blob, so the read asks git rather than
+opening the file. It asks the way staging does: the Igor adds each changed path to the index of its
+own clone with `git add`, and reads each entry's blob and mode back from that index. A regular file
+is staged only after whatever checks are in force on files the Igor reads from the worker's tree:
+[#175](https://github.com/adamstallard/igor/pull/175) requires each to be opened without following
+a symbolic link, and read only if it is a regular file with a hard-link count of one. A symbolic
+link is staged as a link, its target read with `readlink`, and a submodule's gitlink is staged from
+the index, never by entering its directory.
 
-`git hash-object -w --path <p> -- <p>` runs the filter and writes the result into the clone's
-object database, and `git cat-file blob <sha>` then reads the bytes back. Two commands per changed
-path and objects written into a tree that is about to be discarded, which is cheap, but it is two
-spawns for every path whether or not any filter applies.
+`git hash-object --path` was the alternative, and it publishes the wrong bytes in a case
+`guard-silent-reverts` measured. On a repository that added `* text=auto` without `git add
+--renormalize`, some stored blobs still hold CRLF. `git add` sees that the index entry already holds
+CRLF and leaves it unnormalized; `hash-object` has no index entry to consult and normalizes, so it
+gives a different blob from the stored one (`guard-silent-reverts`'s design.md: blob and raw bytes
+`cd74300c`, filtered `c66294bf`). `git add` keeps the stored form for such a path, so a one-line edit does not publish a
+whole-file renormalisation, and a path the merge brought in that the worker never touched stages
+to the blob already there. Staging also gives an unmerged path one entry, so the read never picks
+among conflict stages. And it builds the tree that
+[#153](https://github.com/adamstallard/igor/pull/153) signs, since #153 signs `git write-tree` of
+the Igor's own index, so what is published is what was signed.
 
-`git check-attr` and `git config` can say up front whether any filter is configured at all, which
-would let the ordinary repository — no attributes, no `autocrlf` — keep the plain read it has
-today and pay nothing. That is one question per clone rather than per path, at the price of a
-second code path that only runs where filters exist, and so only gets exercised by a test that
-configures one.
+No filed defect is behind the filter case, so the test constructs it: `* text=auto eol=crlf` in a
+repository's own `.gitattributes` travels with the clone and needs nothing of the host. No test on
+`main` builds one; task 6.7a adds it, and task 3.7 the CRLF-stored case for an edited path and an
+untouched one.
 
-Asking git for the bytes unconditionally is the shape to prefer unless the per-path cost measures
-badly, because a path that only runs under filters is a path that rots. Measure it against a
-resolution touching a realistic number of files before choosing the conditional form.
+## Doing §8 item 12, and retiring §6.7.3
 
-This is also the one part of the requirement with no filed defect behind it, so it has no reported
-symptom to reproduce. The test has to construct the condition: `* text=auto eol=crlf` in a
-repository's own `.gitattributes` travels with the clone and needs nothing of the host, which
-makes it the trigger to build on. `test/worktree.test.ts` already has one such test, written for
-`guard-silent-reverts`.
+`docs/architecture.md` §6.7.3 says a binary is corrupted rather than dropped, *"known, and
+deliberately unguarded"*, and §8 item 12 lists the fix as agreed in principle and not scoped, with
+the reason it waited: it *"needs a role that can touch one."* That condition has not changed:
+nothing in the shipped `commands` list, the commands a worker may run, makes a worker more likely
+to edit a binary than it was.
 
-## Retiring an accepted gap, not working around it
+What has changed is that three other defects, #134, #127 and #115, share the cause, so the work is no longer weighed
+against one hypothetical. It is done now because it is no longer its own change.
 
-`docs/architecture.md` §6.7.3 and accepted-gap 12 say a binary is corrupted rather than dropped,
-*"known, and deliberately unguarded"*, with the reason recorded: it *"needs a role that can touch
-one."* That condition has not changed — nothing in the shipped `commands` list makes a worker more
-likely to edit a binary than it was.
-
-What has changed is that three other defects turn out to share the cause, so the work is no longer
-being weighed against one hypothetical. The gap is retired because the reason for accepting it was
-that it was not worth its own change, and it is no longer its own change.
-
-The section should be rewritten rather than deleted when this lands: what it records about *why*
+§6.7.3 should be rewritten rather than deleted when this lands: what it records about *why*
 reading as `utf8` produces a plausible wrong file is the clearest statement of the hazard anywhere
 in the repository, and the next person to touch the read should still find it.
+
+## The refusal for a nested repository is #120's
+
+A nested repository is a path `readFile` cannot read, so
+[#120](https://github.com/adamstallard/igor/pull/120)'s *A path execution cannot read is never
+silently omitted* refuses it, hands the item off, follows the in-force rules for a run whose claim
+on its item was lost, and records the path. This change only names the kind, and lands after #120
+(task 8.3). #175's *A changed nested repository with working content SHALL stop the run* states
+the same refusal again; dropping that restatement is #175's to do.
+
+## Open Questions
+
+- **Which configuration defines a filter.** "The blob git would store" depends on which
+  configuration git reads. #175 runs git with `GIT_CONFIG_GLOBAL=/dev/null` and runs no filter the
+  configuration of the service user, the account the Igor runs as, defines, so `core.autocrlf` on the host stops applying and a file
+  stored through Git LFS becomes its pointer; #175's design asks this change whether it expects
+  that. Whether only the repository's own `.gitattributes` counts is for this change's authors and
+  #175's to settle. The case where a filter such as LFS would publish a pointer in place of
+  content needs Adam's decision as well, since nobody reviewing the artifact would notice.
+- **Running a filter the worker can name, before #175.** A filter driver's command comes from git
+  configuration, and on `main` the worker can write its tree's `.git/config` and `.gitattributes`.
+  Staging through `git add` runs that command as the Igor, whose environment holds the App's
+  private key, until #175 runs the worker as a separate user and stops reading that configuration.
+  Which filters the read runs before #175 is built is for this change's authors and Adam to
+  decide, since a wrong answer would be invisible until a key leaked. One candidate answer: git's
+  built-in `text`, `eol` and `ident` conversions only, and no driver program.
+- **A submodule a resolution carries, against #125.** The submodule scenario carries a base bump
+  the worker never touched, and #125's requirement says a path the worker did not touch does not
+  appear in an artifact. Every base change a resolution carries meets the same wording, but this
+  change is the first to make one a scenario.
+  [#187](https://github.com/adamstallard/igor/pull/187) reads #125 the same way, against this
+  scenario: it assumes that with #125 and this change, an artifact's paths are exactly the ones the
+  worker changed. Which reading holds is for
+  #125's, #187's and this change's authors to settle.
+- **Declaring a revert of a submodule bump.** A genuine revert of a base submodule bump still has
+  to be declarable, and a gitlink's base state is a commit. The in-force requirement says *"A
+  declaration names one path and the base state it discards — the base's content for that path"*,
+  and [#138](https://github.com/adamstallard/igor/pull/138)'s authorisation names a blob; neither
+  can name a commit. Whether this change modifies the in-force requirement, or #138 covers it, is
+  for this change's authors and #138's (task 5.5).
+- **The link and gitlink rules, with #175.** #175 states *A changed gitlink SHALL be published as
+  the commit it names* and *A changed link SHALL be published as a link*, the rule this requirement
+  states; #175 builds after this change and should cite it rather than restate it. That is #175's
+  to change.

@@ -1,13 +1,14 @@
 ## Why
 
 `changes()` reads the working tree through one assumption: **every changed path is a regular file
-holding UTF-8 text.** `ChangedFile` says so in its own shape — `content: string`, with a comment
-conceding *"a deletion carries no content, and a binary is not reported at all."* Each kind of
+holding UTF-8 text.** `ChangedFile` says so in its own shape: `content: string`, with a comment
+(`src/worktree.ts:28-29`) conceding *"A binary file is reported like any other, its content read as
+UTF-8 and so mangled."* Each kind of
 entry that is not a text file fails differently, and each failure is filed:
 
 | | what happens |
 |---|---|
-| [#134](https://github.com/adamstallard/igor/issues/134) | a base change to a symbolic link or a submodule can be neither published nor declared, so **every resolution on that repository refuses** |
+| [#134](https://github.com/adamstallard/igor/issues/134) | a base change to a symbolic link or a submodule can be neither published nor declared as a deliberate revert, so **every resolution where the base changed such a path refuses** |
 | [#127](https://github.com/adamstallard/igor/issues/127) | an unmerged submodule is a gitlink, `readFile` throws `EISDIR`, and the catch records a **deletion** — the artifact drops it on a run where the worker touched nothing |
 | [#115](https://github.com/adamstallard/igor/issues/115) | a rename whose destination cannot be read publishes the source's removal alone. The cause reachable today is a **dangling symbolic link**: `readFile` follows it and throws |
 | [#67](https://github.com/adamstallard/igor/issues/67) | a binary read as `utf8` becomes replacement characters and is published as a file that **looks plausible and is wrong** |
@@ -27,16 +28,19 @@ One **added** `task-execution` requirement: an artifact carries a changed path a
 it, whatever kind of entry that is, and refuses naming the path where a kind cannot be
 represented.
 
-**It overturns a decision, which is why it is a change rather than a fix.**
-`docs/architecture.md` §6.7.3 records the binary case as *"known, and deliberately unguarded"*, and
-it is entry 12 in that file's accepted-gaps list. A `FIX` commit cannot retire an accepted gap; the
-gap is a decision, and decisions are what a change is for.
+**It goes against a recorded decision, which is why it is a change rather than a fix.**
+`docs/architecture.md` §6.7.3 records the binary case as *"known, and deliberately unguarded"*.
+Item 12 of that file's §8, the work agreed in principle but not scoped, asks for exactly this:
+*"Binaries in an artifact, refused or carried rather than corrupted"*. This change does item 12
+and retires §6.7.3's acceptance, and a decision is what a change is for.
 
 ## Why added, rather than modifying what is in force
 
 `task-execution` already says *"An artifact SHALL carry every change execution **read** out of the
-working tree"*, and — once `carry-only-what-happened` lands — that it carries no change the worker
-did not make. Neither reaches these.
+working tree"*, and [#125](https://github.com/adamstallard/igor/pull/125)
+(`carry-only-what-happened`) adds that it carries no change the worker did not make. Neither makes
+what is carried accurate. #125 reaches #127 by another route, publishing no entry for an unmerged
+path it cannot read rather than a deletion; this change makes the submodule readable.
 
 The reason is exact: **each turns on what execution read.** A path `readFile` throws on was never
 read, so a requirement about every change read is satisfied by not reading it. Every one of the
@@ -48,10 +52,10 @@ The three together say what must be **present**, what must be **absent**, and wh
 
 ## Impact
 
-- A repository holding a symbolic link or a submodule becomes usable for conflict resolution.
-  Today it refuses every time.
-- A binary a worker touches is carried or refused rather than corrupted, retiring accepted gap 12.
+- A conflict resolution where the base changed a symbolic link or a submodule is published. Today
+  every such resolution refuses.
+- A binary a worker touches is carried rather than corrupted, which does §8 item 12.
 - `ChangedFile` widens past `content: string`, which reaches every consumer of `changes()`. This is
   the largest part of the work and `design.md` argues the shape.
-- Nothing changes for a change whose every path is a regular text file, which is nearly all of
-  them.
+- Nothing changes for a worker's run whose every changed path is a regular text file stored
+  through no filter, which is nearly every run.

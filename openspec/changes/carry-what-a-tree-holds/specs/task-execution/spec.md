@@ -2,11 +2,11 @@
 
 ### Requirement: An artifact carries a changed path as the tree holds it
 
-Where execution reads a changed path out of the checkout, the artifact SHALL represent it as the
-tree holds it, whatever kind of entry that is — a regular file, text or not, by the bytes git
-stores for it, a symbolic link by its target, and a submodule by the commit it names. Where a changed path is of a kind the artifact cannot
-represent, execution SHALL refuse to publish the artifact and name the path, rather than publish
-something that differs from what the tree holds.
+The artifact SHALL represent each changed path as `git add` into the Igor's own index stores it,
+whatever kind of entry it is: a regular file, text or not, by the blob staging stores, a symbolic
+link by its target, and a submodule by the commit its gitlink names in that index. A nested
+repository with no gitlink, the one kind no tree entry represents, SHALL be refused as *A path
+execution cannot read is never silently omitted* refuses, and named as a nested repository.
 
 #### Scenario: A symbolic link the tree holds
 
@@ -17,7 +17,7 @@ something that differs from what the tree holds.
 #### Scenario: A submodule carried through a resolution
 
 - **WHEN** the base changes the commit a submodule names and a resolution is published
-- **THEN** the artifact carries the submodule at the commit the tree holds
+- **THEN** the artifact carries the submodule at the commit its gitlink names in the index
 - **AND** no removal of it is published
 
 #### Scenario: A file whose bytes are not text
@@ -34,10 +34,11 @@ something that differs from what the tree holds.
 
 #### Scenario: A kind that cannot be represented
 
-- **WHEN** a changed path is of a kind the artifact cannot carry
-- **THEN** nothing is published, and the refusal names the path and its kind
+- **WHEN** a changed path is a nested repository with no gitlink
+- **THEN** it is refused as a path execution cannot read, and the refusal names the path and the
+  kind `nested repository`
 
 #### Scenario: An ordinary text change is unaffected
 
-- **WHEN** every changed path is a regular file holding text
-- **THEN** the artifact is what it is today
+- **WHEN** every changed path is a regular file holding text, stored through no filter
+- **THEN** the artifact is what it was before this change

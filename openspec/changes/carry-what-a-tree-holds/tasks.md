@@ -5,8 +5,9 @@
       represented
 - [x] 1.2 Added rather than modifying what is in force, argued in `proposal.md`: the requirements
       already there turn on what execution *read*, and a path `readFile` throws on was never read
-- [x] 1.3 Say in the requirement why refusing alone is insufficient — #134's symptom is already a
-      refusal, so a requirement forbidding misrepresentation would change nothing about it
+- [x] 1.3 Say why refusing alone is insufficient: #134's symptom is already a refusal, so a
+      requirement forbidding misrepresentation would change nothing about it (`design.md`,
+      *Carrying, not merely refusing*)
 - [x] 1.4 `design.md` for the four choices with live alternatives: carrying versus refusing, what
       `content: string` becomes, where the mode comes from, and what the comparison does with a
       submodule
@@ -16,8 +17,8 @@
 - [ ] 2.1 Enumerate every consumer of `ChangedFile` — `carried()`, `undone()`, the publish path,
       the handoff rendering, the outcome record — and what each does with `content`
 - [ ] 2.2 Choose among the three shapes in `design.md` on that evidence and record which and why.
-      **A `string | Buffer` union is rejected already**: the name side made that mistake and fixed
-      it, and `.length` and `+` work on either, so a consumer that forgets is wrong in silence
+      **A `string | Buffer` union is rejected already** (`design.md`): `.length` and `+` work on
+      either, so a consumer that forgets to ask which it holds is wrong in silence
 - [ ] 2.3 Confirm the chosen shape makes a consumer that ignores a kind fail to compile rather
       than fail at runtime
 
@@ -25,16 +26,22 @@
 
 - [ ] 3.1 `changes()` reports a symbolic link by its target, read with `readlink` rather than by
       following it — a link to a missing path is carried, not skipped
-- [ ] 3.2 It reports a submodule by the commit the tree holds, not as a deletion
+- [ ] 3.2 It reports a submodule by the commit its gitlink names in the index, not as a deletion.
+      Measure first what the Igor's clone holds for a submodule, which it never checks out
       ([#127](https://github.com/adamstallard/igor/issues/127))
 - [ ] 3.3 It reports a file whose bytes are not valid UTF-8 as those bytes
       ([#67](https://github.com/adamstallard/igor/issues/67))
-- [ ] 3.4 The mode comes from a source that gives one, and the second read disagrees with the
-      first about neither names nor rename folding — see `design.md`
-- [ ] 3.5 A kind that still cannot be represented refuses, naming the path and the kind
-- [ ] 3.6 A regular file is reported as the content git stores for it, so a clean filter —
-      `core.autocrlf`, an `eol=` or `text=auto` attribute, an `ident` — does not put the smudged
-      checkout in the artifact. How those bytes are obtained is costed in `design.md`
+- [ ] 3.4 The mode comes from the Igor's own index after staging, and that index read disagrees
+      with the porcelain read about neither names nor rename folding (`design.md`)
+- [ ] 3.5 A nested repository with no gitlink is refused through #120's refusal for a path
+      execution cannot read, named as a nested repository
+- [ ] 3.6 A regular file is reported as the blob `git add` into the Igor's own index stores, so a
+      clean filter (`core.autocrlf`, an `eol=` or `text=auto` attribute, an `ident`) does not put
+      the smudged checkout in the artifact. A regular file is staged only after whatever checks
+      are in force on files the Igor reads from the worker's tree (`design.md`)
+- [ ] 3.7 Test the case `guard-silent-reverts` measured, a clone whose stored blob holds CRLF
+      under a later `* text=auto`: an untouched path a merge brought in stages to the blob already
+      there, and a one-line edit publishes one changed line, not a renormalised file
 
 ## 4. The publish
 
@@ -60,6 +67,10 @@
       comparison against the checkout would contradict its own requirement while leaving every
       other path in the same publish smudged
 
+- [ ] 5.5 Settle with [#138](https://github.com/adamstallard/igor/pull/138) how a declaration of
+      a reverted base submodule bump names the commit the base held, and whether this change
+      modifies the in-force declaration requirement for it (`design.md`, *Open Questions*)
+
 ## 6. Tests
 
 - [ ] 6.1 A symbolic link added, modified and deleted by a worker, each carried
@@ -68,7 +79,7 @@
 - [ ] 6.3 A submodule the base bumped, carried through a resolution with no removal published
 - [ ] 6.4 An unmerged submodule not reported as a deletion
 - [ ] 6.5 A binary carried byte-for-byte, with no replacement character in what is published
-- [ ] 6.6 A kind that cannot be represented refuses, naming the path
+- [ ] 6.6 A nested repository with no gitlink refuses, naming the path and its kind
 - [ ] 6.7 Every existing test over ordinary text files unchanged — that suite is the evidence the
       widening broke nothing
 - [ ] 6.7a A clone whose own `.gitattributes` says `* text=auto eol=crlf` publishes nothing for a
@@ -81,8 +92,12 @@
 - [ ] 7.1 `docs/architecture.md` §6.7.3 rewritten rather than deleted: the gap is retired, and what
       it records about why reading as `utf8` produces a plausible wrong file is the clearest
       statement of that hazard in the repository
-- [ ] 7.2 Accepted-gap 12 removed from the list in the same file
+- [ ] 7.2 §8 item 12 removed from the same file's list of work agreed in principle, as done
 - [ ] 7.3 §6.7.2a, which describes how the tree is read, says what the read now carries
+- [ ] 7.4 The other places that say a binary is published corrupted say what is true once this is
+      built: `docs/architecture.md` §6.7.2b's false negative, where the revert check misses a
+      binary restored to the merge base because its corrupted read never hashes to the base's blob, README's *Point a role only at work that is text*, and `docs/deployment.md`'s
+      warning that a role's work has to be text
 
 ## 8. Boundaries
 
@@ -91,5 +106,16 @@
       still wanted for paths that are genuinely unreadable, and should not be removed because this
       made submodules readable
 - [ ] 8.2 [#120](https://github.com/adamstallard/igor/pull/120)'s requirement is phrased over *any*
-      path that cannot be read, so it holds with fewer cases reaching it. Confirm nothing here
-      weakens it
+      path the worker added or modified that cannot be read, so it holds with fewer cases reaching
+      it. A dangling link is unreadable on `main`, so it would fall under #120, but this change carries
+      it (6.2); #120's tests use a file without read permission instead, which stays unreadable. Confirm nothing here weakens it
+- [ ] 8.3 Land after #120, whose refusal for a path execution cannot read refuses a nested
+      repository
+- [ ] 8.4 Decide, before building the read, which filters it runs before #175 is built
+      (`design.md`, *Open Questions*)
+
+## 9. At archive
+
+- [ ] 9.1 Move the rejections and reasons in `design.md` that carry evidence into
+      `openspec/specs/task-execution/decisions.md`. #175 also creates that record, so whichever
+      archives second adds to it
