@@ -56,8 +56,8 @@ describe('monotonic — permissions may only be restricted', () => {
   })
 
   it('rejects a role adding a permission it does not inherit', () => {
-    const dir = store({ org: ORG, rogue: 'allow: [comment, merge]\n' })
-    expect(() => resolveRole(dir, 'rogue')).toThrow(/widens allow with merge/)
+    const dir = store({ org: ORG, rogue: 'allow: [comment, pr]\n' })
+    expect(() => resolveRole(dir, 'rogue')).toThrow(/widens allow with pr/)
   })
 
   it('lets a role drop an inherited command', () => {
@@ -236,10 +236,10 @@ describe('a finished run releases its claim, whatever the role says', () => {
   })
 
   it('refuses an action nothing checks, naming the valid ones', () => {
-    for (const action of ['unassign', 'close', 'assign']) {
+    for (const action of ['unassign', 'close', 'assign', 'merge', 'send']) {
       const dir = store({ org: `allow: [comment, ${action}]\n` })
       expect(() => resolveRole(dir, 'org')).toThrow(
-        new RegExp(`unrecognized action: ${action}\\. Known actions: comment, review-comment, draft-pr, pr, label, merge, send`),
+        new RegExp(`unrecognized action: ${action}\\. Known actions: comment, review-comment, draft-pr, pr, label`),
       )
     }
   })

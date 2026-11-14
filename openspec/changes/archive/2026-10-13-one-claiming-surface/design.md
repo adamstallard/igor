@@ -98,7 +98,10 @@ the adapter has no assignee path.
 
 **Decided by the owner: on GitHub the `igor:<role>` label is the Igor's holder field, separate
 from the assignee, which stays the person's.** The GitHub adapter declares its `igor:` labels a
-list, distinct from the assignee. The rules then match Linear's case for case:
+list, distinct from the assignee. The adapter, not the loop, declares which field holds a claim:
+a loop that named "assignee" would make one surface's vocabulary everyone's. With the label as
+the Igor's field and the assignee as the person's, GitHub's claiming rules match Linear's case
+for case:
 
 - An App Igor skips an issue assigned to a person unless it carries that Igor's label, as a
   Linear Igor skips an issue assigned to a person unless it is delegated to that Igor.
