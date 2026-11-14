@@ -1,21 +1,22 @@
 ## 0. Order
 
-- [ ] 0.1 Build this change after `redact-state-branch` (#217), since this change calls #217's
-      redaction function. Then `review-evidence` (#190), since #190 reads the calls this change
-      collects. Then `scope-check` (#187) and `loop-verifies-commands` (#189), in either order:
-      both write only into the evidence table #190 adds to the pull request body, and neither
-      depends on the other. Archive in the same order.
+- [ ] 0.1 Build and archive in the order issue #204 gives. This change calls the redaction
+      function `redact-state-branch` (#217) builds, so it follows #217.
 
 ## 1. Measure
 
 - [x] 1.1 Measure, on a real `claude -p --output-format stream-json` run, how a shell call's
-      result carries its output, error flag and exit code. Recorded in `design.md`: the code is
-      only the `Exit code <n>` prefix of an error result, and the two output streams arrive
-      merged.
-- [ ] 1.2 On the same kind of run, record in `design.md` which fields carry a tool result's output
-      and its error flag for Read, Edit and a subagent call (`Task` in `src/execute.ts:699`,
-      `Agent` in newer Claude Code). The spec assumes every result carries its output and an
-      error flag; where a tool's result does not, amend the spec's list of what an entry holds.
+      result carries its output, error flag and exit code. Recorded in
+      `openspec/specs/task-execution/decisions.md`: the code is only the `Exit code <n>` prefix
+      of an error result, and the two output streams arrive merged.
+- [ ] 1.2 On the same kind of run, record in `task-execution`'s decision record which fields
+      carry a tool result's output and its error flag for Read, Edit and a subagent call (`Task`
+      in `src/execute.ts:711`, `Agent` in newer Claude Code), and which tools write files.
+      Where a result has no error flag, the spec records no error status; where a tool writes
+      files and the spec does not list it as a file tool, add it to that list.
+- [ ] 1.3 On the same kind of run, record what a shell call run in the background returns, and
+      whether it can be told from a finished call. Where it can, record no exit code for it,
+      and amend *A shell call's exit code is read from its result's text*.
 
 ## 2. Collect
 
@@ -42,14 +43,16 @@
 - [ ] 3.2 Write the log only where `visibility-guard`'s visibility check just before the write
       (that change's task 4.1) lets the run's content be written; otherwise write none, and name
       none in the run's row.
-- [ ] 3.3 Cap inputs at 1,000 characters and output at its last 2,000, then trim the document to
-      512 KiB from the start, recording how many entries were dropped.
-- [ ] 3.4 In `recordExecution`, write the log after the transcript, catching and reporting its
-      failure, at the path the spec gives, named from the `at` of the run's row in
-      `executions.ndjson`. Reuse the character rule of `refusalPath` (`src/execute.ts`), which
+- [ ] 3.3 Read each shell call's exit code, then cap inputs at 1,000 characters and output at
+      its last 2,000. Trim the document to 512 KiB by dropping the earliest entries' output
+      first, then the earliest entries whole, recording how many entries were dropped whole.
+- [ ] 3.4 In `recordExecution`, take the run's time first, write the log at the path the spec
+      gives from that time, catching and reporting its failure, and then append the run's row
+      to the execution ledger with that time, through an `appendRecord` that accepts the time
+      from its caller. Reuse the character rule of `refusalPath` (`src/execute.ts`), which
       already names refusal envelopes from a time, and add the numeric suffix where a file
-      already exists at that path. Name the log's path in that row as `actions` only where a
-      model step made a tool call and the log is written.
+      already exists at that path. Name the log's path in the row as `actions` only where the
+      log was written.
 
 ## 4. Tests
 
@@ -66,4 +69,13 @@
       the record of a budget stop that it writes last.
 - [ ] 4.7 Exit codes: an error beginning `Exit code 128` records 128; a result that is not an
       error records 0; an error in any other format records no code.
-- [ ] 4.8 Two runs of one item write two logs, and each ledger row names its own.
+- [ ] 4.8 Two runs of one item write two logs, and each ledger row names its own; a taken path
+      gets `-2`.
+- [ ] 4.9 A killed worker's run keeps its log, the unfinished call with no status; a run with
+      no tool call writes none, and its row names none.
+- [ ] 4.10 Labels: the prose pass's calls are `prose`, a bug-hunter triage's are `bug-hunter`,
+      and a second worker pass's are `worker`.
+- [ ] 4.11 A long failing output keeps its last 2,000 characters and its exit code; `cat` output
+      is kept; a `Read` error keeps its text; a result with no error flag records no status.
+- [ ] 4.12 Trimming drops the earliest output before any entry; a 5,000-character command is
+      cut to 1,000.
