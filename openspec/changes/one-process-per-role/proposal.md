@@ -24,8 +24,8 @@ its workers and exits, so it has stopped before anyone else could take over.
 **A process that takes over adopts or gives back every claim under its role's label.** An item
 with the Igor's open pull request is caught up; any other is triaged again and worked under a
 fresh claim message, or given back out loud. A stop said while no process served the role is
-answered at adoption. The process removes the working trees its role's slots left, whatever
-their age.
+answered at adoption. The process removes the working trees its role's slots left named for its own
+lock directory, whatever their age.
 
 **Replaces `concurrent-instances`.** This change replaces both #179's restated
 `concurrent-instances` (closed unmerged; see #241) and the earlier version merged on `main`,
@@ -34,7 +34,8 @@ whose directory, `openspec/changes/concurrent-instances/`, this change deletes. 
 
 **Specs:**
 - `role-process` (new): one process per role, the serving record and the startup guard, the
-  stand-down, adoption, worker slots, seats per worker, stops, retried state writes, and the
+  stand-down, adoption, worker slots, what any worker is kept from and how it is ended, and how a
+  local host meets both, seats per worker, stops, retried state writes, and the
   sweep of slot trees.
 - `role-config`: adds *A role sets how many workers its process runs*; modifies *An Igor holds
   exactly one role*, whose processes of one role were interchangeable, and *Timing values are

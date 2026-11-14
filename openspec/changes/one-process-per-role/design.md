@@ -174,9 +174,10 @@ behind it.
     `work-claiming` stops a cycle at two runs in a row that a surface did not answer. Runs now
     end in any order, some after the cycle that claimed them; a run counts toward whichever cycle
     is running when it ends, or, where none is, toward the next one. *One good option.*
-23. **Slot 1 runs as #175's `igor-worker-<role>`; slot `k` of 2 and above as
-    `igor-worker-<role>-<k>`.** Workers running at once need users of their own to stay out of
-    each other's `/proc` and trees, as #175 requires, and #175 builds one user per role from the
+23. **On its own host, slot 1 runs as #175's `igor-worker-<role>`; slot `k` of 2 and above as
+    `igor-worker-<role>-<k>`.** This is how a local host meets decision 29's guarantees. Workers
+    running at once need users of their own to stay out of each other's `/proc` and trees, as
+    #175 requires, and #175 builds one user per role from the
     unit's `%i`, which carries no slot number. So the extra users are this change's: the setup
     that creates #175's user also creates `igor-worker-<role>-2` to `-<workers>`, #175's sudoers
     rule names them, each slot's tree and outbox take its own user's group, and the unit gives the
@@ -210,13 +211,25 @@ behind it.
     the process's running workers do not hold (task 6.9). Until then the in-force *first seat in
     that list with headroom* reads as if a busy seat were chosen; role-process's seat rule governs.
     *Can wait.*
-28. **Where workers run as users of their own and `workers` is 2 or more, a role whose
+28. **Where `workers` is 2 or more, a role whose
     `igor-worker-<role>-<workers>` would pass 32 characters is refused at load.** Linux refuses to
     create such a user, so the role would otherwise fail at its first worker, after it had
     claimed. #175's check, a role name of at most 20 characters, stays for every role; this one
     is stricter only for several workers. `igor-worker-` takes 12 characters and `-<k>` two or
     more, so a role name may have at most 18 characters for up to 9 workers, and 17 for 10 to 99.
     *One good option.*
+29. **What Igor guarantees about a worker is stated as properties, not as Linux users.** A worker
+    has no access to the credentials Igor acts with, nor to another worker's run, and Igor can end
+    the worker's run and everything it started (*Every worker is kept apart and can be ended*).
+    The worker users, their groups, the unit's paths, the takeover kill and the tree removals are
+    how a process meets those on its own host, and each requirement for them is scoped to workers
+    on the process's host. Igor intends to run workers as cloud Claude Code sessions, with
+    `igor serve` as the coordinator, so that one process can run more workers than a host could.
+    That cannot be built yet: the documented sessions give a caller no way to see their status,
+    learn they finished, or stop them (#244). Requirements tied to Linux users would have to
+    be rewritten for it; requirements stated as properties need only a new way of meeting them.
+    Because workers may later run off the host, `workers` limits how many items a role works at
+    once, not how many a host can hold. *Cheap to reverse.*
 
 ## What the model proves
 
@@ -277,10 +290,10 @@ guard, and TLC finds a violation in it:
   hold, so a process using the copy would take over at once beside a live one; nothing in the
   spec compares the record's host name to rule that out.
 - A paused process's workers do nothing. When only `igor serve` is paused, as by SIGSTOP, its
-  workers, each in a process group of its own, keep running. A process from another checkout
-  then takes over after its watch and works their items again while they still spend seats,
-  since it kills only groups recorded in its own lock directory. The model does not check this
-  case; *Risks* lists it.
+  workers, each in a process group of its own, keep running. A process on another host then
+  takes over after its watch and works their items again while they still spend seats, since
+  its takeover kill reaches only its own host. The model does not check this case; *Risks*
+  lists it.
 - A write's age is counted from when it was sent, so a write that lands late makes its process
   stand down sooner, never later; *A serving process that cannot rewrite its record stops its
   workers* says so.
@@ -320,14 +333,19 @@ guard, and TLC finds a violation in it:
   process group of its own; under systemd or Compose they die with the unit or container, but
   by hand they survive, and the restart's fast takeover removes their trees while they spend
   seats. Task 2.5 kills them at takeover.
-- **A paused `igor serve`'s workers can run beside a process from another checkout that took
-  over**, each working the same item, until they end (*What the model assumes*).
-- **Where workers run as the Igor's own user, a worker can write the lock directory.** It could
-  forge a recorded process group, so that the next takeover kills another process running as
-  the Igor's user, such as another role's `igor serve`; or change the directory's id, so that a
-  restart from that checkout watches instead of taking over, and its old slot trees are left to
-  the age-based sweep. Worker users of their own (#175) close this; without them nothing
-  in this change does.
+- **A paused `igor serve`'s workers can run beside a process on another host that took over**, each working the same item, until they end (*What the model assumes*).
+- **A worker that could write the lock directory could delay a restart.** By changing the
+  directory's id, it would make a restart from that checkout watch for 30 minutes instead of
+  taking over, and leave its old slot trees to the age-based sweep. An `igor serve` worker cannot
+  write it (*Every worker is kept apart and can be ended*). An `igor run` worker that runs as
+  the Igor's own user (#175) can, which decision 3 accepts for a dev tool.
+- **The takeover kill is by worker user, not by process group.** It reaches every process of the
+  role's slot worker users on the host, including the workers of a paused process from another
+  checkout on the same host, which is the intent: that process has been replaced. A process group
+  kill would miss commands Claude Code starts in new sessions, as #175 measured. The kill at
+  shutdown in this change's copy of *Igor forwards the termination it is sent* is still by
+  process group, and #175's copy extends it to every process of the worker user; whichever
+  archives second carries both.
 
 - **A refused App credential stands every process down after 20 minutes.** Every state-branch
   write then fails, so the process stops its workers and exits, and on restart the startup guard's first

@@ -3,7 +3,7 @@
 ### Requirement: A role sets how many workers its process runs
 
 A role file MAY set `workers`, a whole number of at least 1: the most items the role's process
-works at once. It SHALL default to 1, and the most specific level SHALL win, as for the poll
+works at once, wherever its workers run. It SHALL default to 1, and the most specific level SHALL win, as for the poll
 interval. Any other value SHALL be refused, naming it. `igor role explain` SHALL report the
 effective value and the level it came from.
 
@@ -24,7 +24,8 @@ effective value and the level it came from.
 
 ### Requirement: A role whose worker user names would be too long is refused
 
-Where workers run as users of their own (`role-process`) and `workers` is 2 or more, loading a
+Where `workers` is 2 or more, so that `igor serve` runs workers on its host as several worker
+users (`role-process`), loading a
 role SHALL refuse it where `igor-worker-<role>-<workers>` would pass Linux's 32-character limit on
 a user name, naming the role and the limit, and nothing SHALL start for it. With one worker,
 #175's own check on `igor-worker-<role>`, a role name of at most 20 characters, applies alone.

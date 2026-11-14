@@ -64,8 +64,8 @@ wrote, or on its absence, and a failed one that finds its own start id SHALL be 
 
 Before its first cycle, a starting process SHALL take its role's lock in a lock directory beside
 its local clone of the lore repository, which the operating system releases when its holder
-ends, exiting with status 78 where it cannot. Unless the next requirement lets it take over at
-once, it SHALL watch the serving record for 30 minutes whatever any poll interval, exiting with
+ends, exiting with status 78 where it cannot. Unless *A process restarted from its own checkout
+takes over at once* applies, it SHALL watch the serving record for 30 minutes, exiting with
 status 78 where a write lands, naming the writer's host, pid and start id, and with 1 where the
 record disappears.
 
@@ -307,9 +307,28 @@ built from what it read before. The serving record is excepted: its writes stay 
 - **WHEN** the runs in slots 1 and 2 end together and both record their outcomes
 - **THEN** both outcomes are on the state branch
 
+### Requirement: Every worker is kept apart and can be ended
+
+Wherever an `igor serve` worker runs, on the process's host or elsewhere, it SHALL have no access
+to the credentials Igor acts with, nor to another worker's run: its tree, its outgoing work and
+its processes. The process SHALL be able to end a worker's run and everything that run started.
+`task-execution`'s *The worker is given an explicit environment holding no credential but its
+seat's* and *A kill reaches the worker's whole process tree* are part of how a local worker
+meets this.
+
+#### Scenario: A worker cannot reach Igor's credentials
+
+- **WHEN** a worker runs
+- **THEN** it cannot read the GitHub App's private key or any token the process holds
+
+#### Scenario: Ending a run ends what it started
+
+- **WHEN** the process ends a worker's run while a build the worker started is still running
+- **THEN** the worker and the build both end, and the role's other workers go on
+
 ### Requirement: A worker slot's number names what the slot owns
 
-A working tree's name SHALL carry its role, its worker slot and its process's lock directory id.
+On the process's own host, a working tree's name SHALL carry its role, its worker slot and its process's lock directory id.
 After taking over, an `igor serve` process SHALL remove every tree named for its role and lock
 directory, with its outbox (the directory beside it for its outgoing work), whatever its age. Every other
 tree, each one `igor run` made included, SHALL be left to the sweep at the abandoned-tree
@@ -324,7 +343,7 @@ threshold; `igor run` SHALL name its trees with no lock directory id.
 #### Scenario: Trees named for another lock directory are left to the age sweep
 
 - **WHEN** a process takes over while trees of its role named for another lock directory exist,
-  as when a paused process from another checkout still runs workers
+  as when a process from another checkout on the host served the role before
 - **THEN** it does not remove them, and the age-based sweep reclaims them once they are older
   than its threshold
 
@@ -339,12 +358,13 @@ threshold; `igor run` SHALL name its trees with no lock directory id.
   a tree there
 - **THEN** the run's tree is left in place, for the sweep at the abandoned-tree threshold
 
-### Requirement: Each worker slot runs as a worker user of its own
+### Requirement: On its own host, each worker slot runs as a worker user of its own
 
-Where workers run as users of their own (#175), slot 1 SHALL run as #175's `igor-worker-<role>`
-and slot `k`, for `k` of 2 and above, as `igor-worker-<role>-<k>`, created by the same setup with
-the same rights and checks, the Igor holding every slot's group. Each slot's tree and outbox SHALL take that slot user's group, so that no slot can
-read or write another's, and a kill by worker user SHALL reach only that slot's processes.
+An `igor serve` worker on the process's own host SHALL meet *Every worker is kept apart and can
+be ended* this way. Slot 1 SHALL run as #175's `igor-worker-<role>` and
+slot `k`, for `k` of 2 and above, as `igor-worker-<role>-<k>`, created by the same setup with the
+same rights and checks, the Unix user `igor serve` runs as holding every slot's group. Each slot's tree and outbox SHALL
+take that slot user's group, and a kill by worker user SHALL reach only that slot's processes.
 
 #### Scenario: Two slots run as two users
 
@@ -359,18 +379,18 @@ read or write another's, and a kill by worker user SHALL reach only that slot's 
 
 ### Requirement: A process that takes over ends its predecessor's surviving workers
 
-Each worker's process group SHALL be recorded in the lock directory while it runs. After taking
-over, and before removing any tree, the process SHALL kill every recorded group still alive whose
-leader's start time matches the record,
-because a predecessor killed without its unit, as by SIGKILL on a hand-run `igor serve`, leaves
-its workers running and spending seats.
+After taking over, and before removing any tree or starting a worker, the process SHALL end
+every worker of its role still running on its host, with everything that worker started, by killing every process of
+each slot's worker user. A
+predecessor killed without its unit, as by SIGKILL on a hand-run `igor serve`, leaves its
+workers running and spending seats.
 
 #### Scenario: Workers a killed process left are ended
 
 - **WHEN** a hand-run `igor serve` is killed with SIGKILL while two workers run, and is started
   again from the same checkout
-- **THEN** the new process kills both workers' process groups before it removes their trees or
-  starts a worker of its own
+- **THEN** the new process ends both workers, and every process they started, before it removes
+  their trees or starts a worker of its own
 
 ### Requirement: `igor run` keeps no serving record and takes no serving lock
 

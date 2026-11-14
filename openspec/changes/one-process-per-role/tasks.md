@@ -22,9 +22,8 @@ approved.
   host, and on the bind-mounted volume under Compose. Measure that the lock is exclusive on each
   shipped deployment (local disk, a bind mount, Docker Desktop file sharing); where it is not,
   `docs/deployment.md` says that deployment cannot run `igor serve`.
-- [ ] 2.5 Record each running worker's process group in the lock directory, and at takeover kill
-  any recorded group still alive whose leader's start time matches the record, before removing
-  its tree or starting a worker.
+- [ ] 2.5 At takeover, on the process's host, kill every process of each of the role's slot worker users, through #175's
+  kill by worker user, before removing a tree or starting a worker.
 - [ ] 2.6 Measure how the Contents API answers a write refused because the branch moved and one
   refused because the file's `sha` changed, and retry only the first for files other than the
   serving record.
@@ -84,15 +83,18 @@ approved.
   process's role and lock directory to the age sweep.
 - [ ] 6.7 Retry a state write the branch refuses because it moved, re-reading and re-applying
   the change.
-- [ ] 6.8 Where workers run as users of their own, run slot 1 as #175's `igor-worker-<role>` and
+- [ ] 6.8 For `igor serve` workers on the process's host, run slot 1 as #175's `igor-worker-<role>` and
   slot `k` of 2 and above as `igor-worker-<role>-<k>`: extend #175's user setup and sudoers rule
   to create and name each slot user, give each slot's tree and outbox its user's group, and give
   the unit every slot's group in `SupplementaryGroups` and every slot's home in `ReadWritePaths`.
 - [ ] 6.9 Once #171 is on `main`, add to this change a `MODIFIED` *A role draws on the seat with
   the most headroom* that chooses among the seats the process's running workers do not hold.
-- [ ] 6.10 Where workers run as users of their own and `workers` is 2 or more, refuse a role at
+- [ ] 6.10 Where `workers` is 2 or more, refuse a role at
   load where `igor-worker-<role>-<workers>` passes 32 characters, naming the role and the limit;
   keep #175's 20-character check for every role.
+- [ ] 6.11 Test that a local worker meets *Every worker is kept apart and can be ended*: it
+  cannot read the App's private key or a token the process holds, nor another slot's tree, and
+  ending its run ends every process it started.
 
 ## 7. `igor run`
 
