@@ -22,15 +22,27 @@ WorkingDirectory=/srv/igor/lore
 # point at a stable interpreter instead.
 ExecStart=/usr/local/bin/igor serve %i
 
+# Igor runs git, gh and claude by name, so they must be on this PATH, and systemd's default
+# does not include the directory claude's native installer uses: ~/.local/bin of whoever ran
+# it. Replace /home/igor with the service user's home, or with wherever
+# `sudo -u igor sh -lc 'command -v claude'` says claude is. (%h will not do here: in a system
+# unit it is root's home, whatever User= says.) Without this, every model call fails to start.
+Environment=PATH=/home/igor/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# A native install updates itself in the background, so a release that changes how claude -p
+# authenticates can arrive overnight (igor#144). Upgrade deliberately instead: `claude update`
+# as the service user, then restart.
+Environment=DISABLE_AUTOUPDATER=1
+
 # Two files, because the two kinds of credential have different scopes. Seat tokens are
-# shared: a seat is a Claude subscription several Igors may draw from. The surface token is
-# not, because one machine account per Igor is what makes a claim say who has your issue —
-# a shared GH_TOKEN gives every instance the same identity. The per-instance file is optional
-# so a single-Igor install needs only the first.
-# Keep both 0600 and owned by the service user; they hold credentials that act on your
+# shared: a seat is a Claude subscription several Igors may draw from. The GitHub App is not:
+# each role acts as its own App, so a claim says which role has your issue. /etc/igor/%i.env
+# holds that App's GITHUB_APP_IDENTITY, GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_FILE, and no
+# GH_TOKEN; the Igor refuses to start without them, naming what is missing.
+# Keep both files, and the App's key, 0600 and owned by the service user: they act on your
 # repositories.
 EnvironmentFile=/etc/igor/env
-EnvironmentFile=-/etc/igor/%i.env
+EnvironmentFile=/etc/igor/%i.env
 
 # A seat token specifically may skip the line above instead: encrypt it once with
 # `systemd-creds encrypt`, name it here, and point that seat's `token_file` in

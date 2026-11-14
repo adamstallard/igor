@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { Command } from 'commander'
-import { loadConfig, igorRoot, ConfigError } from './config.js'
+import { loadConfig, ConfigError } from './config.js'
+import { initialize, renderInit, InitError, INIT_TARGETS } from './init.js'
 import { uniqueId } from './id.js'
 import { scoreEntry } from './scoring.js'
 import {
@@ -17,10 +18,12 @@ import {
 } from './store.js'
 import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
-import { GitHubError } from './github.js'
+import { actAs, GhError } from './gh.js'
+import { AppError, canMint, canWriteWorkflows, startApp, type AppSession } from './app.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
-import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
+import { catchUpItem, honourIdleStop, passesMark, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import { waitingNotice } from './claiming.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
@@ -30,7 +33,10 @@ import { noteHandoff, shouldDefer } from './deferred.js'
 import { noCapacity } from './handoff.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
-import { BudgetError, budgetGate, loadSpend, percent, readAllSeats, renderBudget } from './budget.js'
+import {
+  BudgetError, budgetGate, loadLog, percent, readAllSeats, renderBudget, renderCredentials, runsOf,
+} from './budget.js'
+import { conditionsFrom, describeCondition, scopeOf } from './conditions.js'
 import { boundsForSeats, loadObservations, observeSeat, seatToObserve } from './capacity.js'
 import { wire } from './wiring.js'
 import { readLog } from './state.js'
@@ -38,9 +44,6 @@ import { repoFromCheckout } from './github.js'
 import { staleBuildWarning } from './staleness.js'
 import { provenanceFromCitations, ProvenanceInputError } from './entry.js'
 import type { Entry, Status } from './entry.js'
-
-/** The destination's single on-push job, named for what it runs. */
-const WORKFLOW_FILE = 'reconcile-on-merge.yml'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -249,25 +252,18 @@ program
   })
 
 program
-  .command('init-workflow')
-  .description('Write the merge-triggered reconciliation workflow into the destination')
-  .option('--force', 'overwrite an existing workflow')
+  .command('init')
+  .description('Write the files a lore repository needs into the repository you are standing in')
+  .option(
+    '--force [target...]',
+    `overwrite exactly the targets named: ${INIT_TARGETS.join(', ')}`,
+  )
+  // No config is loaded: init runs where there is not one yet, and writes it. A `--config` on
+  // the invocation is refused rather than ignored — see `initialize`.
   .action((opts) => {
-    const config = loadConfig(program.opts()['config'])
-    const source = join(igorRoot(), 'templates', WORKFLOW_FILE)
-    const target = join(config.destination, '.github', 'workflows', WORKFLOW_FILE)
-    if (existsSync(target) && !opts.force) {
-      throw new StoreError(`${target} already exists — pass --force to overwrite`)
-    }
-    mkdirSync(dirname(target), { recursive: true })
-    copyFileSync(source, target)
+    const config = program.opts()['config'] as string | undefined
     process.stdout.write(
-      `${target}\n\nCommit and push it. Exactly one job may promote lore on push: two of them\n` +
-        `race on the same commit and disagree about what a reviewer deleted, so delete any\n` +
-        `other workflow in .github/workflows that promotes or reconciles lore.\n\n` +
-        `If the default branch is protected, add the GitHub Actions actor to the ruleset's\n` +
-        `bypass list, or this workflow's own push is blocked by the same rule it exists to\n` +
-        `work around.\n`,
+      renderInit(initialize(process.cwd(), { force: opts.force, ...(config === undefined ? {} : { config }) })),
     )
   })
 
@@ -311,6 +307,29 @@ role
     process.stdout.write(`${explainRole(loadRole(config, name))}\n`)
   })
 
+/**
+ * Starts acting as the role's GitHub App, or refuses to start, naming why. Runs before any other
+ * GitHub call, so nothing `run` or `serve` does reaches GitHub as anyone else: from here every
+ * `gh` call carries the App's token, and so do the clones and fetches of the trees it hands out.
+ */
+async function actAsApp(role: Role, destination: string, warn: (line: string) => void) {
+  const session: AppSession = await startApp(
+    role.name,
+    [...role.sources.map((s) => s.repo), destination],
+    process.env,
+  )
+  for (const warning of session.warnings) warn(warning)
+  const token = () => session.tokens.token()
+  actAs(token)
+  const tracker = new GitHubTracker({ account: session.account, role: role.name })
+  const codeHost = new GitHubCodeHost({ canWriteWorkflows: canWriteWorkflows(session.tokens.permissions) })
+  return {
+    session,
+    identity: session.account.login,
+    deps: { tracker, codeHost, trees: new CloneProvider(1, token), destination },
+  }
+}
+
 /** A floor reads as one: a cycle that spent money it cannot account for must not look cheap. */
 function triageSpend(report: CycleReport): string {
   const amount = `$${report.triageCostUsd.toFixed(4)}`
@@ -338,6 +357,14 @@ function untriagedLines(report: CycleReport): string[] {
   })
 }
 
+/**
+ * The condition that stopped the role before triage, where one did. Of the reasons a cycle can be
+ * idle, it is the one a configuration change cures, so the line names the key and the cure.
+ */
+function conditionLines(report: CycleReport): string[] {
+  return report.condition === undefined ? [] : [`stopped: ${describeCondition(report.condition)}`]
+}
+
 function renderCycle(report: CycleReport, verbose: boolean): string {
   const out: string[] = []
   for (const f of report.failures) out.push(`  ! ${f}`)
@@ -355,7 +382,20 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
     }
   }
-  out.push(...untriagedLines(report))
+  const directed = report.toClaim.filter((c) => c.directed === true)
+  if (directed.length > 0) {
+    out.push('', `handed to this Igor by a person (${directed.length}), claimed without triage:`)
+    for (const c of directed) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+  }
+  if (report.stopped.length > 0) {
+    out.push('', `handed to this Igor and stopped while nothing ran (${report.stopped.length}), label to take off:`)
+    for (const c of report.stopped) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+  }
+  if (report.waiting.length > 0) {
+    out.push('', `handed to this Igor but held or in flight (${report.waiting.length}), owed a notice:`)
+    for (const c of report.waiting) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+  }
+  out.push(...conditionLines(report), ...untriagedLines(report))
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
     for (const s of report.skipped.slice(0, 40)) {
@@ -388,20 +428,28 @@ program
     if (contradiction !== undefined) throw new RoleError(contradiction)
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
-    const tracker = new GitHubTracker()
-    const identity = await tracker.identity()
     const destination = await repoFromCheckout(config.destination)
-    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
-
     const out = {
       say: (line: string) => process.stdout.write(`  ${line}\n`),
       warn: (line: string) => process.stderr.write(`  ! ${line}\n`),
     }
-    const { gate: gateFor, loreFor, record, store } = await wire(config, role, destination, out)
+    const { identity, deps } = await actAsApp(role, destination, out.warn)
+    const { tracker } = deps
+    const { gate: gateFor, loreFor, record, store, stopped, probe } = await wire(config, role, destination, out)
 
-    const work = async (item: Candidate) => {
+    const work = async (item: Candidate, directed = false, since?: string) => {
       const gate = await gateFor()
+      // A condition stops the role before any claim: claimed and then handed back, the item
+      // would carry a notification about something only an operator can fix.
+      if (gate.condition !== undefined) {
+        process.stdout.write(`\nnot working ${item.id}: ${gate.reason}\n`)
+        return undefined
+      }
+      // Read before the probe row goes in. Reading the lore throws on a malformed entry, and a
+      // throw after the probe row would leave a probe that never runs, holding the role for hours.
       const lore = loreFor(item)
+      const probes = gate.probes ?? []
+      if (probes.length > 0) await probe(probes, 'taken', item.id)
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
       // A terminal redraws one line; a log gets a line every few minutes, because the gap this
       // closes is telling a wedged Igor from a working one in `journalctl`, and \r there writes
@@ -409,6 +457,7 @@ program
       const live = process.stdout.isTTY === true
       let drawn = false
       const run = await runItem(deps, item, role, identity, {
+        claim: { ...(directed ? { directed: true } : {}), ...(since === undefined ? {} : { since }) },
         budget: gate,
         lore,
         store,
@@ -427,6 +476,7 @@ program
         },
       })
       if (drawn && live) process.stdout.write('\n')
+      if (probes.length > 0 && run.execution === undefined) await probe(probes, 'void', item.id)
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
       if (shouldDefer(run.outcome, run.handoff, run.cures)) {
         await noteHandoff(destination, item, run.reason).catch(() => undefined)
@@ -454,7 +504,10 @@ program
       // judgement, and the lane exists to substitute for one. The universal skips still
       // apply: acting on a closed item, or one already being worked, is not a preference
       // anybody gets to express.
-      const universal = universalSkip(item, identity)
+      const universal = universalSkip(item, identity, {
+        holder: tracker.holder,
+        distinctFromAssignee: tracker.holderField.distinctFromAssignee,
+      })
       if (universal) throw new RoleError(`refusing ${item.id}: ${universal.reason}`)
 
       // An item whose own artifact stopped merging passes the universal skips and is not new
@@ -462,7 +515,14 @@ program
       // prevent, and the branch is there already, so producing one would simply fail.
       if (staleOwnArtifact(item, identity) !== undefined) {
         const gate = await gateFor()
+        if (gate.condition !== undefined) {
+          process.stdout.write(`  not catching up ${item.id}: ${gate.reason}\n`)
+          return
+        }
+        const probes = gate.probes ?? []
+        if (probes.length > 0) await probe(probes, 'taken', item.id)
         const run = await catchUpItem(deps, item, role, identity, { budget: gate, store })
+        if (probes.length > 0 && run.execution === undefined) await probe(probes, 'void', item.id)
         process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
         if (run.execution) await record(item, run.execution, gate.seat)
         return
@@ -486,6 +546,12 @@ program
       // The seat triage spends from and records against is the same one a worker would choose —
       // read lazily, so a cycle with nothing to triage never pays for a seat's usage reading.
       gate: gateFor,
+      stopped,
+      // The discovery watermark is saved by `settle()` at the end of this command, once it is known
+      // which items were taken. An item this cycle chose to claim and did not take, because of
+      // `--max-items`, the budget, a condition or a tracker that did not answer its claim, keeps
+      // the mark below it.
+      markAfterWork: true,
     })
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
 
@@ -502,7 +568,14 @@ program
 
     for (const c of report.toCatchUp) {
       const gate = await gateFor()
-      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store })
+      if (gate.condition !== undefined) {
+        process.stdout.write(`  not catching up ${c.candidate.id}: ${gate.reason}\n`)
+        break
+      }
+      const probes = gate.probes ?? []
+      if (probes.length > 0) await probe(probes, 'taken', c.candidate.id)
+      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store, claim: { since: report.readAt } })
+      if (probes.length > 0 && run.execution === undefined) await probe(probes, 'void', c.candidate.id)
       process.stdout.write(`  ${c.candidate.id}: ${run.reason}\n`)
       if (shouldDefer(run.outcome, run.handoff, run.cures)) {
         await noteHandoff(destination, c.candidate, run.reason).catch(() => undefined)
@@ -510,13 +583,32 @@ program
       if (run.execution) await record(c.candidate, run.execution, gate.seat)
     }
 
+    // Owed whether or not anything is claimed, and usually the cycle's only finding.
+    for (const c of report.stopped) {
+      if (c.stop !== undefined) await honourIdleStop(tracker, c.candidate, role, identity, c.stop).catch(() => undefined)
+    }
+    for (const c of report.waiting) {
+      await tracker.report(c.candidate, c.notice ?? waitingNotice(role, c.holders ?? [])).catch(() => undefined)
+    }
+    const taken = new Set<string>()
+    const settle = () =>
+      report.settle?.(
+        report.toClaim
+          // A directed item is found by its label each cycle, whatever the watermark says, so it
+          // never needs the mark held back for it.
+          .filter((c) => c.directed !== true && !taken.has(c.candidate.id))
+          .map((c) => c.candidate.id),
+      )
     if (report.toClaim.length === 0) {
+      await settle()
       process.stdout.write('\nnothing to claim\n')
       return
     }
     const cap = opts.maxItems === undefined ? report.toClaim.length : Number(opts.maxItems)
     for (const c of report.toClaim.slice(0, cap)) {
-      const run = await work(c.candidate)
+      const run = await work(c.candidate, c.directed === true, c.handedOverAt ?? report.readAt)
+      if (run === undefined) break
+      if (passesMark(run)) taken.add(c.candidate.id)
       // A closed budget stops the cycle rather than being rediscovered per item. Read off the
       // handoff kind rather than the prose, which is written for whoever reads the item.
       if (run.outcome === 'handed-off' && run.handoff === 'budget') {
@@ -524,6 +616,7 @@ program
         break
       }
     }
+    await settle()
   })
 
 program
@@ -536,14 +629,12 @@ program
   .action(async (name: string, opts) => {
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
-    const tracker = new GitHubTracker()
-    const identity = await tracker.identity()
     const destination = await repoFromCheckout(config.destination)
-    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
     const stamp = () => new Date().toISOString().slice(11, 19)
     const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
-    const { gate, loreFor, record, store } = await wire(config, role, destination, {
+    const { session, identity, deps } = await actAsApp(role, destination, (line) => say(`! ${line}`))
+    const { gate, loreFor, record, store, stopped, probe, appCredential } = await wire(config, role, destination, {
       say: (line) => say(`  ${line}`),
       warn: (line) => say(`  ! ${line}`),
     })
@@ -552,7 +643,10 @@ program
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),
       until: untilSignalled(),
+      credential: appCredential(session.app.credentials.key, () => canMint(session.tokens)),
       gate,
+      stopped,
+      probe,
       loreFor,
       store,
       onEvent: (e) => {
@@ -562,7 +656,7 @@ program
               `cycle ${e.cycle}: ${e.report.fresh} fresh, ${e.report.triaged} triaged, ` +
                 `${e.report.toClaim.length} to claim (${triageSpend(e.report)})`,
             )
-            for (const line of untriagedLines(e.report)) say(`  ${line}`)
+            for (const line of [...conditionLines(e.report), ...untriagedLines(e.report)]) say(`  ${line}`)
             for (const f of e.report.failures) say(`  ! ${f}`)
             break
           }
@@ -576,6 +670,9 @@ program
           }
           case 'cycle-failed':
             say(`cycle ${e.cycle} failed: ${e.error.message}`)
+            break
+          case 'credential-refused':
+            say(`cycle ${e.cycle}: taking no new work, ${e.reason}`)
             break
           case 'sleeping':
             say(`sleeping ${e.minutes}m`)
@@ -597,21 +694,43 @@ program
 program
   .command('budget')
   .description('What each seat has left — read live where it can be, derived from observation where it cannot')
-  .action(async () => {
+  .option(
+    '--credentials',
+    "Also print each seat's credential: its hash, how many runs the provider refused it on, and " +
+      'when its next probe is due. Reads only: nothing clears a condition on request',
+  )
+  .action(async (options: { credentials?: boolean }) => {
     const config = loadConfig(program.opts()['config'])
     const repo = await repoFromCheckout(config.destination)
-    const [readings, spend, observations] = await Promise.all([
+    const [readings, rows, observations] = await Promise.all([
       readAllSeats(config.budget.seats),
-      loadSpend((path) => readLog(repo, path)),
+      loadLog((path) => readLog(repo, path)),
       loadObservations((path) => readLog(repo, path)),
     ])
     // The same figures the loop gets, so the table and the pool line below cannot disagree —
     // and so that a seat nothing can read is reported in the state it is actually in rather
     // than as one broken line.
+    const spend = runsOf(rows)
     const bounds = boundsForSeats(observations, spend, config.budget.seats)
-    process.stdout.write(renderBudget(readings, bounds, observations))
+    const now = Date.now()
+    const conditions = conditionsFrom(rows, config.conditions, now, (key) => {
+      const scope = scopeOf(key)
+      return scope?.kind === 'seat' ? readings.find((r) => r.seat.id === scope.name)?.fingerprint : undefined
+    })
+    process.stdout.write(renderBudget(readings, bounds, observations, conditions))
+    if (options.credentials === true) {
+      process.stdout.write(`\n${renderCredentials(readings, conditions, config.conditions.threshold)}`)
+    }
     for (const pool of config.budget.pools) {
-      const gate = budgetGate(config.budget, { name: '(any role)', seat: `pool:${pool.id}` }, readings, spend, bounds)
+      const gate = budgetGate(
+        config.budget,
+        { name: '(any role)', seat: `pool:${pool.id}` },
+        readings,
+        spend,
+        bounds,
+        new Date(now).toISOString(),
+        conditions,
+      )
       process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)
     }
   })
@@ -648,7 +767,11 @@ try {
     error instanceof ConfigError ||
     error instanceof StoreError ||
     error instanceof ProposeError ||
-    error instanceof GitHubError ||
+    error instanceof InitError ||
+    // The superclass of GitHubError and StateError both: every one of these carries a sentence
+    // written to be read, and a host where `gh` is missing prints it rather than a stack trace.
+    error instanceof GhError ||
+    error instanceof AppError ||
     error instanceof RoleError ||
     error instanceof TriageError ||
     error instanceof BudgetError ||
