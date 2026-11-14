@@ -32,21 +32,13 @@ an artifact for an item it has not claimed. This rule MUST NOT be configurable.
 
 ### Requirement: Assignment expresses a claim; ordering resolves it
 
-Every claiming tracker offers a native holder field, such as GitHub's `igor:<role>` label and
-Linear's delegate. A claim SHALL set the holder field, because that is the signal humans
-read, and SHALL post the claim message. Resolution SHALL rely on the storage order of writes,
-not on any conditional-write primitive.
+Every claiming tracker offers a native holder field; assignment here means that field. A claim
+SHALL set the holder field and then SHALL post the claim message; the message names the Igor and
+carries the stop instruction. Resolution SHALL rely on the storage order of writes, not on any
+conditional-write primitive.
 
-The holder field SHALL be written before the claim message. The field is what resolution reads
-and what people see; the message names the Igor and carries the stop instruction. Written in
-the other order, an Igor that fails between the two writes leaves a message claiming an item
-whose field shows nobody, which is a claim people miss. Written field first, a failure leaves
-the visible claim, and the message follows on the next cycle.
-
-Where the holder field holds a single value, the later of two writes holds the item: each Igor
-re-reads the field, and the one it no longer names has lost. Where the field holds a list, such
-as GitHub's `igor:` labels, any other holder present after the settle interval
-means the claim is lost, because a list keeps every write rather than replacing one.
+Where the holder field holds a single value, the later of two writes holds the item. Where it holds
+a list, any other holder present after the settle interval means the claim is lost.
 
 #### Scenario: Claim visible in the native field
 
@@ -80,20 +72,8 @@ means the claim is lost, because a list keeps every write rather than replacing 
 After claiming, an Igor SHALL wait a configurable settle interval, re-read the item, and stand
 down if another party holds it. Standing down MUST remove whatever still names the Igor as
 holder, and MUST NOT remove anything naming another party. On a single-valued holder field the
-losing Igor's write has already been replaced by the winner's, so clearing the field would
-remove the winner's claim; the losing Igor posts a short reply saying it is handing the item
-back, and changes nothing else.
-
-The settle interval does not apply where a person handed the item to the Igor; see *A person
-can direct an Igor through the holder field*.
-
-The re-read SHALL look for a stop said since the cycle that chose the item read it, or, for an
-item a person handed over, since the hand-over. A cycle works its items one after another, so a
-stop said on one while it works another comes after the cycle read it and before the claim;
-looking only back to the claim would miss it.
-For an item the Igor's own search found, a go-ahead later in the comments than the latest stop
-lifts it, as it would at the next cycle, and the run that follows SHALL NOT be stopped by the stop
-the claim saw lifted. For a handed-over item the stop stands.
+losing Igor posts a short reply saying it is handing the item back, and changes nothing else.
+The settle interval does not apply to an item a person handed to the Igor.
 
 #### Scenario: Claim confirmed
 
@@ -122,6 +102,14 @@ the claim saw lifted. For a handed-over item the stop stands.
 - **WHEN** an operator tunes the settle interval
 - **THEN** the new value governs subsequent verification
 
+### Requirement: A claim's re-read looks for stops since its cycle read the item
+
+The re-read that verifies a claim SHALL look for a stop said since the cycle that chose the item
+read it, or, for a handed-over item, since the hand-over. For an item the Igor's own search found, a
+go-ahead later in the comments than the latest stop lifts that stop, and the run that follows SHALL
+NOT be stopped by the stop the claim saw lifted. A handed-over item, re-read for stops though it
+waits no settle interval, stays stopped despite a go-ahead, as the stop cancelled the hand-over.
+
 #### Scenario: A stop said while the cycle worked another item
 
 - **WHEN** a cycle chooses two items, and somebody says stop on the second while the Igor works
@@ -136,12 +124,8 @@ the claim saw lifted. For a handed-over item the stop stands.
 
 ### Requirement: Stop is unconditional and open to anyone
 
-A stop directed at an Igor SHALL take effect immediately and release the claim, and MUST NOT be
-gated by identity, permission, authorization or configuration. A comment opening with "stop",
-or with names and then "stop", stops the Igors it names or, naming no one, every Igor on the item,
-and SHALL NOT stop, or take the holder entry off, any other. A name after "stop" that is no
-Igor's, or that the tracker cannot resolve, is ignored. On GitHub a name is an Igor's if
-`<name>[bot]` is a bot.
+A stop directed at an Igor SHALL take effect at once, release the claim, and MUST NOT be gated
+by identity, permission, authorization or configuration.
 
 #### Scenario: Anyone can stop an Igor
 
@@ -158,6 +142,14 @@ Igor's, or that the tracker cannot resolve, is ignored. On GitHub a name is an I
 
 - **WHEN** a stop is honoured
 - **THEN** the record names who issued it and when
+
+### Requirement: A stop is directed at the Igors it names, or at every Igor if it names none
+
+A comment is a stop directed at an Igor when it opens with "stop" and names no Igor, or when it says
+"stop" and names that Igor, as "stop @igor-backend" and "@igor-backend stop" do. No other comment is
+a stop. A stop that names an Igor SHALL NOT stop an Igor it does not name, or take off that Igor's
+holder entry. A name after "stop" that is no Igor's counts as no name, as does any name the tracker
+cannot resolve. On GitHub a name is an Igor's where GitHub has a bot `<name>[bot]`.
 
 #### Scenario: A bare stop stops every Igor on the item
 
@@ -181,43 +173,10 @@ Igor's, or that the tracker cannot resolve, is ignored. On GitHub a name is an I
 
 After a stop, eligibility SHALL be determined by the tracker's state rather than by any
 distinct pause or resume verb. A stop releases the claim by removing this Igor from the holder
-field: its `igor:<role>` label on GitHub, or itself as delegate on Linear. What the item then
+field: its `igor:<role>` label on GitHub, or itself as delegate on Linear. What the item
 shows decides what happens next, by the rules for items someone else holds and for a person
-directing an Igor.
-
-A stop cancels a hand-over. Only a new hand-over restores it: on GitHub, the label removed and
-added again. A go-ahead, or the cooldown running out, lifts the stop for work found by the
-Igor's own search, and never restores a hand-over the stop cancelled.
-
-A go-ahead is read for whom it is meant as a stop is. A bare go-ahead lifts the stop for every
-Igor on the item. A go-ahead that names Igors, as "go ahead @igor-backend", SHALL lift it only for
-the Igors it names, and SHALL NOT lift it for an Igor it does not name. A name that is no Igor's
-counts as no name, as in a stop, so "carry on, @alice approved it" lifts the stop for every Igor.
-
-Where the names are unclear, a go-ahead errs the other way from a stop, because lifting a stop by
-mistake costs more than leaving one in place. A go-ahead with no Igor's name straight after the
-phrase SHALL count the mentions later on its opening line, and a list of names that runs straight
-on into a word SHALL lose its last name, whichever of the two the go-ahead reads. Whether a
-go-ahead names an Igor is read before that loss, so one whose only Igor is the name it loses lifts
-the stop for no Igor. A name the tracker cannot resolve counts as an Igor's.
-
-The later mentions SHALL NOT be read past a line break that the opening punctuation or the list's
-last separator crossed, so "go ahead:" followed by "thanks @igor-backend" on the next line is a
-bare go-ahead and lifts the stop for every Igor (decided by Adam, 2026-10-13). This is the one
-place a go-ahead does not err toward lifting fewer stops: "go ahead:" on its own line is usually
-meant for everyone, and a mention on the next line belongs to another sentence.
-
-Where a stop is said on an item a person handed to the Igor while no run of the Igor is active
-on it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field
-and post a stop receipt, so that an item showing the Igor in its holder field is always one
-handed to it.
-
-On GitHub, when an Igor finds its `igor:<role>` label gone, it SHALL read the latest
-`unlabeled` event for that label from the issue's events. If that event's actor is the Igor's
-own bot account, the removal was the Igor's own release. If the actor is anyone else, the
-removal is a stop by that person: the Igor SHALL halt, and its stop receipt SHALL name them.
-These two cases are exhaustive, because an Igor that loses a race removes only its own label,
-never another Igor's.
+directing an Igor. A go-ahead, or the cooldown running out, lifts the stop for work the Igor's
+own search found.
 
 #### Scenario: A human takes the item
 
@@ -237,48 +196,21 @@ never another Igor's.
 - **WHEN** someone signals on the surface that work may resume
 - **THEN** the item becomes eligible immediately
 
-#### Scenario: A bare go-ahead lifts the stop for every Igor
+#### Scenario: No second verb exists
 
-- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead"
-  without naming anyone
-- **THEN** the stop is lifted for both Igors
+- **WHEN** a party wishes to pause rather than stop
+- **THEN** they issue a stop
+- **AND** resumption follows from tracker state, with no separate pause command defined
 
-#### Scenario: A go-ahead that names an Igor lifts the stop only for that one
+### Requirement: A stop cancels a hand-over
 
-- **WHEN** somebody says stop on an item two Igors work, and somebody then says
-  "go ahead @igor-backend"
-- **THEN** the stop is lifted for the backend Igor
-- **AND** the frontend Igor stays stopped until the cooldown runs out or a go-ahead meant for it
+A stop cancels a hand-over. Only a new hand-over restores it: on GitHub, the label removed and added
+again. Neither a go-ahead nor the cooldown's end restores it.
 
-#### Scenario: A go-ahead whose name comes later on its line
-
-- **WHEN** somebody says stop on an item two Igors work, and somebody then says
-  "go ahead and pick it back up, @igor-backend"
-- **THEN** the stop is lifted for the backend Igor only
-
-#### Scenario: A go-ahead on its own line is bare
-
-- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead:" with
-  "thanks @igor-backend" on the next line
-- **THEN** the stop is lifted for both Igors
-
-#### Scenario: A go-ahead whose list runs on into the next clause
-
-- **WHEN** somebody says stop on an item two Igors work, and somebody then says
-  "go ahead @igor-backend, @igor-frontend keep waiting"
-- **THEN** the stop is lifted for the backend Igor only
-
-#### Scenario: A go-ahead whose run-on list loses its only Igor
-
-- **WHEN** somebody says stop on an item two Igors work, and somebody then says
-  "go ahead @alice, @igor-frontend keep waiting", and `@alice` is a person
-- **THEN** the stop is lifted for neither Igor
-
-#### Scenario: A go-ahead that names only a person lifts the stop for every Igor
-
-- **WHEN** somebody says stop on an item two Igors work, and somebody then says
-  "carry on, @alice approved it", and `@alice` is a person
-- **THEN** the stop is lifted for both Igors
+Where a stop is said on an item a person handed to the Igor while no run of the Igor is active on
+it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field and
+post a stop receipt. A catch-up, in the scenarios below, is the Igor bringing its own
+pull request up to date.
 
 #### Scenario: Handing the item back to the Igor is a go-ahead
 
@@ -305,6 +237,72 @@ never another Igor's.
   request on that issue no longer merges
 - **THEN** the Igor brings that pull request up to date without waiting the cooldown
 
+### Requirement: A go-ahead lifts a stop only for the Igors it names
+
+A go-ahead is read for whom it is meant as a stop is. A bare go-ahead lifts the stop for every Igor
+on the item. A go-ahead that names Igors, as "go ahead @igor-backend", SHALL lift it only for the
+Igors it names, and SHALL NOT lift it for an Igor it does not name. A name that is no Igor's counts
+as no name, as in a stop. A name the tracker cannot resolve counts as an Igor's, making the go-ahead
+a named one: unlike a stop, a go-ahead errs toward lifting fewer stops.
+
+#### Scenario: A bare go-ahead lifts the stop for every Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead"
+  without naming anyone
+- **THEN** the stop is lifted for both Igors
+
+#### Scenario: A go-ahead that names an Igor lifts the stop only for that one
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @igor-backend"
+- **THEN** the stop is lifted for the backend Igor
+- **AND** the frontend Igor stays stopped until the cooldown runs out or a go-ahead meant for it
+
+#### Scenario: A go-ahead that names only a person lifts the stop for every Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "carry on, @alice approved it", and `@alice` is a person
+- **THEN** the stop is lifted for both Igors
+
+### Requirement: A go-ahead's names are read from its opening line
+
+A go-ahead with no Igor's name straight after its phrase SHALL count later mentions on its opening
+line. Wherever its names are read from, a list whose last name runs unpunctuated into words SHALL
+lose that last name. A go-ahead that named an Igor before that loss still counts as named, so one
+whose only Igor's name was lost lifts the stop for no Igor. Later mentions SHALL NOT be read across
+a line break that follows the phrase's punctuation, as in "go ahead:", or the list's last separator.
+
+#### Scenario: A go-ahead whose name comes later on its line
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead and pick it back up, @igor-backend"
+- **THEN** the stop is lifted for the backend Igor only
+
+#### Scenario: A go-ahead on its own line is bare
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead:" with
+  "thanks @igor-backend" on the next line
+- **THEN** the stop is lifted for both Igors
+
+#### Scenario: A go-ahead whose list runs on into the next clause
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @igor-backend, @igor-frontend keep waiting"
+- **THEN** the stop is lifted for the backend Igor only
+
+#### Scenario: A go-ahead whose run-on list loses its only Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @alice, @igor-frontend keep waiting", and `@alice` is a person
+- **THEN** the stop is lifted for neither Igor
+
+### Requirement: On GitHub, a label removed by anyone but the Igor is a stop
+
+On GitHub, when an Igor finds its `igor:<role>` label gone, it SHALL read the latest
+`unlabeled` event for that label from the issue's events. If that event's actor is the Igor's
+own bot account, the removal was the Igor's own release. If the actor is anyone else, the
+removal is a stop by that person: the Igor SHALL halt, and its stop receipt SHALL name them.
+
 #### Scenario: A person removing the label is a stop that names them
 
 - **WHEN** an Igor working a GitHub issue finds its `igor:<role>` label gone, and the latest
@@ -318,57 +316,15 @@ never another Igor's.
   label was made by the Igor's own bot account
 - **THEN** the removal is the Igor's own release, and it posts no stop receipt
 
-#### Scenario: No second verb exists
-
-- **WHEN** a party wishes to pause rather than stop
-- **THEN** they issue a stop
-- **AND** resumption follows from tracker state, with no separate pause command defined
-
 ### Requirement: A claim that cannot be kept is given back, out loud
 
-`work-claiming` says how a claim is taken, verified, stood down from and stopped. It says nothing
-about the run that takes one and then cannot continue, and that silence is the gap: an Igor that
-throws while holding a claim leaves the item held, other people told to stand off, and no
-explanation.
+Where a run holding a claim cannot go on, whether taking the claim or anything after it failed, the
+Igor SHALL release the claim and say so on the item, never ending such a run silently holding the
+claim. A finished run SHALL release its claim too, leaving its artifact and the item open; no role
+setting changes that.
 
-Where a run holds a claim and cannot go on — the claim could not be finished, or anything after it
-failed — the Igor SHALL release the claim and say so on the item. It SHALL NOT end such a run
-holding the claim in silence.
-
-A run that finishes SHALL release its claim too, leaving its artifact in place and the item open,
-so the item is rediscovered and the work in flight keeps it from being claimed again. No role
-setting changes this.
-
-**Giving the claim back never takes back a person's hand-over.** Where a person put the Igor in
-the holder field, as by adding its `igor:<role>` label, and the run is the Igor bringing its own
-artifact up to date rather than answering that hand-over, releasing the claim SHALL leave that
-holder entry in place, except where a person stops the Igor: a stop removes the Igor from the
-holder field, as every stop does, and the person hands the item over again by adding it anew. Bringing its own work up to date is not a claim of the hand-over (*An item
-handed to an Igor waits for work already in flight*), and removing the person's entry would spend
-a hand-over the Igor has not answered.
-
-**Where the release does not succeed either**, the Igor SHALL say that instead of saying it
-released. The item still carries the Igor's name, so a message asserting release would be false
-where somebody is looking; what is said SHALL name the item as still held and SHALL name the one
-action that frees it.
-
-**A failure of the surface is not a failure of the item.** Where a run ends this way because a
-tracker or host did not answer, that SHALL be distinguishable from a refusal about the item
-itself, and a cycle meeting **two in a row** SHALL stop rather than attempting the remaining
-items. Nothing about the item produced the outcome, so every remaining item would reach the same
-one — and doing so speaks on each of them, at a volume that is itself a cause of the failure.
-
-Two, not one, because the run cannot tell the two causes apart: `produce` fails inside the worker
-call for a branch the item already owns, while a tracker that does not answer the release that
-ends a finished run fails outside it, so neither the error nor how far the run got separates them. How many items they
-affect does — an outage fails every item and a bad item fails one — so the count is the
-distinction. A cycle that met one and then ran an item cleanly did not fail, and SHALL NOT be
-recorded as failed.
-
-**A write says what the surface recorded.** Where the Igor asks a surface to say or to release
-something, the answer SHALL carry what was recorded, not merely that no error was raised. A raised
-error cannot separate *this did not happen* from *this happened and the answer was lost*, and a
-caller that must tell them apart cannot do it from a thrown error alone.
+If the release fails too, the Igor SHALL say that, not that it released, and SHALL name the one
+action that frees it: removing the Igor from the item's holder field on that surface.
 
 #### Scenario: A finished run releases its claim
 
@@ -391,12 +347,45 @@ caller that must tell them apart cannot do it from a thrown error alone.
 
 - **WHEN** a claim cannot be kept and releasing it does not clear the holder
 - **THEN** what is said names the item as still held rather than as released
-- **AND** it names the action that frees it
+- **AND** it names the action that frees it, such as removing the Igor's `igor:<role>` label on
+  GitHub or its delegate on Linear
 
 #### Scenario: A failure after the claim hands the item back
 
 - **WHEN** a run holding a claim fails at any point after taking it
 - **THEN** the claim is handed back with an explanation on the item
+
+### Requirement: Giving a claim back never takes back a person's hand-over
+
+Where a person put the Igor in the holder field and the run is the Igor bringing its own artifact
+up to date rather than answering that hand-over, releasing the claim SHALL leave that holder entry
+in place, except where a person stops the Igor: a stop removes the Igor from the holder field, and
+the person hands the item over again by adding it anew. Bringing its own work up to date is not a
+claim of the hand-over (*An item handed to an Igor waits for work already in flight*).
+
+#### Scenario: A catch-up gives its claim back and keeps a person's label
+
+- **WHEN** an Igor brings its own pull request up to date on an issue whose `igor:<role>` label a
+  person added, and the run ends other than by a stop
+- **THEN** the label is still on the issue afterwards
+- **AND** once that pull request closes, the label directs the Igor as for any hand-over
+
+#### Scenario: A stop during a catch-up takes the label off
+
+- **WHEN** a person stops an Igor while it brings its own pull request up to date on an issue
+  whose `igor:<role>` label a person added
+- **THEN** the label is removed, and the stop receipt says the Igor released the issue
+- **AND** adding the label again later hands the issue over again
+
+### Requirement: Two runs in a row that the surface failed stop a cycle
+
+A run holding a claim that ends because a tracker or host did not answer, including a finished run
+whose release went unanswered, SHALL be distinguishable from a refusal about the item itself. A
+cycle meeting two such runs in a row SHALL stop instead of attempting the rest; one that met one and
+then ran an item cleanly SHALL NOT be recorded as failed.
+
+To tell the two apart, a surface asked to say or release something SHALL answer with what was
+recorded, not merely that no error was raised.
 
 #### Scenario: A cycle stops when the surface stops answering
 
@@ -412,20 +401,6 @@ caller that must tell them apart cannot do it from a thrown error alone.
 
 - **WHEN** a claim is refused because the tracker did not record it
 - **THEN** the cycle continues to the remaining items
-
-#### Scenario: A catch-up gives its claim back and keeps a person's label
-
-- **WHEN** an Igor brings its own pull request up to date on an issue whose `igor:<role>` label a
-  person added, and the run ends other than by a stop
-- **THEN** the label is still on the issue afterwards
-- **AND** once that pull request closes, the label directs the Igor as for any hand-over
-
-#### Scenario: A stop during a catch-up takes the label off
-
-- **WHEN** a person stops an Igor while it brings its own pull request up to date on an issue
-  whose `igor:<role>` label a person added
-- **THEN** the label is removed, and the stop receipt says the Igor released the issue
-- **AND** adding the label again later hands the issue over again
 
 ### Requirement: An organization's Igors claim on one tracker
 
@@ -541,12 +516,8 @@ Linear's delegate and GitHub's `igor:` label are each distinct from the assignee
 
 Where a person sets the holder field to name an Igor, the Igor SHALL treat the item as directed
 to it. On the next cycle that finds the item, it SHALL post the claim message, naming itself and
-carrying the stop instruction, and SHALL begin work without waiting the settle interval. No
-other Igor competes for an item that names a holder, and the person has already chosen. A stop,
+carrying the stop instruction, and SHALL begin work without waiting the settle interval. A stop,
 or a person removing the Igor from the holder field, SHALL halt it at any time, as for any claim.
-
-On Linear a person directs an Igor by delegating to it. On GitHub a person directs an App Igor
-by adding its `igor:<role>` label.
 
 #### Scenario: Delegated by a person
 
@@ -568,22 +539,11 @@ by adding its `igor:<role>` label.
 
 ### Requirement: An item handed to an Igor waits for work already in flight
 
-Where a person hands an item to an Igor through its holder field, and the item already has work
-in flight, such as an open pull request, the Igor SHALL NOT claim it. On the next cycle that
-finds the item, it SHALL post one comment naming the work in flight and saying it takes the item
-up once that work closes, and SHALL NOT post it again while that work is open. Once the work
-closes, the hand-over directs the Igor as in *A person can direct an Igor through the holder
-field*. Claiming would duplicate work already in review, which no hand-over overrides, and
-saying nothing would leave the person who asked with no sign the Igor saw the request.
-
-Where the work in flight is the Igor's own pull request and it no longer merges, bringing it up
-to date is the Igor's own work on its own artifact, not a claim of the hand-over, and the item
-gets no such comment while that runs.
-
-Where a handed-over item's run published work and then could not finish, its handoff SHALL say
-that what it published stands and that, once that work closes, handing the item over again has
-the Igor try again. Handing it over while the work is still open changes nothing, so the
-handoff SHALL NOT suggest it.
+Where a person hands an item to an Igor through its holder field and the item has work in
+flight, such as an open pull request, the Igor SHALL NOT claim it. The next cycle that finds it
+SHALL post one comment naming the work and saying the Igor takes the item up once it closes, and
+SHALL NOT repeat it while the work is open. Bringing the Igor's own pull request up to date when
+it no longer merges is not a claim of the hand-over, and draws no such comment.
 
 #### Scenario: Handed over while a pull request is open
 
@@ -592,11 +552,23 @@ handoff SHALL NOT suggest it.
 - **AND** it posts one comment naming that pull request and saying it takes the issue up once
   the pull request closes
 
+### Requirement: A hand-over that waited for work in flight takes effect once it closes
+
+Once the work in flight on a handed-over item closes, the hand-over SHALL direct the Igor as in
+*A person can direct an Igor through the holder field*.
+
 #### Scenario: The pull request closes
 
 - **WHEN** the pull request closes and the `igor:frontend` label is still on the issue
 - **THEN** on its next cycle the `frontend` Igor posts the claim comment and starts work
   without waiting the settle interval
+
+### Requirement: A handed-over run that published and then failed says how to try again
+
+Where a handed-over item's run published work and then could not finish, its handoff SHALL say
+that what it published stands and that, once that work closes, handing the item over again has
+the Igor try again. The handoff SHALL NOT suggest handing the item over while that work is
+still open.
 
 #### Scenario: A handed-over run published, then failed
 
@@ -606,19 +578,11 @@ handoff SHALL NOT suggest it.
 
 ### Requirement: A person reassigns an issue by removing the holding Igor's label first
 
-Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that carries another
-Igor's `igor:` label, the newly labelled Igor SHALL NOT claim it. On the next cycle that finds
-the issue, it SHALL post one comment saying which Igor holds the issue and that removing that
-Igor's label hands the issue over. It SHALL NOT post the comment again while the issue's labels
-are unchanged. Once the other Igor's label is gone, the person's label directs this Igor, by *A
-person can direct an Igor through the holder field*. This matches Linear, where a person
-replaces a delegate rather than adding a second. Work that needs two roles is split into two
-issues, one per role.
-
-A label a person added SHALL NOT make the Igor holding the issue lose its claim, even during
-its settle interval. A label another Igor added while claiming is resolved by the settle
-interval, as in *A claim is verified after a settle interval*. The adapter SHALL tell the two
-apart by who added the label, read from the issue's events.
+Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that carries another Igor's
+`igor:` label, the newly labelled Igor SHALL NOT claim it. On the next cycle finding the issue, it
+SHALL post one comment saying which Igor holds it and that removing that Igor's label hands it over,
+and SHALL NOT repeat it while the labels are unchanged. Once the other Igor's label is gone, the
+person's label directs this Igor. Work that needs two roles takes two issues, one per role.
 
 #### Scenario: Person labels a second Igor
 
@@ -635,6 +599,13 @@ apart by who added the label, read from the issue's events.
 - **AND** the `frontend` Igor posts the claim comment and starts work without waiting the
   settle interval
 
+### Requirement: A label a person added is not a competing claim
+
+A label a person added SHALL NOT make the Igor holding the issue lose its claim, even during
+its settle interval. A label another Igor added while claiming is resolved by the settle
+interval. The adapter SHALL tell the two apart by who added the label, read from the issue's
+events.
+
 #### Scenario: Another Igor's own label is still a race
 
 - **WHEN** an Igor finds another Igor's `igor:` label on an issue it is claiming, and the
@@ -644,21 +615,9 @@ apart by who added the label, read from the issue's events.
 ### Requirement: An issue created from chat points back to the chat
 
 Where an Igor creates an issue because a person instructed it in chat, the issue's description
-SHALL link the chat message that asked for the work, and MAY also quote it, so that whoever
-reads the issue sees where the request came from. After creating the issue, the Igor SHALL post
-a message in that chat with a link to the issue. The issue is created on the claiming tracker,
-and any claim on it is taken there.
-
-Before creating an issue from a chat message, the Igor SHALL look on the claiming tracker for
-an issue that already links that message, and SHALL create none if one exists. This check, not
-any record of which messages were handled, is what prevents a duplicate issue: such a record
-only saves work, and losing it costs API calls, never a second issue. How the tracker is
-searched for the link belongs to the adapter.
-
-When the check finds such an issue, the Igor SHALL post that issue's link in the chat if the
-chat has no reply with that link yet, and SHALL otherwise do nothing. So an Igor that stopped
-between creating the issue and posting its link posts the link on its next read of the
-message, and reading the message again never posts the link twice.
+SHALL link the chat message that asked for the work, and MAY also quote it. After creating the
+issue, the Igor SHALL post a message in that chat with a link to the issue. The issue is created
+on the claiming tracker, and any claim on it is taken there.
 
 #### Scenario: Instructed in chat
 
@@ -666,6 +625,15 @@ message, and reading the message again never posts the link twice.
 - **THEN** the Igor creates an issue on the claiming tracker whose description links the chat
   message
 - **AND** it then posts the issue's link in the chat
+
+### Requirement: Before making an issue from chat, an Igor looks for one that links the message
+
+Before creating an issue from a chat message, the Igor SHALL look on the claiming tracker for
+an issue that already links that message, and SHALL create none if one exists. That check, not
+any record of which messages were handled, is what prevents a duplicate issue. When the check
+finds such an issue, the Igor SHALL post that issue's link in the chat if the chat has no reply
+with that link yet, and SHALL otherwise do nothing. How the tracker is searched for the link
+belongs to the adapter.
 
 #### Scenario: An issue links the message, and its link was never posted
 

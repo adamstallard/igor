@@ -138,12 +138,12 @@ silently.
 
 ### Requirement: Reconciliation happens on invocation, not on a timer
 
-The tool SHALL reconcile outstanding proposals when invoked: promote what merged, record what
-was rejected, and report pull requests quiet past a configured window to escalate to the
-store's `reviewers`. A merge-triggered job in the destination, like the one `init` writes, is an
-invocation and SHALL run reconciliation. No event, such as a merge, SHALL promote an entry
-except through reconciliation; a person promoting by hand is not one. Reconciliation MUST be
-idempotent over what it has settled.
+The tool SHALL reconcile outstanding proposals when invoked: promote what merged, record what was
+rejected, and report pull requests quiet past a configured window to escalate to the store's
+`reviewers`. A merge-triggered job in the destination is such an invocation and SHALL run
+reconciliation. A merge or any other event SHALL promote an entry only through reconciliation;
+activating an entry by hand, the manual repair, is not an event. Reconciliation MUST be idempotent
+over what it has settled.
 
 #### Scenario: Merged proposal promoted on the next run
 
@@ -171,8 +171,8 @@ idempotent over what it has settled.
 
 #### Scenario: Already promoted by repository automation
 
-- **WHEN** entries were already set active by an earlier reconciliation, whether the
-  merge-triggered job or a person ran it
+- **WHEN** entries were already set active before this reconciliation runs, by repository
+  automation (the merge-triggered job's reconciliation) or by an earlier invocation
 - **THEN** reconciliation leaves them unchanged
 - **AND** records no second approval
 
@@ -220,11 +220,11 @@ the check does not require a network call.
 
 ### Requirement: Lore reaches the default branch by pull request
 
-Every change to an entry SHALL reach the default branch through a pull request. Igor SHALL
-recommend "Require a pull request before merging" to every destination, including one with a
-single writer, and SHALL NOT recommend "Require approvals". Setup documentation SHALL state this
-and that an entry committed directly stays `provisional` and never fires. A person SHALL be able
-to promote it in place with a command, recorded as its approver; no event SHALL run that command.
+Every change to an entry SHALL reach the default branch by pull request. Igor cannot enforce this,
+so an entry committed without one is never promoted automatically. "Require a pull request before
+merging" SHALL be recommended everywhere; "Require approvals" SHALL NOT be. Setup documentation
+SHALL state this and what becomes of an entry committed directly. Activating one in place SHALL stay
+available as a manual repair, recording its runner as approver; it MUST NOT be wired to an event.
 
 #### Scenario: Entry committed straight to the default branch
 
@@ -236,7 +236,8 @@ to promote it in place with a command, recorded as its approver; no event SHALL 
 
 - **WHEN** a destination has one writer
 - **THEN** requiring a pull request before merging is still recommended
-- **AND** requiring approvals is still not
+- **AND** requiring approvals is still not, since GitHub lets nobody approve their own pull
+  request
 
 #### Scenario: Setup documentation states the consequence
 
@@ -251,31 +252,11 @@ to promote it in place with a command, recorded as its approver; no event SHALL 
 
 ### Requirement: An entry already in the store is never overwritten by proposing
 
-Proposing SHALL gate candidate ids against the store as it stands on the tree it commits onto —
-the default branch, at the sha the proposal is built on — rather than against the checkout it is
-run from, and a candidate whose id is taken there, by an entry or by a rejection, SHALL NOT be
-carried in the pull request. The gate and the commit SHALL read that one sha, so nothing can take
-an id between them.
-
-Minting an id SHALL gate against the store as it stands on that branch, read when the id is made,
-as well as against the checkout. An id free in the checkout and taken on the branch is therefore
-never handed out; an id taken after it was minted is not minting's to rule out, and proposing
-refuses it. Where the branch cannot be read while minting, what could not be checked SHALL be
-reported and the id gated against the checkout alone — the collision then reaches proposing,
-which reads the branch unconditionally.
-
-Where the id moves because the branch holds the name the claim derives, minting SHALL say so, and
-SHALL say whether that name is held by an entry or by a rejection. Nothing downstream catches the
-case behind it: an id that moved is free on that branch, so a second entry making a claim already
-there — or one review has already turned down — is proposed like any other. Minting SHALL stay
-silent where the checkout already holds that name in the same kind, the entry or the rejection
-being in front of the person already, and SHALL speak where the kinds differ: a name the checkout
-holds as an entry and the branch as a rejection is the case worth stopping for.
-
-This governs the id space and nothing else. A checkout that is behind is still behind on the
-configuration committed beside the store, and on where in the repository the store is read from;
-neither is addressed here, and this requirement does not make proposing from a behind checkout
-correct in general.
+Proposing SHALL gate candidate ids against the store on the tree it commits onto, the default branch
+at the sha the proposal is built on, rather than against the checkout it is run from. A candidate
+whose id is taken there, by an entry or by a rejection, SHALL NOT be carried in the pull request.
+The gate and the commit SHALL read that one sha. This governs the id space only: a behind checkout
+is still behind on the configuration beside the store and on where the store is read from.
 
 #### Scenario: A candidate whose id is already an entry on the default branch
 
@@ -289,6 +270,20 @@ correct in general.
 - **WHEN** the default branch records a rejection for a candidate's id and the checkout does not
   have it
 - **THEN** that candidate is not proposed, as a rejected candidate never is
+
+#### Scenario: The store is too large to read in one request
+
+- **WHEN** the listing of a store directory comes back short of what it holds
+- **THEN** proposing refuses rather than gating against part of the store
+
+### Requirement: Minting an id checks the default branch and says when the id moved
+
+Minting an id SHALL gate against the checkout and against the default branch's store, read when the
+id is made. Where that branch cannot be read, minting SHALL report that and gate against the
+checkout alone. Where minting hands out another id because the branch holds the name derived from
+the entry's claim, it SHALL say so and whether an entry or a rejection holds the name. It SHALL stay
+silent where the checkout holds that name in the same kind as the branch, and speak where the kinds
+differ.
 
 #### Scenario: An id minted on a behind checkout
 
@@ -326,9 +321,3 @@ correct in general.
 - **WHEN** an id is created and the default branch cannot be read
 - **THEN** what could not be checked is reported
 - **AND** the id is gated against the checkout alone rather than against nothing
-
-#### Scenario: The store is too large to read in one request
-
-- **WHEN** the listing of a store directory comes back short of what it holds
-- **THEN** proposing refuses rather than gating against part of the store
-

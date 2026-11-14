@@ -94,6 +94,12 @@ get found wrong before anything is public — and given that a real run has alre
 this design three times on the lore side, the milestone that produces observations without
 consequences is worth reaching first.
 
+**A first run does not face the whole backlog.** A source with no watermark yet considers only
+items updated within a bounded look-back window. Without that bound, an Igor pointed at an
+established repository would spend its first cycle triaging years of open work, and post claims
+on whatever of it triage chose. An
+older item reaches an Igor only when a person updates it or hands it over.
+
 ## Risks / Trade-offs
 
 - **A misfiring Igor is visible to colleagues** → Reach dry-run first; reversible artifacts
@@ -141,6 +147,44 @@ consequences is worth reaching first.
 - **The handoff is composed from state, without a model call.** Reserving budget for it was
   rejected — the situation demanding a handoff is often one where no call can be made, so a
   handoff depending on the thing that just failed is not a handoff.
+- **A stop directed at the Igor posts no handoff.** Composing one would delay a release meant to
+  be immediate, and the reason for a handoff does not apply: whoever issued the stop is
+  presumably taking the work.
+
+**`budget_share` is a ceiling, not a reservation.** A reservation would idle capacity a quiet
+role is not using, and adding a role would mean editing every other role to make room. A
+ceiling composes, inherits monotonically like every other permission, and needs no
+coordination when the fleet changes.
+
+**A person may declare a seat's capacity, never its usage** (*Usage is read from the seat, not
+supplied by a person*; *A declared capacity is a starting figure for each window it names*).
+Usage, how full a window is now, changes by the minute, so nobody can supply it usefully.
+Capacity is a property of the plan and changes rarely, so a person can state it as a starting
+figure.
+
+A declared capacity is per window because everything that uses it is: the bound is
+`(1 − reserve) × capacity` within a window, and reporting is per seat and per window. A seat
+has two windows, the five-hour session and the week, and neither's capacity is derived from the
+other's by the ratio of their lengths. That would assume the two limits are proportional, and a
+provider sets two limits precisely because they are not.
+
+A reserved seat with no capacity figure is passed over, so no spend is ever recorded against it
+and no capacity can be derived for it. A declared figure breaks that loop: it needs no
+observation and no recorded spend. It is reported as declared, so nobody mistakes an assumption
+for a measurement. Even capacity moves, as when the provider changes the weekly allowance for
+every subscriber, so a declared figure is a starting point, not a constant.
+
+**Recorded spend divides a seat's use among its roles.** Where no usage reading gives a seat's
+window percentages, recorded spend is the only measure of what has been used: it apportions the
+seat between roles, and against a capacity figure, from an earlier observation or a declaration,
+it decides whether the seat has anything left. A subscription bills nothing per call, so an
+amount billed would always be zero. Cost is therefore recorded as its equivalent at list prices,
+which grows with what each call consumes of the window.
+
+**Budget reporting states what each seat has left, and where each figure came from.** Headroom
+derived from a limit error an hour ago and headroom derived from a month-old reading are not the
+same claim. Reporting each seat's headroom with its source and age lets an operator tell a
+calibrated seat from a stale one, and either from a seat never measured.
 
 ## What the first supervised run contradicted
 

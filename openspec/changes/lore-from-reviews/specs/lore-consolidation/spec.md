@@ -1,3 +1,9 @@
+## Purpose
+
+Turn mined review comments into candidate lore entries: cluster related corrections, draft one
+candidate per cluster, derive predicates from source paths, deduplicate against existing entries,
+and give each candidate a scope label naming who it applies to (`global`, a role or a project).
+
 ## ADDED Requirements
 
 ### Requirement: Related corrections are clustered into candidate rules

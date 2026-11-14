@@ -1,3 +1,10 @@
+## Purpose
+
+Mine a configured set of repositories' pull request review comments for corrections that carry
+signal: extract them, keep those on merged pull requests that the host can anchor to a line,
+record a comment as `stuck` when the host no longer anchors it in the final diff, exclude bots, weight
+each comment by its author, and filter out nits.
+
 ## ADDED Requirements
 
 ### Requirement: Review comments are extracted only from configured repositories

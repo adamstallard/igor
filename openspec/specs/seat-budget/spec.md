@@ -32,19 +32,11 @@ consume. A role SHALL reference the seat it spends from.
 
 ### Requirement: A pool is an ordered list of seats, and order is the allocation mechanism
 
-Organization configuration MAY declare pools, each an **ordered** list of seat identifiers. A
-role referencing a pool SHALL spend from the first seat in that list with headroom remaining.
-A role MAY reference a single seat instead, for an Igor that must never draw on a shared one.
-
-Ordering is what expresses the common arrangement — some dedicated capacity, plus whatever the
-team has spare — without a separate overflow concept. A seat nobody works on declares no
-reserve; a person's seat declares one, and is listed after the dedicated seats so it is drawn
-on last.
-
-A seat declaring a reserve is drawn on only once it has a capacity figure — observed, or
-declared as a `capacity_estimate` — because a fraction of an unknown quantity bounds nothing.
-The overflow position in a pool is therefore conditional on that seat having a figure, and a
-pool whose only reserved seat has neither has nothing to overflow into.
+Organization configuration MAY declare pools, each an **ordered** list of seat identifiers. A role
+referencing a pool SHALL spend from the first seat in that list with headroom. A role MAY reference
+a single seat instead. In the expected setup, unchecked, a dedicated seat declares no reserve, and a
+person's seat declares one and is listed after those, so it is drawn on last. A seat declaring a
+reserve is drawn on only once it has a capacity figure, observed or declared (`capacity_estimate`).
 
 #### Scenario: Dedicated capacity is consumed before a person's
 
@@ -81,10 +73,6 @@ A role's `budget_share` SHALL bound what that role may consume from its pool. It
 reserve capacity for that role, and shares across roles MUST NOT be required to sum to one —
 several roles may each declare the same ceiling.
 
-Reservations were rejected: they would idle capacity a quiet role is not using, and adding a
-role would require editing every other role to make room. A ceiling composes, inherits
-monotonically like every other permission, and needs no coordination when the fleet changes.
-
 #### Scenario: Ceilings need not sum to one
 
 - **WHEN** three roles sharing a pool each declare a share of 0.4
@@ -117,23 +105,12 @@ the time, so the question is answerable from the record.
 
 ### Requirement: The reserve is untouchable
 
-An Igor SHALL treat the seat's reserve as unavailable. The reserve SHALL be enforced as a bound
-on what Igors themselves spend — recorded spend against the seat, summed across every Igor and
-role drawing on it within the window, SHALL NOT exceed `(1 − reserve) × capacity` — rather than
-as a distance from a reading of how full the seat is. Work MUST stop at that bound rather than
-at exhaustion, so that a person sharing the seat retains capacity.
-
-Bounding Igor's own spend guarantees the owner's floor by construction: whatever the owner does
-with the rest of the window, the fraction Igors can have taken from it is capped, and no
-observation of the owner is required. That independence is the point — the floor holds while
-observations are stale, sparse or absent, which is the normal condition. The subscription behind
-a seat is shared with that person's Claude on web, desktop and mobile, not only with Claude
-Code, so the consumer Igor sees least of is the largest one, and a floor whose enforcement
-waited on a current reading of them would lapse exactly when readings stopped arriving.
-
-Every Igor drawing on a seat writes its executions to the same state branch, so the sum is
-recoverable from one record and Igors sharing a seat with each other stay within one bound. A
-person is the only consumer that keeps no books.
+An Igor SHALL treat the seat's reserve as unavailable, enforced as a cap on what Igors spend, not
+as a threshold on a reading of how full the seat is: recorded spend against the seat, summed across
+every Igor and role drawing on it within the window, SHALL NOT exceed `(1 − reserve) × capacity`.
+Every Igor on the seat records its executions to the same state branch, so the sum can be read.
+Work MUST stop at that bound rather than at exhaustion, so that a person sharing the seat retains
+capacity.
 
 #### Scenario: Igor stops at the reserve
 
@@ -160,36 +137,10 @@ person is the only consumer that keeps no books.
 
 ### Requirement: Usage is read from the seat, not supplied by a person
 
-Remaining capacity SHALL be established from the seat itself — read directly where the seat's
-credential yields a reading, and otherwise derived from recorded observations of that seat and
-recorded spend against it. The system MUST NOT require a person to submit a usage figure.
-
-A capacity MAY be declared in configuration as `capacity_estimate`, a starting figure per seat
-**and per window**, and SHALL be superseded by any observation of that seat and window rather
-than averaged with one.
-One figure cannot serve both: every consumer is per window — the bound is `(1 − reserve) ×
-capacity` within a window, and reporting is per seat and per window. Deriving one window's
-capacity from the other's by their cadence ratio would assume the two limits are proportional,
-which is the thing two independent limits exist to deny: were a session exactly a 168th of a
-week, the weekly limit would forbid nothing the session limit already forbids. A seat MAY
-declare one window and not the other; the undeclared one is simply unobserved until it is. A
-declared figure needs neither an observation nor recorded spend, which is what it is for: a
-reserved seat with no figure at all is passed over rather than spent from, so without one
-nothing ever accumulates for a derivation to divide. It is reported as declared until an
-observation replaces it, so nobody mistakes an assumption for a measurement.
-
-What must never be configured is a *usage figure*. Capacity is a property of the plan and
-changes rarely; how full the window is right now changes by the minute and is the thing a
-person cannot supply usefully. Even capacity is not fixed — the provider has moved the weekly
-allowance for every subscriber at least once, without any plan changing — so a declared figure
-is a starting point with a shelf life and not a constant.
-
-A reading is available only to a credential the provider can resolve a subscription for. The
-credential a seat holds is a `setup-token` one, which carries no subscription identity, so the
-provider reports a per-invocation cost summary instead of window percentages and there is
-nothing to read. Where a reading can be taken it remains the better answer and is taken; its
-absence must bound the seat rather than blind the system to it, because a seat nothing can
-measure is otherwise a seat with no ceiling at all.
+A seat's usage, and so what it has left, SHALL be established from the seat itself: read through its
+credential where that yields a reading, otherwise derived from its recorded observations and spend.
+The system MUST NOT require a person to submit a usage figure, nor SHALL a usage figure ever be
+configured.
 
 #### Scenario: Capacity established without a person
 
@@ -198,18 +149,6 @@ measure is otherwise a seat with no ceiling at all.
 - **AND** otherwise capacity is derived from recorded observations of that seat and recorded
   spend against it
 - **AND** no human supplies how full the window is, in either case
-
-#### Scenario: A declared capacity gets a reserved seat started
-
-- **WHEN** a seat declares both a reserve and a capacity, and has no observation
-- **THEN** the declared capacity bounds it and it may be spent from
-- **AND** the figure is reported as declared rather than observed
-
-#### Scenario: An observation supersedes what was declared
-
-- **WHEN** a seat with a declared capacity is observed
-- **THEN** the observed capacity is used and the declared one is not combined with it
-- **AND** later observations supersede earlier ones in the same way
 
 #### Scenario: A seat is read through its own credential
 
@@ -234,6 +173,25 @@ measure is otherwise a seat with no ceiling at all.
 - **WHEN** one seat of several cannot be read
 - **THEN** the others are still reported and still usable
 
+### Requirement: A declared capacity is a starting figure for each window it names
+
+A seat MAY declare a `capacity_estimate` in configuration, a starting figure **per window**, for one
+window or both; a window it leaves undeclared has no capacity figure until an observation of it
+arrives. Any observation of that seat and window SHALL supersede the figure rather than be averaged
+with it; until then the figure is reported as declared.
+
+#### Scenario: A declared capacity gets a reserved seat started
+
+- **WHEN** a seat declares both a reserve and a capacity, and has no observation
+- **THEN** the declared capacity bounds it and it may be spent from
+- **AND** the figure is reported as declared rather than observed
+
+#### Scenario: An observation supersedes what was declared
+
+- **WHEN** a seat with a declared capacity is observed
+- **THEN** the observed capacity is used and the declared one is not combined with it
+- **AND** later observations supersede earlier ones in the same way
+
 ### Requirement: Limits the provider reports but the loop does not enforce are still shown
 
 Where the provider reports a limit the loop does not act on — a per-model weekly limit
@@ -252,11 +210,8 @@ omitting it would make that failure unexplainable.
 Recorded cost SHALL be used both to apportion a seat between the roles drawing on it and, taken
 against an observed capacity, to decide whether that seat has anything left. What fraction of a
 seat a role is responsible for comes from the record; whether capacity remains comes from the
-record measured against an observation of how full the window was.
-
-The record is the only quantity available for both questions on a seat whose credential reports
-no window. Cost is reported as an equivalent value at list prices rather than an amount billed,
-which is what makes it usable as a proxy for consumption of a subscription window.
+record measured against an observation of how full the window was. Cost is an equivalent value
+at list prices, not an amount billed.
 
 #### Scenario: A role's share derived from its spend
 
@@ -282,10 +237,6 @@ observation it was derived from and when that observation was taken. A seat with
 capacity SHALL be reported as having no capacity figure, distinctly from a seat reported as
 having no headroom left.
 
-Headroom derived from a limit error an hour ago and headroom derived from a month-old reading
-are not the same claim. An operator who cannot tell them apart cannot tell a calibrated seat
-from a stale one, and cannot tell either from a seat that has never been measured.
-
 #### Scenario: Headroom legible per window
 
 - **WHEN** an operator inspects the budget
@@ -304,15 +255,7 @@ from a stale one, and cannot tell either from a seat that has never been measure
 A seat SHALL be able to name where its token is held by exactly one of three mechanisms: an
 environment variable, a file path, or a command whose stdout is the token. Configuration
 naming more than one on a single seat SHALL be rejected. A seat naming none of the three is
-unaffected by this requirement — it reads through whatever login is ambient, as it did before
-these existed.
-
-A file and a command were added alongside the environment variable because an environment
-variable cannot be scoped to a single long-lived service: whatever process starts Igor
-inherits it for its whole lifetime, and everything that process spawns inherits it in turn. A
-file that a secret-management mechanism decrypts into a location only the running unit can
-read, or a command that queries a secret store directly, both avoid holding the credential in
-an environment at all.
+unaffected by this requirement: it reads through whatever login is ambient.
 
 #### Scenario: A seat reads its token from a file
 
@@ -350,17 +293,6 @@ the offending key and the accepted ones. `seats` and `pools` SHALL be lists wher
 declared at all; anything else SHALL be refused rather than read as empty. Omitting them
 entirely SHALL remain the way to run with budget unenforced.
 
-A dropped key leaves a file that reads as configured and behaves as though it were not, and at
-this level the behaviour is the absence of every ceiling. Read as empty, a misspelt `seats:` is
-not a smaller budget: no seat is declared, so nothing is bounded, no reserved seat is passed
-over, and the report says budget is not being enforced — which is exactly what it says for the
-operator who deliberately enforces nothing. The two states must not be reachable by a typo.
-
-The discrimination is between silence about something that was never declared and silence about
-something that was. An absent `budget` is a decision; a declared one that cannot be read is a
-mistake, and a mistake nobody is told about is one that is found by a person's allowance being
-spent.
-
 #### Scenario: A misspelt seats key is not an empty budget
 
 - **WHEN** a budget declares `seast:` in place of `seats:`
@@ -396,36 +328,15 @@ spent.
 
 ### Requirement: An observation records how full a window was, and when it resets
 
-A capacity observation SHALL record the seat, the window, the fraction of that window consumed,
-the instant the observation was taken, the instant the window resets, and which of two sources
-it came from: a usage reading, or a provider limit error.
+A capacity observation SHALL record the seat, the window, the fraction of it consumed, the
+instant it was taken, the instant the window resets, and its source: a usage reading or a
+provider limit error.
 
     {"at":…,"seat":"adam","window":"session","percentUsed":100,"resetsAt":…,"source":"limit"}
-    {"at":…,"seat":"adam","window":"week","percentUsed":36,"resetsAt":…,"source":"usage"}
 
-One record type, because the two sources say the same thing. A limit error is a reading at
-exactly 100% with a reset time attached, and treating it as a second kind of fact would mean
-two mechanisms deciding the same question from the same information.
-
-An observation of a window scoped to one model SHALL record that model. The weekly limit on a
-single model is a separate cap from the all-models one, so recording a refusal against it as an
-unqualified `week` would assert that the whole window was full when it was not — a wrong figure
-where none was needed. No bound is derived against a per-model window here; the model is
-recorded so that the figure is true and so that the derivation, when it comes, has the rows.
-
-The reset SHALL be recorded as an instant that can be compared against the present. The
-provider reports it as a human phrase — a date, a time, and a zone — which cannot be compared
-without being resolved first. An observation whose reset cannot be resolved SHALL be recorded
-anyway and SHALL place no window boundary and yield no capacity derivation, because a position
-in a window that has been invented is worse than none. It SHALL still expire, one window length
-after it was taken.
-
-The two are not the same claim. A derivation has to know *where* the instance sits, and an
-unresolved reset says nothing about that. An expiry only has to know how long the fact stays
-relevant, and the cadence bounds that without placing anything: a window resets at most one
-length after any moment inside it, so the seat is held for at least as long as it is really
-shut. That error cannot overrun anybody's floor, where a row that never expired would be a seat
-nobody could use again.
+An observation of a window scoped to one model SHALL record that model, and no bound is derived
+against such a window here. The reset SHALL be recorded as an instant comparable against the
+present.
 
 #### Scenario: A reading becomes an observation
 
@@ -476,30 +387,12 @@ reset time passes; it is not removed when it does.
 
 ### Requirement: Capacity is recorded spend divided by the fraction it consumed
 
-A seat's capacity for a window SHALL be derived as recorded Igor spend within that window
-instance divided by the fraction of the window an observation reported consumed. The numerator
-SHALL be the spend recorded for that seat within the instance the observation belongs to —
-bounded by the observation's reset time and the window's fixed cadence — and not spend over all
-recorded history.
-
-Instances tile the timeline: each ends exactly where the next begins, and no moment belongs to
-neither. One observed reset therefore fixes every boundary before and after it by subtraction,
-which is what lets spend be assigned to an instance at all. The session window runs five hours
-and the weekly window seven days.
-
-Where a seat has consumers Igor cannot see, the quotient is lower than the seat's true capacity,
-because the numerator counts only Igor's share of a denominator that everybody moved. That error
-is deliberate and is in the safe direction: a capacity estimated low yields a bound on Igor that
-is tighter than intended, which cannot overrun anybody's floor.
-
-It is a property of one observation, not a ceiling on what can be known. A seat read repeatedly
-is also read across intervals its owner happened to sit out, and those yield the capacity
-outright. Which observations to combine, and how, wants a season of them to decide; what must
-not be concluded is that a shared seat is stuck with an underestimate, because a seat
-permanently under-used is the waste that lending was meant to avoid.
-
-An observation with no recorded spend in its instance SHALL yield no capacity figure. Dividing
-by an unrelated numerator produces a number, and nothing about that number is true.
+A seat's capacity for a window SHALL be its recorded Igor spend within the window
+instance an observation belongs to, divided by the fraction of the window it reported consumed.
+That instance is bounded by the observation's reset time and the window's fixed cadence; spend
+over all recorded history SHALL NOT be the numerator. Instances tile the timeline, so one
+observed reset fixes every boundary before and after it. The session window runs five hours and
+the weekly window seven days.
 
 #### Scenario: Capacity derived from one observation
 
@@ -528,12 +421,6 @@ by an unrelated numerator produces a number, and nothing about that number is tr
 An observation implying a capacity lower than the seat's current estimate SHALL lower that
 estimate. A limit error is such an observation by construction: it says the window was full at a
 moment when Igor believed there was room, so whatever capacity was assumed was too high.
-
-This is the argument for the whole arrangement. The reactive layer — stopping when the provider
-refuses — costs a failed run and yields, for free, a measurement at exactly 100% with the time
-and the model mix already recorded. The predictive layer improves from that failure with nobody
-re-running a reading, editing a configuration, or noticing. A fleet that hits limits gets better
-at not hitting them.
 
 #### Scenario: The estimate falls after a refusal
 
@@ -575,18 +462,6 @@ SHALL be passed over, with that as the stated reason, rather than spent from aga
 denominator nobody supplied. A seat declaring no reserve MAY be spent from with neither,
 bounded reactively: its first limit error is its first calibration point.
 
-A reserve is a fraction of capacity, so without a capacity figure it expresses no quantity at
-all. Spending somebody's subscription against a denominator nobody chose is worse than declining
-to use their seat, because the failure is invisible to them until their own work is refused. A
-declared figure is not that: somebody named it, it is reported as declared, and the first
-observation replaces it. Where nobody's floor is at stake, the same ignorance costs only a
-failed run, which is the calibration the seat needed.
-
-The unlock is a reading, and the reading half already exists: the provider returns window
-percentages headlessly to an interactive login, and those percentages already parse. What it
-requires is a machine with such a login — the seat's owner — rather than the seat's own
-credential.
-
 #### Scenario: A reserved seat is not spent from on a guess
 
 - **WHEN** a seat declares a reserve and has neither an observation for the window nor a
@@ -612,29 +487,6 @@ seat the gate chose for the role, and SHALL be made with that seat's credential 
 names one. Where the gate names no seat, the call SHALL NOT be made, and no ambient credential
 SHALL be substituted for the seat the gate did not name. Where an organization declares no
 seats, budget is not enforced and this requirement places no condition on anything.
-
-The condition is whether the gate named a seat, not whether a credential was found. A seat
-naming none of the three token mechanisms is already unaffected by the rule that governs them —
-it runs on whatever login is ambient — and it is still a seat the gate chose, still bounded by
-its reserve, still named in the record as having paid. What has no seat behind it is a call the
-gate refused to choose one for.
-
-This is the spending-side counterpart of the reading rule already in force: a seat naming a
-token that is not available is reported unreadable and no other credential is used in its place.
-The same principle governs spending — a seat the gate did not name cannot be charged, and a
-credential no seat names cannot be attributed — but it was written only of readings, so the one
-spend in the cycle that does not go through a worker reached an ambient fallback with no seat
-behind it and nothing in the record naming what paid.
-
-Attributing that spend instead of refusing it was considered and rejected. A record saying an
-unnamed login paid is honest about a call that should not have been made, leaves the ceiling
-unenforced, and does nothing at all on a host where no ambient login exists: there the call
-fails with a message about not being logged in, which describes a machine whose credentials are
-configured correctly and whose seats are simply held.
-
-The exemption for an organization with no seats is not an oversight to be tightened later. A
-deployment that declares no seats has asked for no ceiling and made no promise about which
-credential pays, and the fallback is what it runs on.
 
 #### Scenario: No seat, no spend
 
@@ -672,7 +524,7 @@ credential pays, and the fallback is what it runs on.
 Where a seat is blocked in both its session and its weekly window, and both returns can be
 placed on a clock, the hour stated for that seat SHALL be the later of the two — whichever
 window it belongs to, and however the figure was arrived at. A reading taken from the seat and a
-figure derived from observations of it SHALL state the same hour. This does not change how a
+figure derived from observations of it SHALL answer this question the same way. This does not change how a
 role's seats are compared: across them, a handoff still states the earliest of their hours.
 
 #### Scenario: The later hour is stated for a seat that could be read
@@ -709,25 +561,12 @@ role's seats are compared: across them, a handoff still states the earliest of t
 
 ### Requirement: An hour is marked approximate where a stated reset does not fix it
 
-An hour a handoff states SHALL be marked approximate where no reset the provider stated fixes
-it: a cadence ceiling standing in for a reset a refusal never named, and an hour named while
-another window that is also holding the seat named no return. An hour the provider stated, and a
-window boundary tiled from one along the window's own cadence, SHALL NOT be marked.
-
-The flag says what kind of claim the hour is, and a person reads it in the sentence: a marked
-hour is reported as "back around" and an unmarked one as "back at". So the line it draws has to
-be one a reader can act on, and the line is whether a stated reset fixes the hour, not whether
-the provider printed those exact words. A boundary reached by tiling is fixed: instances tile
-the timeline, so one stated reset places every boundary before and after it by subtraction, and
-an instance end computed that way is as exact as the reset it came from. A cadence ceiling is
-not: nothing was stated, and the hour is a bound on how late the return can be rather than the
-return.
-
-The later of two stated hours is not marked. Comparing two returns the provider stated yields
-one of them, the provider's own hour, chosen by ordering rather than substituted, and marking it
-would tell a reader to doubt a figure that came from the same place as an unmarked one. A seat
-blocked in both windows has a marked hour only where one of the two windows named no return,
-because only then can the hour be early.
+An hour a handoff states SHALL be marked approximate where no reset the provider stated fixes it: a
+cadence ceiling (a bound from the window's length) where a refusal named no reset, and an hour
+stated for one window while another window also blocking the seat stated no return. An hour the
+provider stated, a window boundary counted from one along the window's cadence, and the later of two
+stated hours SHALL NOT be marked. A marked hour is reported as "back around", an unmarked one as
+"back at".
 
 #### Scenario: A compared pair of stated hours is exact
 

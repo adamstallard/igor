@@ -69,12 +69,6 @@ artifact type.
 bases and saying how to build a role that spans several areas: give it its own lane and its own
 `allow` and `commands`, and share what roles have in common through an intermediate base.
 
-A role with two bases would take whatever both allow, so a change to either base would change
-what it may do without its own file or its single line of ancestors changing, and nobody
-reviewing that change would see the role it widened. Two bases would also have to be reconciled
-on every field where the last level wins, such as `poll_minutes`. With one base, a role's own file
-and its ancestors say all it may do.
-
 #### Scenario: Org base inherited
 
 - **WHEN** a role extends the org base and declares no poll interval of its own
@@ -104,11 +98,6 @@ and its ancestors say all it may do.
 
 Inheritance SHALL apply three merge semantics, selected per field:
 
-The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
-granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
-that lists any other word is refused at load, naming the valid actions. The safe default an org
-base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
-
 - **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`,
   repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
   widen it.
@@ -132,11 +121,6 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 - **THEN** validation fails, for the reason widening `allow` fails: a role that can grant
   itself a command can grant itself every command
 
-#### Scenario: An action outside the vocabulary is refused
-
-- **WHEN** a role's `allow` lists `unassign`
-- **THEN** the role is refused at load, naming the valid actions
-
 #### Scenario: Setting overridden
 
 - **WHEN** the org base sets `poll_minutes: 10` and a role sets `poll_minutes: 2`
@@ -152,6 +136,18 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 - **WHEN** the org base excludes label `Human` and a role declares its own lane
 - **THEN** the effective lane still excludes `Human`
 - **AND** no role-level declaration can remove it, because lane constraints are conjoined
+
+### Requirement: A role's `allow` names only actions from a closed vocabulary
+
+A role's `allow` SHALL list only actions from a closed set: `comment`, `review-comment`,
+`draft-pr`, `pr`, `label`, `merge`, `send`. A role that lists any other word SHALL be refused at
+load, naming the valid actions. The safe default for an org base to ship with is
+`[draft-pr, comment]`: everything reversible, nothing final.
+
+#### Scenario: An action outside the vocabulary is refused
+
+- **WHEN** a role's `allow` lists `unassign`
+- **THEN** the role is refused at load, naming the valid actions
 
 ### Requirement: The effective configuration of a role is explainable
 
@@ -223,34 +219,31 @@ nested mappings: `lane`, its `labels`, `paths` and `age`, and each `sources` ent
 
 ### Requirement: An Igor's GitHub App identity is its role's name
 
-An Igor running a role SHALL act on GitHub as the github-app identity of the same name: the Igor
-for `roles/reviewer.yaml` acts as the identity `reviewer`. No role file, base or configuration
-key SHALL name an App identity, an App ID, a private key or a key path.
-
-The identity's credentials SHALL be read only from the Igor's environment, and only when
-`GITHUB_APP_IDENTITY` names this identity: `GITHUB_APP_ID`, with exactly one of
-`GITHUB_APP_PRIVATE_KEY_FILE` or `GITHUB_APP_PRIVATE_KEY`. An environment that sets both key
-variables SHALL be refused, naming both. On a server these variables come from the role's
-environment file, `/etc/igor/<role>.env`; when a person runs an Igor themselves, from their
-shell. The Igor SHALL have no other source: it SHALL NOT read the files the `github-app` skill
-stores under its configuration directory, even when the environment is incomplete.
-
-These names are the `github-app` skill's environment contract, so the skill's `check` works
-against the same environment file. The Igor SHALL NOT depend on the skill being installed.
-
-The Igor SHALL NOT read `GITHUB_APP_OWNER` or `GITHUB_APP_INSTALLATION_ID`: it finds its
-installation by asking GitHub which one covers its repositories. They are the skill's. The
-environment file MAY carry them only so the skill's `check` can choose an installation when the
-App is installed on more than one account, and their presence or value SHALL NOT change what the
-Igor does.
-
-`igor role explain` SHALL report the identity a role acts as and whether its environment holds
-that identity's credentials, naming any variable that is missing.
+An Igor running a role SHALL act on GitHub as the github-app identity of the same name: the GitHub
+App, with its credentials, known by that name. No role file, base or configuration key SHALL name an
+App identity, an App ID, a private key or a key path. `igor role explain` SHALL report that identity
+and whether its environment holds them, naming any missing variable. That environment comes from
+`/etc/igor/<role>.env` on a server, and from a person's shell when they run an Igor.
 
 #### Scenario: The role's name is the identity
 
 - **WHEN** `igor serve reviewer` starts
 - **THEN** it acts as the github-app identity `reviewer`
+
+#### Scenario: Explain says who the role acts as
+
+- **WHEN** `igor role explain reviewer` runs
+- **THEN** it reports the identity `reviewer` and whether its environment holds that identity's
+  credentials, naming any missing variable
+
+### Requirement: An Igor reads its App credentials only from its environment
+
+An Igor's App credentials SHALL be read only from its environment, and only when
+`GITHUB_APP_IDENTITY` names its identity: `GITHUB_APP_ID`, with exactly one of
+`GITHUB_APP_PRIVATE_KEY_FILE` or `GITHUB_APP_PRIVATE_KEY`. An environment that sets both key
+variables SHALL be refused, naming both. The Igor SHALL have no other source, such as the files
+the separate `github-app` skill keeps, and SHALL NOT need that skill installed. It SHALL NOT read
+`GITHUB_APP_OWNER` or `GITHUB_APP_INSTALLATION_ID`.
 
 #### Scenario: Credentials come only from the environment
 
@@ -272,12 +265,6 @@ that identity's credentials, naming any variable that is missing.
 - **THEN** those variables are not this Igor's credentials
 - **AND** the refusal names the identity the variables belong to and the one this Igor acts as
 
-#### Scenario: Explain says who the role acts as
-
-- **WHEN** `igor role explain reviewer` runs
-- **THEN** it reports the identity `reviewer` and whether its environment holds that identity's
-  credentials, naming any missing variable
-
 ### Requirement: A role declares its sources, lane, behaviour, permissions, and reviewers
 
 A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`,
@@ -286,9 +273,8 @@ A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`,
 rejected rather than loaded.
 
 `commands` names the shell commands a worker may run, and is the only thing that lets one
-run anything at all. It is declared on the role and nowhere else: a worker that can edit
-files can edit a settings file in the repository it is working, so an allowlist read from
-there is one the worker can widen for itself.
+run anything at all. It is declared only in role files and their bases, never in the repository
+the worker is working.
 
 #### Scenario: Well-formed role accepted
 

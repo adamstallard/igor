@@ -13,13 +13,10 @@ stop a person issues, which releases it with no handoff, are in `work-claiming`.
 
 Where an Igor stops work it has claimed **of its own accord** — exhaustion, unrecoverable
 failure, or any condition it detects itself — it SHALL post a handoff to the item before
-releasing. Silence after a claim MUST NOT be a permitted outcome, because the claim told
-others to stand off.
+releasing. Silence after a claim MUST NOT be a permitted outcome.
 
-**A stop directed at the Igor is exempt.** Stop releases the claim immediately and posting a
-handoff would delay it; the rationale does not apply either, since whoever issued the stop is
-presumably taking the work. Where partial work product exists, the release message SHALL name
-it — a one-line receipt, not a handoff.
+**A stop directed at the Igor is exempt:** it releases the claim at once, announced by a stop
+receipt, not a handoff. Where partial work product exists, the receipt SHALL name it in one line.
 
 #### Scenario: Handoff posted on exhaustion
 
