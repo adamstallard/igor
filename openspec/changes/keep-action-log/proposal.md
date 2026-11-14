@@ -1,6 +1,7 @@
 ## Decisions for the reviewer
 
-Each is the reviewer's to decide, except where marked **Decided**.
+Each numbered decision is the reviewer's to decide. A heading or paragraph marked **Decided** is
+settled; the rest of its decision stays open.
 
 1. **Keep a log of the worker's tool calls, not its raw stream.** Each call keeps its tool, its
    command or path cut to 1,000 characters, whether it failed, and for a shell command the last
@@ -10,8 +11,8 @@ Each is the reviewer's to decide, except where marked **Decided**.
    worker read, in full.
 2. **Redact each call as it is collected.** The rule is *credential redaction*, the one
    redaction rule, which `redact-state-branch` (#217) defines along with what it matches and
-   the alternatives it rejected. #217 also builds its function, `redact` in `src/redact.ts`,
-   which this change calls. Redacting at collection means no later step holds a call
+   the alternatives it rejected (**Decided**); this change cites the rule rather than stating
+   it. #217 also builds its function, `redact` in `src/redact.ts`, which this change calls. Redacting at collection means no later step holds a call
    unredacted: `review-evidence` (#190), which lists the worker's commands in the pull request
    body, reads them already redacted.
 
@@ -23,26 +24,23 @@ Each is the reviewer's to decide, except where marked **Decided**.
    never knew, and the rule's shapes are GitHub and Anthropic tokens only. So where the log
    keeps output, it keeps such a file's other secrets, an AWS key among them, as printed.
 
-   **Decided (Adam, 2026-10-13): there is one redaction rule.** `loop-verifies-commands`
+   **Decided: there is one redaction rule.** `loop-verifies-commands`
    (#189) redacts published check output by it, and `review-evidence` (#190) redacts every
    command, path and output in the evidence table it adds to the pull request body. Neither
    #189 nor #190 restates the rule. *Rejected:* each change stating its own set of values and
    patterns to redact, which lets the sets drift apart, so a value one change redacts another
    could publish.
 
-   **Decided (Adam, 2026-10-19): the rule's definition moves from this change to #217.** #217
-   defines it and builds its function before this change. This change cites the rule rather
-   than stating it.
-3. **The log is not cut by who can read the store; the visibility guard decides whether it is
-   written** (Adam, 2026-10-21). The change `visibility-guard` (issue #219, pull request
-   #220) refuses to work a private repository while the store is public. It also reads both
-   visibilities again just before a run's records are written, and where it then finds the
-   worked repository private and the store public, because one of them changed during the run,
-   it writes no transcript or other text of that run. So a public store never holds a private
-   repository's log, and this change keeps every entry as decision 1 describes, whatever the
-   store's visibility. This supersedes the earlier decision 3, which cut the log to one of
-   three tiers by the store's and the worked repository's visibility. *Rejected:* keeping the
-   tiers beside the guard, which would state a second rule for the same case.
+3. **The log's entries do not depend on who can read the store; the visibility guard decides
+   whether the log is written** (**Decided**). The store is the lore store: the repository
+   `igor.config.yaml` names as `destination`, which holds the state branch. The change
+   `visibility-guard` (issue #219, pull request #220) refuses to work a private repository while
+   the store is public. It also reads both visibilities again just before a run's records are
+   written, and where it then finds the worked repository private and the store public, because
+   one of them changed during the run, it writes no transcript or other text of that run. So a
+   public store never holds a private repository's log, and this change keeps every entry as
+   decision 1 describes, whatever the store's visibility. *Rejected:* also varying the log by the store's and the worked
+   repository's visibility, which would state a second rule beside the guard for the same case.
 
    **Open question for the reviewer:** a private store is readable by its own collaborators,
    who need not be able to read the worked repository. They can read the output of what the
@@ -159,9 +157,10 @@ None.
   `redact-state-branch` (#217) builds credential redaction's function before this change, and
   this change, #189 and #190 all call it. `scope-check` (#187) and `loop-verifies-commands`
   (#189) write only into the evidence table #190 adds, so they follow #190.
-- **Decided (Adam, 2026-10-13): the log covers every model step Igor runs**, not the worker
+- **Decided: the log covers every model step the Igor runs**, not the worker
   alone. `signed-publishing` (#153) adds two model steps after the worker, a bug-hunter step and
   a prose pass, for a role whose `skills` list names them. Each entry is labelled with its
-  step, and #190's evidence table lists the shell calls of all three. Decisions 1 and 5 apply to
+  step. `review-evidence` (#190), which decides what of the log reaches the pull request body,
+  lists the shell calls of all three steps in its evidence table. Decisions 1 and 5 apply to
   every step's calls alike. *Rejected:* logging the worker alone, which leaves the tests
   bug-hunter runs and the files the prose pass edits outside the audit.
