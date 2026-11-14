@@ -118,13 +118,6 @@ Where a claim is found to be gone between the worker finishing and publication, 
 distinguish a stop from a loss. A stop SHALL publish nothing. A loss SHALL publish what exists
 as a draft, request no reviewers, and leave a message naming what exists.
 
-Someone taking an item over is saying they are taking it, not that the work so far should be
-destroyed. The working tree is disposable by design, so discarding it at this point is
-unrecoverable: the transcript records that a change was made and not the change itself.
-
-An Igor that has lost an item must not then appear in anyone's review queue over it, which is
-why nothing is requested of the new holder.
-
 #### Scenario: A stop still publishes nothing
 
 - **WHEN** the claim was stopped during execution
@@ -182,22 +175,11 @@ wedged one costs idle minutes, so each window errs long.
 ### Requirement: The window depends on what the worker is waiting for
 
 Execution SHALL read from the stream whether a tool the worker dispatched is still outstanding,
-and SHALL apply a longer window while one is than when none is.
-
-A worker blocked on a tool it dispatched is legitimately silent for as long as that tool runs,
-which for a build, a test suite or a fetch is long, and the tool's own timeout bounds it
-independently. A worker waiting on nothing but the model's next turn is silent only through
-retries or a hang, and nothing legitimate takes long there.
-
-Outstanding work SHALL be tracked per dispatched call rather than inferred from the most recent
-event, because tools dispatched together return one at a time and a result arriving while a
-sibling still runs must not shorten the window under it.
-
-A turn that has resumed proves every tool it dispatched has come back, and execution SHALL take
-that as clearing the outstanding set, so that one call whose result never arrives cannot hold
-the longer window open for the rest of the run. Only the run's own turn counts: a subagent
-produces its own events while the call that spawned it is still outstanding, and those prove
-nothing about the turn above them.
+and SHALL apply a longer window while one is outstanding than when none is. Outstanding work
+SHALL be tracked per dispatched call, so a result arriving while a sibling still runs does not
+shorten the window. When the run's own top-level turn resumes, which shows that every tool it
+dispatched has returned, execution SHALL clear the outstanding set; a subagent's events SHALL
+NOT clear it.
 
 #### Scenario: A long tool call is not a wedged worker
 
@@ -266,10 +248,6 @@ Where a worker is killed for a limit, execution SHALL keep what the run had alre
 A worker that had reported its result before the kill SHALL settle with that result and its
 cost rather than as a failure, and a worker killed mid-edit SHALL have its working tree read so
 the recorded outcome names what it changed.
-
-A silence window can expire on a run that is finished but whose process has not exited, and a
-kill can land hours into real editing. Recording either as having produced nothing records the
-wrong failure.
 
 #### Scenario: A finished run survives a kill
 
@@ -354,38 +332,17 @@ end the item in hand, which shutdown is required to finish or hand off.
 
 ### Requirement: The worker is given an explicit environment holding no credential but its seat's
 
-Execution SHALL construct the worker's environment rather than inheriting the Igor's, and that
-environment SHALL carry no credential other than the token of the seat the work is charged to.
-The tokens of other seats, and the credential the Igor acts on its surfaces with, MUST NOT be
-present. Where the chosen seat names a token source that cannot be read — an unset variable, an
-unreadable or empty file, a command that fails, prints nothing, or never returns — execution
-SHALL fail naming it rather than spawning a worker that authenticates as something else.
-
-For an Igor acting as a GitHub App, the surface credential is anything that yields an App
-token: the token itself, the `GITHUB_APP_*` variables, and a git credential helper or
-`GIT_CONFIG_*` entry that mints one. None of them SHALL reach the worker, and the working tree
-SHALL hold none of them.
-
-The worker needs none of them. It edits files in a disposable tree; claiming, commenting,
-branching and publishing all happen in the loop afterwards, with the loop's own credentials. An
-inherited environment is therefore a set of credentials nothing in the worker has a use for,
-one shell command away from a worker an item's text has steered.
-
-Only what running a toolchain requires is passed: the search path, a home directory, and the
-network settings the host is configured with. None of those is a credential, and each fails as
-something else entirely when it is missing.
+Execution SHALL construct the worker's environment rather than inheriting the Igor's. It SHALL
+carry no credential but the token of the seat the work is charged to: the tokens of other seats,
+and the credential the Igor acts on its surfaces with, MUST NOT be present. If a token source
+the chosen seat names yields no token, execution SHALL fail naming it and spawn no worker.
+Besides that token, only the search path, a home directory and the host's network settings are
+passed.
 
 #### Scenario: The surface credential is absent
 
 - **WHEN** a worker is spawned while the Igor holds a code-host token
 - **THEN** that token is not in the worker's environment
-
-#### Scenario: Nothing that yields an App token reaches the worker
-
-- **WHEN** a worker is spawned for an Igor acting as a GitHub App
-- **THEN** its environment holds no App token, no `GITHUB_APP_*` variable and no `GIT_CONFIG_*`
-  entry
-- **AND** its working tree's git config names no credential helper
 
 #### Scenario: Only the chosen seat's token is present
 
@@ -411,22 +368,26 @@ something else entirely when it is missing.
 - **WHEN** a worker runs a build or a test in its working tree
 - **THEN** the search path, home directory and network settings it needs are present
 
+### Requirement: An Igor acting as a GitHub App gives its worker nothing that yields an App token
+
+For an Igor acting as a GitHub App, the credential it acts on its surfaces with is anything
+that yields an App token: the token itself, the `GITHUB_APP_*` variables, and a git credential
+helper or `GIT_CONFIG_*` entry that mints one. None of them SHALL reach the worker, and the
+working tree SHALL hold none of them.
+
+#### Scenario: Nothing that yields an App token reaches the worker
+
+- **WHEN** a worker is spawned for an Igor acting as a GitHub App
+- **THEN** its environment holds no App token, no `GITHUB_APP_*` variable and no `GIT_CONFIG_*`
+  entry
+- **AND** its working tree's git config names no credential helper
+
 ### Requirement: A published artifact is kept mergeable
 
 Where an artifact an Igor produced can no longer merge into its base, the Igor SHALL bring it
-up to date, and SHALL do so on the artifact that exists rather than by replacing it.
-
-A base moves while an artifact waits. Nothing else notices: the item reports work in flight,
-the working tree was released when the run ended, and the worker never held a branch to begin
-with — it edits files, and the loop publishes what changed. So an artifact left behind goes
-stale in a state only a person can see.
-
-Resolution happens on the existing artifact because replacing it would discard whatever review
-has accumulated against it, which is a cost paid by the reviewer rather than the Igor.
-
-Bringing it up to date starts with the code host: the base is merged into the artifact's branch
-server-side. Where that comes out clean the cycle for the item ends there; where it conflicts,
-a worker resolves it.
+up to date, and SHALL do so on the artifact that exists rather than by replacing it. It SHALL
+first have the code host merge the base into the artifact's branch. Where that comes out clean
+the cycle for the item ends there; where it conflicts, a worker resolves it.
 
 #### Scenario: A conflict that has cleared costs no model
 
@@ -453,18 +414,9 @@ a worker resolves it.
 ### Requirement: The artifact carries every change the worker made, including removals
 
 An artifact SHALL carry every change execution read out of the working tree — files added,
-files modified, and files removed. A removal SHALL NOT be dropped, and a change consisting only
-of removals SHALL be published rather than refused.
-
-An artifact that carries the edits and drops the removals is worse than one that is not
-published at all: it looks complete to a reviewer and is not. A refactor still has the module
-it removed; a rename has the file in two places.
-
-The limit this replaces was discovered after the worker had run, which is what made it
-expensive — a deletion-shaped task spent a whole run to learn it could not be published.
-
-Whether the artifact is being opened or brought up to date makes no difference: both build
-their commit from the base tree, and a removal is an entry in that tree with nothing behind it.
+files modified, and files removed — whether the artifact is being opened or brought up to date.
+A removal SHALL NOT be dropped, and a change consisting only of removals SHALL be published
+rather than refused.
 
 #### Scenario: A removal alongside edits
 
@@ -485,25 +437,12 @@ their commit from the base tree, and a removal is an entry in that tree with not
 
 ### Requirement: A change is not published under a name that is not text
 
-A filename is bytes. Where a changed file's name is not valid UTF-8, execution SHALL publish
-nothing for that run, and SHALL hand off naming the file by the bytes git wrote rather than by
-the spelling decoding left behind.
-
-An artifact names a path as text, so a name that is not text has no faithful form in one.
-Published at the decoded spelling, a modified file lands at a path no file on disk has — the
-original is left untouched and the branch carries the file twice; a deletion removes nothing;
-and two names differing only in the bytes that did not decode arrive as one path, so one
-replaces the other or the host rejects the whole change. Each of those is a change that is
-wrong rather than one that is missing, and nothing in the artifact tells a reader which file
-was meant.
-
-A name SHALL be judged by re-encoding the decoded name and comparing it to the bytes, and MUST
-NOT be judged by searching the decoded name for the replacement character. A file may
-legitimately be named with that character, and refusing it would take a working run away over
-a name nothing is wrong with.
-
-What the run changed SHALL still be recorded, and SHALL name such a file by its bytes there
-too. A refusal that cannot say which file it refused is one nobody can act on.
+Where a changed file's name is not valid UTF-8, execution SHALL publish nothing for that run,
+and SHALL hand off naming the file by the bytes git wrote rather than by its decoded spelling.
+Whether a name is valid UTF-8 SHALL be judged by re-encoding the decoded name and comparing it
+to the bytes, and MUST NOT be judged by searching for the replacement character, which a valid
+name may contain. What the run changed SHALL still be recorded, naming such a file by its bytes
+there too.
 
 #### Scenario: A file whose name is not text is not published under another one
 
@@ -537,29 +476,8 @@ too. A refusal that cannot say which file it refused is one nobody can act on.
 Execution SHALL read the working tree in a way that reports every changed path separately, and
 SHALL NOT lose a removal because git paired it with another path. Where a worker removed a file,
 that removal SHALL be read whatever else changed in the tree, and SHALL be carried into the
-artifact.
-
-Rename detection is what folds two paths into one. During a conflicted merge, a deletion the
-worker made can be detected as the source of a rename whose destination is an unmerged path, and
-the porcelain output then names only the unmerged path — with its own unmerged flags, not as a
-rename — so the deletion is absent from the input rather than misread in it. Measured at roughly
-one in a hundred conflicted merges.
-
-**An incomplete read is not an excuse.** *"The artifact carries every change the worker made,
-including removals"* is satisfied by carrying whatever execution read; this requirement says what
-execution must be able to read, so a removal that never reached the record is a failure of this
-requirement rather than a case the other one permits.
-
-A removal lost this way is the most expensive thing that can go missing. The resolution's commit
-names the base as a parent, so a file left in it is restored the moment the artifact merges, and
-review sees a file that is still there rather than a change that is wrong.
-
-Nothing downstream recovers it. A guard comparing what the base changed against what the
-resolution publishes has no entry for a path the base never touched, and what the resolution
-publishes is itself built from this read.
-
-How the tree is read is not fixed here. What is fixed is that no changed path may be reported
-only as part of another.
+artifact. How the tree is read is not fixed here; what is fixed is that no changed path may be
+reported only as part of another.
 
 #### Scenario: A removal folded into a conflicted path is still read
 
@@ -592,41 +510,12 @@ only as part of another.
 
 ### Requirement: No removal is published for a path the base does not hold
 
-An artifact SHALL carry a removal only for a path the tree it is laid over already holds.
-
-**The base here is that tree**, and not the set of changes the base branch made — the branch head
-a resolution commits onto, or the base branch a new artifact is cut from. *"A base change is
-undone only where the resolution says so"* is about the second; this requirement is about the
-first.
-
-**And it is the tree the work was cut from**, not the branch as it stands when the artifact is
-published. A branch head read at publish time is a different tree whenever the branch moved while
-the work was being done, so a removal that was correct against what the worker saw arrives as a
-removal of a path that tree no longer holds. Publishing over an older base is what the artifact's
-catch-up merge exists for; publishing over a base nobody read the work against is not.
-
-Where reading the working tree offers a removal of a path the base does not hold, execution SHALL
-NOT publish it. **Whether the worker asked for the removal makes no difference.** Sometimes it did
-not — the run's own index brought the path into being, as the destination of a rename that was then
-moved again, or as a staged addition the worker then deleted. Sometimes it did: a merge can leave a
-path in the tree that the artifact's own side had deleted, and removing it is the resolution the
-worker is invited to make. Either way no tree the artifact is published against ever held the path,
-and the host refuses the removal the same.
-
-**So the obligation is a question about the tree, not about the status of the path.** A mechanism
-that decides from how the path came to be in its current state is enumerating the ways a path can be
-absent from the base, and is complete only until the next one is found.
-
-**This is the opposite half of the requirement above it.** That one says the read may not lose a
-removal; this one says it may not invent one. A mechanism satisfying either by breaking the other
-satisfies neither, and the two are stated separately so that a future read is measured against
-both.
-
-**The host refuses an invented removal outright.** Dropping a path the base tree does not hold
-returns `422 GitRPC::BadObjectState`, and the refusal is of the whole tree request: nothing is
-published, not even the changes that were correct. So this is not a tidiness rule about extra
-entries. A single invented removal costs the run everything it produced, which is why the
-obligation is stated rather than left to whichever mechanism reads the tree.
+An artifact SHALL carry a removal only for a path held by the tree its commit is built on: the
+tree the work was cut from, not any branch as it stands at publish time. For a resolution, that
+is the head of the artifact's branch it commits onto, when the work was cut; for a new artifact,
+the base branch it is cut from. Where reading the working tree offers a removal of a path that
+tree does not hold, execution SHALL NOT publish it, whether or not the worker asked for the
+removal.
 
 #### Scenario: A path only the run's own index ever held is not removed
 
@@ -661,44 +550,12 @@ obligation is stated rather than left to whichever mechanism reads the tree.
 
 ### Requirement: A base change is undone only where the resolution says so
 
-Where resolving a conflict would publish a commit that names the base as a parent, the Igor
-SHALL compare what the base changed since the merge base against what the resolution publishes,
-and SHALL NOT publish it where any path would be restored to the state it held before the base
-changed it — unless the resolution carries a declaration naming that path. Where an undeclared
-path would be restored, nothing is published and the item is handed off naming those paths.
-
-The commit's tree is the merge result, so a path the resolution leaves at the artifact's own
-version is not a gap in the resolution — it is a revert of the base's change to that path, which
-lands the moment the artifact merges. A reverted deletion appears in review as the file still
-being there and a reverted rewrite as the file being unchanged, so review cannot be relied on to
-catch either.
-
-The comparison reads outcomes, not intentions. A resolution that takes the base's side, combines
-both sides, or honours a deletion the base made restores nothing and needs no declaration. What
-is refused undeclared is the exact undo: the base changed a path and the published content is
-what stood there before it did.
-
-**A declaration names one path and the base state it discards** — the base's content for that
-path, or its absence where the base deleted it. It SHALL NOT take a blanket form: no wildcard,
-no flag covering a whole resolution, nothing a role or a configuration file can set once. A
-declaration whose named state is not what the base actually holds authorizes nothing, and a
-declaration naming a path that would not be reverted changes nothing.
-
-**A declared revert is still reported, wherever the refusal would have been.** Publishing it
-does not make it quiet: the paths undone and the base state each one discards are named on the
-published resolution and recorded with the run. The guard exists because an undone base change
-is invisible to review, and a declaration converts that into a statement rather than an
-exemption from it.
-
-**A declaration is this run's word, and the place it is written is what says so.** It SHALL be
-written outside the artifact's working tree, into a directory the Igor makes empty for the run,
-grants the worker alone, and removes with the tree. A file the repository itself keeps SHALL NOT
-be read as a declaration, at any path and however it got there: a repository can commit a file at
-any path inside itself, and one that is on disk in every fresh clone would authorize the same
-revert on every run that ever clones it, each reporting a declaration nobody made.
-
-No path inside the tree is reserved. A file the repository keeps at whatever path the channel
-once used is ordinary content, carried into the artifact like any other.
+Where resolving a conflict would publish a commit with the base as a parent, the Igor SHALL check
+each path the base changed since the merge base. If the resolution would restore one exactly to its
+pre-change state, and no revert declaration the worker wrote for this run names that one path and
+the base state it discards (the base's content, or for a deletion its absence), nothing SHALL be
+published and the item SHALL be handed off naming those paths. Declaring an unreverted path does
+nothing.
 
 #### Scenario: A rewrite the base made is restored without a declaration
 
@@ -732,12 +589,6 @@ once used is ordinary content, carried into the artifact like any other.
 - **WHEN** a declaration names a base state for a path that is not the state the base holds
 - **THEN** the revert is treated as undeclared and the item is handed off
 
-#### Scenario: A blanket declaration is not a declaration
-
-- **WHEN** a resolution carries a declaration that names no specific path, or a configuration
-  attempts to permit reverts generally
-- **THEN** it authorizes nothing, and every revert is handed off as if undeclared
-
 #### Scenario: A resolution that keeps the base's work needs no declaration
 
 - **WHEN** every path the base changed survives the resolution, whether taken whole or combined
@@ -748,6 +599,36 @@ once used is ordinary content, carried into the artifact like any other.
 
 - **WHEN** the base deleted a path and the resolution deletes it too
 - **THEN** the resolution is published, because nothing was restored
+
+#### Scenario: The check runs before the commit, not after it
+
+- **WHEN** a resolution is refused
+- **THEN** no commit reaches the artifact's branch
+- **AND** the refusal does not depend on anything the code host is asked afterwards
+
+#### Scenario: A first artifact is unaffected
+
+- **WHEN** an artifact is produced rather than resolved
+- **THEN** no such comparison is made, because its commit names no base as a parent
+
+### Requirement: A revert declaration is never a blanket
+
+A declaration SHALL NOT take a blanket form: no wildcard, no flag covering a whole resolution,
+nothing a role or a configuration file can set once.
+
+#### Scenario: A blanket declaration is not a declaration
+
+- **WHEN** a resolution carries a declaration that names no specific path, or a configuration
+  attempts to permit reverts generally
+- **THEN** it authorizes nothing, and every revert is handed off as if undeclared
+
+### Requirement: A declaration is read only from a directory the run owns
+
+A declaration SHALL be written outside the artifact's working tree, into a directory the Igor
+makes empty for the run, grants the worker alone, and removes with the tree. A file the
+repository itself keeps SHALL NOT be read as a declaration, at any path and however it got
+there. No path inside the tree is reserved: a file the repository keeps is carried into the
+artifact like any other.
 
 #### Scenario: A declaration the repository commits is not this run's word
 
@@ -764,17 +645,6 @@ once used is ordinary content, carried into the artifact like any other.
 
 - **WHEN** a resolution is published
 - **THEN** no declaration is part of the published commit
-
-#### Scenario: The check runs before the commit, not after it
-
-- **WHEN** a resolution is refused
-- **THEN** no commit reaches the artifact's branch
-- **AND** the refusal does not depend on anything the code host is asked afterwards
-
-#### Scenario: A first artifact is unaffected
-
-- **WHEN** an artifact is produced rather than resolved
-- **THEN** no such comparison is made, because its commit names no base as a parent
 
 ### Requirement: A person approves every Igor pull request
 

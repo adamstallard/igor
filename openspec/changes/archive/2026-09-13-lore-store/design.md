@@ -62,6 +62,10 @@ reviewed:
 The body holds reasoning and exceptions — the part a person reads when they want to know why.
 `core-igor-loop` will add `fired` (count and timestamp); nothing here should block that.
 
+**A date is accepted quoted or unquoted.** People writing an entry by hand usually leave its
+dates unquoted, and a YAML parser reads an unquoted date as a timestamp, not a string.
+Validation accepts the timestamp and reads it back as the date string.
+
 **Provenance is the single source of derived scores.** Support count is the number of
 provenance items, recency is a decay over their dates, author weighting reads their authors.
 Persisting `support` or `recency` as fields would desync the moment time passed or an item was
