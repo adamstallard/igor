@@ -14,7 +14,13 @@ services:
       # Execution clones into a temp directory and deletes it afterwards. A named volume
       # keeps that churn off the host filesystem and out of the image layer.
       - igor-trees:/tmp
+    # .env holds the seat tokens and this Igor's GitHub App: GITHUB_APP_IDENTITY=maintenance,
+    # GITHUB_APP_ID, and GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/maintenance.pem, the key
+    # mounted below. One container per role, each with its own App.
     env_file: .env
+    secrets:
+      - source: maintenance-key
+        target: maintenance.pem
     restart: unless-stopped
     # How long shutdown waits, not a promise the item in hand finishes. A container killed
     # mid-item leaves a claim with no explanation. See docs/deployment.md.
@@ -23,3 +29,9 @@ services:
 
 volumes:
   igor-trees:
+
+secrets:
+  # The App's private key, mounted read-only at /run/secrets/maintenance.pem. Keep the file on
+  # the host 0600.
+  maintenance-key:
+    file: ./maintenance.pem

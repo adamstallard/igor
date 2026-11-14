@@ -33,10 +33,13 @@ export {
   type Rejection,
 } from './store.js'
 
+// `resolveConfig` is deliberately not exported. It is the pure parser, and the
+// root-of-its-repository refusal lives in `loadConfig` above it, so a caller reaching the parser
+// directly gets a destination checked against the Igor installation but not against git —
+// validated enough to look validated. `loadConfig` is the only supported way in.
 export {
   loadConfig,
   findConfig,
-  resolveConfig,
   igorRoot,
   ConfigError,
   DEFAULT_CONFIG_FILENAME,

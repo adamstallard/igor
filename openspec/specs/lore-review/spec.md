@@ -1,7 +1,14 @@
 # lore-review Specification
 
 ## Purpose
-TBD - created by archiving change lore-store. Update Purpose after archive.
+Put a lore entry into force only after a person has reviewed it. Candidate entries are proposed
+as pull requests to the lore repository, one per dominant author (whoever contributed most of the
+sources an entry cites), with every other contributing author asked to review. The pull request
+body states the contract: delete a file to reject that entry, edit it to amend, close the pull
+request to defer, merge to approve the rest. This spec covers proposing; reconciling, which sets
+each entry's status from what happened to its pull request and runs whenever `igor` is
+invoked, including by a merge workflow; recording who approved; and refusing, for
+a public lore repository, entries drawn from private sources.
 ## Requirements
 ### Requirement: Candidates are proposed as pull requests, one per dominant author
 
