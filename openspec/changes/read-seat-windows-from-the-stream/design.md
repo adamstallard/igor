@@ -72,13 +72,11 @@ excluded the same way, and err the same way.
 
 The worker's environment is written out, and carries exactly the token of the seat the gate chose
 (§6.3.2). So the reading is attributed to that seat, the one `recordExecution` already names as
-having paid. Every seat has a token of its own, and Igor never uses a stored Claude login, the
-credentials `claude` keeps in a home directory (proposal, decision 14), so the
-token that ran is always the chosen seat's. `seat-files` (#171) refuses a seat file that names no
-token. The two changes' spec text archives into the in-force specs in one commit, once both
-are built, but #171's code is built after this change's. Until #171's code is built, a seat may
-still name no token, and the seat probe described below skips such a seat (proposal, decision
-39).
+having paid. Once `seat-files` (#171) is built, every seat has a token of its own, since #171
+refuses a seat file that names no token, and Igor never uses a stored Claude login, the
+credentials `claude` keeps in a home directory (proposal, decision 14); so the token that ran is
+always the chosen seat's. #171's code is built after this change's, and until then a seat may
+still name no token: the seat probe described below skips such a seat (proposal, decision 39).
 
 ### The record: the existing shape, and a third source, `stream`
 
@@ -598,8 +596,8 @@ behind it does not happen* also requires a seat the gate chose. This change cann
 `MODIFIED` block for it. Every seat now has a token, so the requirement's scenarios about a seat
 with no token no longer hold, and the block would have to drop them; openspec refuses a block
 that drops scenarios. `seat-files` (#171), which
-archives with this change, removes that requirement and re-adds it with a probe as the stated
-exception.
+archives after this change, removes that requirement and re-adds it with a probe as the stated
+exception. Between the two archives both are in force, a gap the proposal's decision 16 accepts.
 
 **When a seat needs one: no unexpired reading of a window.** A reading is a lower bound on its
 window until that window resets, so a clock threshold shorter than the reset would spend money to
@@ -882,7 +880,7 @@ records which role spent from which seat*, so that a probe's spend row may name 
 Two in-force `work-triage` passages still treat a seat with no capacity figure as one that cannot
 be used: the model stage's scenario where every seat "has no capacity figure", and "a seat never
 observed" in the untriaged report. This change carries no delta on them. #171 (`seat-files`)
-removes and rewrites both, and archives in the same commit as this change (decision 16).
+removes and rewrites both, and archives after this change (proposal, decision 16).
 
 No in-force requirement specifies `igor observe`, the scheduled reading, the refusal of a seat
 credential, or anything in `budget-pacing`, since neither change was archived. So their withdrawal
@@ -898,15 +896,19 @@ headroom, with the soonest reset breaking ties
 specifies it, and builds after this one.
 
 **This change carries no delta for *A pool is an ordered list of seats, and order is the
-allocation mechanism*.** `seat-files` removes that requirement, and a
-block here modifying it would fail archive once that removal lands. What a block here would have
+allocation mechanism*.** `seat-files` removes that requirement when it
+archives after this change, so a block here would rewrite text that is about to go. What a block here would have
 said, that a seat has headroom while read below its line and that exhausting every seat is a
 handoff, is in `seat-files`' requirement on choosing a seat.
 
-**This change and `seat-files` archive together (task 16.1).** The in-force pool
-requirement says a reserved seat is drawn on only once it has a capacity figure, and names
-`capacity_estimate`, which this change removes. Archived alone, this change would leave that text in
-force, contradicting *A seat with no reading is drawn on only where its line is the whole window*.
+**This change and `seat-files` archive in separate commits, this change first (task 16.1),**
+because `seat-files`' deltas are written against this change's text. The
+in-force pool requirement says a reserved seat is drawn on only once it has a capacity figure,
+and names `capacity_estimate`, which this change removes. Between the two archives that text is
+in force, contradicting *A seat with no reading is drawn on only where its line is the whole
+window*. So do *A spend with no seat behind it does not happen*, two `work-triage` passages and
+a `stuck-conditions` scenario (proposal, decision 16). Igor's code does not read the specs, so the
+gap changes no behaviour; `seat-files`' archive replaces the text.
 
 Pools also appear as **a remedy for a greedy role**, in *A role may hold back more of a seat than
 the seat does*. The requirement and this design name the remedy as choosing which roles a seat

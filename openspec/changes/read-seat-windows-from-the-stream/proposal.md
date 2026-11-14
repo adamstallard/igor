@@ -69,11 +69,11 @@ weekly. The smallest gap between observed resets is a fallback that only shorten
     credentials `claude` keeps in a home directory. This change therefore has no rule for a seat
     without a token: every seat may be probed with its own token, and every reading is of a seat
     whose token paid. #171 (`seat-files`) refuses a seat file that names no token, forbids any model
-    call on a stored login under `igor serve` or `igor run`, and archives with this change
+    call on a stored login under `igor serve` or `igor run`, and archives after this change
     (decision 16). This change carries no block on the in-force *A spend with no seat behind it
     does not happen*, whose scenarios describe a seat with no token and an organization with no
-    seats; openspec will not let a `MODIFIED` block drop them. #171 removes that requirement in
-    the same commit and re-adds it without them, naming the probe as an exception to it: a probe
+    seats; openspec will not let a `MODIFIED` block drop them. #171 removes that requirement when
+    it archives and re-adds it without them, naming the probe as an exception to it: a probe
     spends from a seat the gate did not choose.
     *Rejected:* a seat naming no token that runs on the server's stored login and is never
     probed.
@@ -81,10 +81,17 @@ weekly. The smallest gap between observed resets is a fallback that only shorten
     this change's reasoning once task 1.3 confirms that fullness does not
     fall within an instance**. A reading bounds its window from below until the
     reset, so it needs no age limit (task 1.6).
-16. **This change and #171 archive together**. The in-force pool requirement
-    names `capacity_estimate`, which this change removes, and only #171 removes that requirement,
-    so archiving this change alone would leave in-force text naming a key that no longer exists
-    (task 16.1). The order of every open change's archive is in issue #204.
+16. **This change and #171 archive in separate commits, this change first**, in the order issue
+    #204 holds, which places seven other changes between them. Issue #148's note of 2026-10-18 withdrew the plan to archive
+    the two in one commit. Between the two archives, in-force text that only #171 replaces
+    contradicts this change: the pool requirement names `capacity_estimate`, which this change
+    removes; *A spend with no seat behind it does not happen* allows no probe; two `work-triage`
+    passages treat a seat with no capacity figure as unusable; and a `stuck-conditions` scenario
+    says "from pacing" (task 15.3). Igor's code does not read the specs, so the gap changes no behaviour
+    (task 16.1).
+    *Rejected:* one commit holding both archives and the seven between them. It would close the
+    gap, but would hold this change's archive until all seven and #171
+    are built, though a change archives once its own requirements are met.
 17. **The `dedicated` seat key is dropped in #171, not here**. Once this change
     stops refusing a reserve on a dedicated seat and stops forcing its reserve to 0, the key does
     nothing. #171 is where seat keys are declared.
@@ -164,11 +171,10 @@ weekly. The smallest gap between observed resets is a fallback that only shorten
     read and gives it decision 1's line, which rises toward the reset (task 7.3). When that later
     change removes `runUsage`, the edits #174's and #175's tasks make to it go too.
 38. **If task 1.4 has no capture of `isUsingOverage: true` when the rest of gate two is built,
-    *A seat spending extra usage has no headroom* moves to a follow-up issue**,
-    so this change and #171 can archive. The two archive in one commit, this change's archive step
-    first (decision 16, task 16.1), so a requirement left unbuilt here holds #171 back too. The captures so far are of seats whose overage is
-    disabled for the organization, so a true value may never be seen, and a requirement whose code
-    is not built would keep this change from archiving.
+        *A seat spending extra usage has no headroom* moves to a follow-up issue**. A requirement
+    whose code is not built keeps this change from archiving, and #171 archives after this change
+    (decision 16, task 16.1), so it would hold #171 back too. The captures so far are of seats
+    whose overage is disabled for the organization, so a true value may never be seen.
 39. **Until #171's code lands, the probe skips a seat that names no token**.
     This change's code is built first, since #171 builds on it, and until #171's code lands the
     in-force `seat-budget` still lets a seat name no token and run on a stored login. This is the

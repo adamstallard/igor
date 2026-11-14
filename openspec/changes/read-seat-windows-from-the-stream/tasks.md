@@ -487,9 +487,10 @@ PR #101 (`condition-backoff`) is merged, and its requirements are in force as th
       reach #101's recurrence threshold. A probe that succeeds clears the condition; how else
       #101 clears it is unchanged. That clearing probe keeps this change's limit of once an hour,
       and does not wait for #101's cooldown, which grows from 15 minutes to 6 hours. The delta modifies #101's *A seat's refused credential is a condition on that
-      seat*. #171 (`seat-files`) modifies the same requirement and archives after this change, in
-      the same commit, so #171's block would replace this delta's. #171's block must therefore
-      carry this delta's rules too: when writing this delta, tell #171. #171 also carries a
+      seat*. #171 (`seat-files`) modifies the same requirement and archives after this change, so
+      #171's block would replace this delta's. #171's block therefore
+      carries this delta's rules too, in its scenario *A seat probe's refusal counts as a refused
+      run*. #171 also carries a
       `MODIFIED` block on *A seat nothing has read is probed on the Igor server with its own
       token* (proposal, decision 18), so moving *A probe checks the credential too* out of that
       requirement has to be matched in #171's block.
@@ -504,17 +505,17 @@ PR #101 (`condition-backoff`) is merged, and its requirements are in force as th
 - [ ] 15.3 The in-force `stuck-conditions` requirement *A condition that recurs stops the affected
       scope from taking new work* says "from pacing" in a scenario, and pacing is withdrawn here; the
       state is "holding back at the line". This change has no block on that requirement, so the
-      word changes in #171's `MODIFIED` copy of it, which archives with this change. Before
-      archiving, check that the copy says "from holding back at the line"
+      word changes in #171's `MODIFIED` copy of it, which takes effect when #171 archives, after
+      this change. Before this change archives, check that the copy says "from holding back at the line"
 
 ## 16. Archiving
 
-- [ ] 16.1 Archive this change and `seat-files` (#171) together, in one commit.
-      Archived alone, this change would leave the in-force pool requirement naming
-      `capacity_estimate`, which it removes; only `seat-files` removes that requirement. Run the
-      `openspec archive` steps in the order issue #204 holds, which runs this change's before
-      `seat-files`'; every change #204 places between the two archives in that same commit too.
-      This change goes first because `seat-files`' deltas are written against this change's text.
+- [ ] 16.1 Archive this change in its own commit, in the order issue #204 holds, which puts it
+      before `seat-files` (#171). This change goes first because `seat-files`' deltas are written
+      against this change's text. Between the two archives, in-force text that only `seat-files` replaces contradicts this
+      change, such as the pool requirement naming `capacity_estimate`, which this change removes
+      (decision 16 lists the passages). Igor's code does not read the specs, so the gap changes
+      no behaviour.
       Before archiving, check that each of #171's `MODIFIED` blocks on a requirement this
       change adds or modifies carries this change's current text, since #171's blocks replace
       them: the four probe requirements decision 18 names, *A role may hold back more of a seat
