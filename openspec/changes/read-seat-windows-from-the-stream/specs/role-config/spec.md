@@ -80,8 +80,8 @@ An `allow` action outside its closed set SHALL be refused at load.
 #### Scenario: An action outside the vocabulary is refused
 
 - **WHEN** a role's `allow` lists `unassign`
-- **THEN** the role is refused at load, naming the valid actions: `comment`, `review-comment`,
-  `draft-pr`, `pr`, `label`, `merge` and `send`, the closed set `allow` takes
+- **THEN** the role is refused at load, and the refusal names the valid actions, the closed set
+  `allow` takes: `comment`, `review-comment`, `draft-pr`, `pr` and `label`
 
 #### Scenario: Setting overridden
 
