@@ -75,16 +75,17 @@ frontmatter would desync as soon as time passed or a provenance item was added.
 supersession pointers and diffs are worth more than a hash, but rewording a claim later must
 not move the id, since other entries reference it. Collisions take a numeric discriminator.
 
-**No role objects in this change.** An earlier draft defined a minimal role file here, on
-the grounds that review routing and role-versus-lore routing both need one. Neither holds:
+**No role objects in this change.** This change defines no role file and writes nothing into
+role config. Two things might seem to need one, and neither does: routing a candidate to its
+reviewer, and deciding whether a candidate becomes role guidance or a lore entry.
 
 - The reviewer is the author the comments were mined from, which comes from provenance. A
   role is only implicated in the fallback cases — no response, or a departed author — and a
   single configured `reviewers` list for the store covers those without inventing a domain
   concept.
-- Routing guidance into role config is meaningless while nothing consumes role config.
-  Roles do not become runtime objects until `core-igor-loop`, so "propose a role config
-  change" would mean writing to a file nothing reads.
+- Promoting guidance into a role's instructions is a separate step from mining it. Every
+  candidate here is a lore entry with a `scope` label, and one that concerns a role is scoped to
+  that role, so that step can find it later without this change editing any role file.
 
 So everything this change produces is a lore entry, and `scope` is a **label**
 (`global`, `role:frontend`, `project:<name>`) rather than a foreign key. Tagging an entry
@@ -106,8 +107,8 @@ all 2,009 comments measured, outdated ones included.
 
 The measurement is in **Stick detection, measured** below. In short: the free signal is
 exactly GitHub's `outdated`, the 33×-more-expensive route of diffing later commits agrees
-with it only 75% of the time while measuring the same proxy, and what any of them prove is
-weaker than this change originally assumed.
+with it only 75% of the time while measuring the same proxy, and neither shows more than weakly
+that a correction was accepted.
 
 **Stick detection weights, it does not gate, and it is believed most when it says no.**
 Among threads hand-labelled as the author actually rejecting the correction, 32% read as
@@ -333,8 +334,8 @@ a tuning pass.
 
 A spike over one real repository — 277 inline review comments, four years, three human
 reviewers, no bots — produced **six** entries a person would want to keep. That is the
-number to design against, not the "the same correction fourteen times" framing this change
-was originally pitched on.
+number to design against, not the proposal's picture of a reviewer who has written the same
+comment fourteen times.
 
 Composition of that corpus: 46% prose that is mostly feature-specific design discussion
 rather than reusable convention, 18% acknowledgements and bare commit links, 14% questions,
@@ -362,6 +363,19 @@ rather than a prediction of what the implementation will achieve.
   whether repository content leaves the environment.
 - Should lore eventually live in its own repository rather than a path inside the operating
   team's repo? Deferred until there is a second consumer.
+- Clusters are scored with exponential decay on comment age (*Clusters are scored on support
+  and recency independently*), but lore-store's *Provenance is the sole source of support and
+  authorship* forbids a time-decayed weight. Either decay goes, or this change modifies that
+  requirement.
+- A candidate that refines an existing entry is proposed as an edit to it, but lore-review
+  refuses a candidate whose id is taken and does not treat a pull request that only edits an
+  entry as a proposal. Which path adds provenance to an existing entry?
+- Non-response escalates to "the role owner" in one decision and to the store-level
+  `reviewers` in another and in tasks 5.5 and 5.6. Which is it?
+- A declined candidate is final here, while the scenario *New evidence may raise a previously
+  rejected rule* lets new evidence propose it again: a later comment expressing a rejected rule
+  forms a new cluster. The behaviour stands; the open question is whether the decline paragraph
+  should say so.
 
 ## Sources, ranked by evidence rather than by volume
 
