@@ -3,8 +3,8 @@
 An Igor's run is claim, work, publish, release. The worker edits files in a disposable clone,
 and the loop decides what becomes of them: it filters by the role's action space, builds a
 branch through the code host's API from what changed, and opens a pull request titled with the
-issue title. Its body is `Closes #n` followed by a transcript excerpt. The claim is then released
-and the configured completion action taken.
+issue title. Its body is `Closes #n` followed by a transcript excerpt. The claim is then released,
+leaving the item open for the merge to close.
 
 After that the item is out of reach. It reports work in flight, and that skip is universal. The
 one pass that returns to a published artifact is the catch-up (`A published artifact is kept
@@ -47,19 +47,6 @@ The brief also gave three recommendations: a fresh claim at gate two, noting an 
 continuing, and treating an approval with comments as a go. The spec is written to them, and
 they are settled as questions 11–13.
 
-## Decided: every Igor is a GitHub App
-
-- **An approval from an Igor never counts as the go signal.** Only an approving review from a
-  person with authority does. This reverses settled question 5, and matches
-  `one-claiming-surface`'s *A person approves every Igor pull request* (#156).
-- **Every Igor is a GitHub App at launch** (#156). An Igor's review is therefore recognisable by
-  its author's account type, `Bot`, with no list of Igor accounts. Machine-user Igors are not
-  supported, so an Igor never posts as a person.
-- **An App claims with its `igor:<role>` label, not the assignee** (#156). The fresh claim at
-  gate two is the ordinary claim, so settled question 11 now names the holder field where it
-  named the assignee, and the rediscovery scenario in `work-triage` says the Igor released its
-  claim where it said it unassigned itself. Amended 2026-10-04.
-
 ## Decided: how a gate-one pull request stays in flight
 
 - **A gate-one spec pull request keeps its issue in flight because it is recognisable as the
@@ -73,12 +60,12 @@ they are settled as questions 11–13.
 ## Decisions made here
 
 Each of these follows from the settled decisions above, or from requirements already in force.
-Where one was a real choice, it was also put to Adam as a question (see Settled questions).
+Where one was a real choice, it is also a settled question below.
 
 ### Confinement is a filter on what is carried, not a separate path
 
-The loop already turns `tree.changes()` into files and deletions at one place (`carried`, in
-`execute.ts`). Gate one filters that list by path before anything is published. Everything
+The loop already turns `tree.changes()` into files and deletions at one place (`carried`,
+defined in `worktree.ts` and called in `execute.ts`). Gate one filters that list by path before anything is published. Everything
 dropped becomes a refusal, which is how the loop already records an action it declined. The
 refusals are named in the pull request body and in the report on the item.
 
@@ -101,6 +88,16 @@ that a rename out of the specification tree does not arrive looking like a plain
 **Nothing left means a handoff, not "nothing to do".** A worker that wrote only code has done
 something, just the wrong thing for this gate. `nothing-to-do` would read as "looked and found
 nothing", and is not deferred the same way.
+
+**A gate-one revision is confined as gate one is.** A revision of a gate-one artifact carries only
+`openspec/changes/**`, so the carry rule's exception names gate one with its revisions. Leaving
+the revision unconfined would let a change request start the implementation before approval,
+which settled decision 2 forbids.
+
+**An unreadable path outside the specification path is dropped, not refused.** An unreadable
+path is one whose content the loop cannot read out of the worker's tree, such as a file without
+read permission. Gate one would not carry it anyway, so refusing the run over it, as `rename-arrives-whole` (#120) does elsewhere,
+would waste a specification that is otherwise whole.
 
 **The confinement binds the worker, not the base.** Catching up a gate-one artifact merges the
 base in, and the resolution commit names the base as a parent. The base's own changes under
@@ -133,7 +130,7 @@ person who pushes code onto a gate-one branch moves it into gate two, and the Ig
 it alone as work in flight, which is the safe direction. A pull request's diff is taken against
 the merge base, so a catch-up merge does not move it.
 
-The alternative, reading the title marker, was rejected (settled question 2).
+Settled question 2 gives the alternative, the title marker, and why it lost.
 
 ### Which review counts, and when
 
@@ -141,10 +138,11 @@ A review is **decisive** if it approves or requests changes. A comment-only revi
 decisive, and neither is a dismissed one. For each person with authority, only their latest
 decisive review counts (`latestOpinionatedReviews` in GitHub's GraphQL API).
 
-A review is **current** while nothing has changed the artifact's content since it was
-submitted. It stays current when the head has moved only by merges of the base. The Igor's own
-revision, or its gate-two push, supersedes it. So does a commit anyone else pushes that is not
-a merge.
+A review is **current** while the head has moved only by merges of the base with no conflict to
+resolve. The Igor's own revision, or its gate-two push, supersedes it. So does a commit anyone
+else pushes that is not a merge. So does a merge whose conflict anyone resolved, a worker or a
+person: gate one changes nothing outside `openspec/changes/`, so its conflicts lie there, and
+resolving one rewrites the reviewed spec.
 
 A merge must not supersede a review. `A published artifact is kept mergeable` catches up
 artifacts that conflict, and a gate-one spec waiting for review is exactly the kind of artifact
@@ -152,7 +150,9 @@ that gets caught up. If each catch-up voided the approval, a slow review on a bu
 would never end.
 
 A current decisive review is **answered** once the Igor has posted a hand-back reply on the
-artifact that names that review. Nothing else answers a review. That includes the Igor answering
+artifact that names that review in a line the loop writes. The worker writes only the reply's
+prose. So a worker whose instructions came partly from a review's text cannot name another
+review's id in that prose and so mark that review answered. Nothing else answers a review. That includes the Igor answering
 a mention under `directed-interaction`, and a comment from someone else. A review is
 **actionable** while it is current and unanswered. Then:
 
@@ -186,11 +186,13 @@ for it. Every Igor is a GitHub App, so this excludes every Igor's review, an app
 change request. It also excludes any other App, such as a dependency bot, which was never
 asked to decide.
 
-Any other author has authority if the store's `reviewers` names them, or if `user.permissions.push` is true on the
-repository (`GET /repos/{repo}/collaborators/{login}/permission`). Read the boolean, never the
-`permission` string. `directed-interaction` measured this: the string reports `admin` for an
-admin and `write` for a maintainer, so comparing it to `"write"` excludes the people with the
-most authority. A read that fails means no authority for that cycle.
+Any other author has authority if the store's `reviewers` names them, or if
+`user.permissions.push` is true on the repository
+(`GET /repos/{repo}/collaborators/{login}/permission`). Read the boolean, never the `permission`
+string; the decision record, `openspec/specs/two-gate-workflow/decisions.md`, gives the
+measurement behind that. A read that fails means no authority for that cycle, even for an author
+the store's `reviewers` names: the loop then cannot tell what the code host says of that account,
+and treats it as absent.
 
 `latestOpinionatedReviews(writersOnly: true)` would answer the write-access half in one request,
 and cannot answer the store half. So the request asks for all authors, and the check runs per
@@ -221,24 +223,16 @@ than on a reviewer.
 
 ### An approval on a draft counts
 
-**Measured 2026-10-04: GitHub accepts an approving review on a draft pull request.** In
-`adamstallard/igor-throwaway-tests`, the App `igor-generalist` opened draft pull request #10, and
-Adam's `POST /pulls/10/reviews` with `event=APPROVE` returned `state: APPROVED`. The pull
-request was never marked ready. Read back as the App, REST
-`GET /pulls/10/reviews` gave one review: `user.login` `adamstallard`, `user.type` `User`,
-`state` `APPROVED`. GraphQL gave `isDraft: true` and `reviewDecision: APPROVED`.
+GitHub accepts an approving review on a draft pull request; the measurement is a Rationale entry
+in `openspec/specs/two-gate-workflow/decisions.md`. So gate one opens a pull request as any run of
+the role would, a draft where the role allows `draft-pr`, and an approval on that draft is the go
+signal. A role that allows only `draft-pr` can use `two-gate`.
 
-So gate one opens a pull request as any run of the role would, a draft where the role allows
-`draft-pr`, and an approval on that draft is the go signal. A role that allows only `draft-pr`
-can use `two-gate`.
+### Gate one ends with a release
 
-### Gate one ends with a release, not a completion
-
-The configured completion action is for "on believing work complete". At gate one the work is
-not complete. Taking `completion: close` at gate one closes the issue with nothing built, which
-is the failure Adam's closing-keyword decision exists to prevent, reached another way. So gate
-one releases the claim, as standing down does, and the completion action waits for gate two.
-This was put to Adam because it narrows how an existing setting behaves (settled question 10).
+On `main`, a finished run releases its claim and leaves the item open, with no role setting that
+closes it. Gate one does the same. Nothing in the workflow closes the item but the merge of gate
+two's artifact, through the closing keyword gate two's body carries.
 
 ### No closing keyword from any source until gate two
 
@@ -246,16 +240,17 @@ GitHub closes an issue from a closing keyword in a pull request's body, or in th
 commit that reaches the default branch. At gate one the Igor controls three places:
 
 - **The body.** It is built from `linkage` and a transcript excerpt. `stripLinkage` removes only
-  the exact linkage line, so a worker's own "Fixes #12" survives into the body today.
+  the exact linkage line, so a worker's own "Fixes #12" survives into the body today. The dropped
+  paths are listed there too, and a path's name is the worker's choice, so each is written as
+  code, where no keyword or mention is read.
 - **The commit message.** It is the issue title, written by a person, and could carry one too.
 - **The worker prompt.** It tells the worker the item will be referenced as `Closes #n`.
 
 So the rule is stated over any closing keyword the host honours, from any source, and not over
 the adapter's linkage line. The reference that links without closing is adapter-supplied,
-because linkage is. For GitHub it is `Answers #n`. This was measured on 2026-09-28: a
-non-closing mention of an issue in an open pull request's body creates the
-`CROSS_REFERENCED_EVENT` that `inFlightFrom` reads (issue #139 carries one from PR #140). So gate
-one still counts as work in flight.
+because linkage is, and `surface-adapter`'s linkage requirement now names it. For GitHub it is
+`Answers #n`. It still makes gate one count as work in flight; the decision record holds the
+measurement.
 
 ### Revising and implementing commit onto the existing branch
 
@@ -267,7 +262,36 @@ an edit to the pull request's title and body, and a re-request of review. Neithe
 beside `openPullRequest` today.
 
 The tree is provisioned at the artifact's branch (`provision(repo, ref)`), which the catch-up
-already does.
+already does, and the commit is built on that branch's head, whose tree the carry rule edits to
+remove each path the worker removed. Where the claim is lost before such a run publishes, the run
+commits what exists onto the branch, requests no review, and leaves the pull request's title, body
+and draft state alone. Elsewhere a lost claim publishes what exists as a draft (`task-execution`),
+but turning a pull request a person may already be reviewing into a draft has no meaning.
+
+### Resuming takes its claim as a catch-up does
+
+A person hands an item to the Igor through its holder field: on GitHub, by adding the Igor's
+`igor:<role>` label. A person may do so while the Igor's spec awaits review. `work-claiming`
+forbids claiming such a hand-over while work is in flight, and exempts only a catch-up, since
+bringing the Igor's own pull request up to date is not a claim of the hand-over. A revision and
+gate two continue the Igor's own artifact as a catch-up does, so they take the same exemption,
+and their release leaves the person's holder entry in place.
+
+### A hand-off that answers on the artifact defers nothing
+
+A revision or gate two that changes nothing replies on the artifact and releases its claim. A
+hand-off on the item would defer it, and a deferred item is skipped until someone replies on the
+item or edits it. A review on the pull request does neither. So where a change request and an
+approval were both current and the revision changed nothing, the approval would never start
+gate two.
+
+### Each hand-back follows a consistency read
+
+Before every hand-back of the change to a person, at gate one, after each revision and at gate
+two, the loop runs spec-check's consistency read on the branch and commits it, carrying the read's
+`Spec-check:` trailer, as issue #149 decided. Where spec-check's GitHub workflow is installed, it
+turns a pull request handed back with an unread change into a draft again and withdraws the
+review request. Without that workflow, the person would get the change unchecked.
 
 ### Replying to a review is owed, not permitted
 
@@ -279,9 +303,10 @@ be the silence `An Igor never goes silent on a claimed item` forbids, moved to t
 ### What gate two says about an edited item
 
 The approval was of the spec, so an edit to the item between the gates does not stop gate two.
-It is noted: gate two's body says the item was edited after the approval, and links the item.
-The reviewer then knows to check the spec against the new text. "Edited" means the item's own
-edit time (`lastEditedAt`) is later than the approval. A comment is not an edit.
+It is noted: gate two's body says the item changed after the approval, and links the item.
+The reviewer then knows to check the spec against the new text. A change is to the title, body or
+labels, read from the item's timeline, since `lastEditedAt` records body edits only. A comment is
+not a change.
 
 ## Settled questions
 
@@ -306,7 +331,7 @@ its recommendation.
    `two-gate`. The branch not taken was to open gate one ready for review
    and refuse `two-gate` for a `draft-pr`-only role.
 4. **Role-level `reviewers`.** §5.4 says "per-role lists once roles exist", and roles now
-   declare `reviewers`. Your decision named the store-level list. *Recommend:* role `reviewers`
+   declare `reviewers`. Settled decision 3 names the store-level list. *Recommend:* role `reviewers`
    do **not** confer authority. They say whom to ask, and the store list says who may decide. A
    role reviewer with write access has authority anyway.
 5. **An approval from another Igor.** **Reversed:** an Igor's review never counts, and only a
@@ -321,7 +346,7 @@ its recommendation.
    dropping all three.
 7. **A spec pull request merged before gate two.** With no closing keyword the issue stays open,
    and a merged pull request is not in flight, so today the next pickup would open a **second**
-   spec pull request, which Adam's workflow forbids. The merge is ambiguous: "spec accepted,
+   spec pull request, which the two-gate workflow forbids. The merge is ambiguous: "spec accepted,
    now build it", or "this was all we wanted". *Recommend:* treat it as #141 treats a close.
    Defer the item and ask once. It is specified as its own requirement, *A spec pull request
    merged before gate two defers its item*, so it can be dropped. What an answer then starts is
@@ -329,7 +354,7 @@ its recommendation.
    build on. *Recommend:* the next run is gate two on a fresh branch, with the merged change as
    its tasks. That is a second pull request, but only because the first one was merged by a
    person, not because the Igor opened a new one.
-8. **`workflow` merge semantics.** *Recommend:* **override**, like `completion`, over a closed
+8. **`workflow` merge semantics.** *Recommend:* **override**, like `seat`, over a closed
    set `one-gate | two-gate`, defaulting to `one-gate`. Two-gate adds a review gate. It is not
    more or less permissive in the way `allow` is, so there is no direction in which a monotonic
    rule would be strict. An org base can set it, and a role can set it back. A typo is refused,
@@ -338,10 +363,8 @@ its recommendation.
    the lane **does** apply to gate two and to revisions. A person who relabels the item `Human`
    between the gates has said the opposite of go, and the lane is the cheapest place to honour
    that. The model stage still does not run.
-10. **Completion at gate one.** *Recommend:* release only, as above. The configured completion
-    action waits for gate two. This narrows how `completion` behaves for a two-gate role. It
-    does not modify `Completion behaviour follows configured policy`, because gate one is not
-    "believing work complete", but you may want that spelled out there.
+10. **Completion at gate one.** Gate one releases only, leaving the item open. On `main` no
+    role setting closes an item when a run finishes, so gate one is no different from any run.
 11. **A fresh claim at gate two, and at each revision.** *Recommend:* yes, on the item, through
     the ordinary claim path, so the holder field (on GitHub, the Igor's `igor:<role>` label) and
     the claim message show gate two starting.
@@ -357,13 +380,15 @@ its recommendation.
 
 ## Open Questions
 
-- **A gate-one revision and the carry rule.** *A change request is answered on the same branch*
-  answers a change request on a gate-one artifact with a revision "confined as gate one is", so
-  it carries only `openspec/changes/**`. `task-execution`'s carry rule, *The artifact carries
-  every change the worker made, including removals*, makes gate one its one exception. If that
-  revision does not count as gate one there, the carry rule requires it to carry a path outside
-  `openspec/changes/**` that the confinement drops. Either the exception names a gate-one
-  revision, or the revision is not confined. Nothing in this change decides which.
+- **Unmeasured: one review per author** (task 1.2). The design assumes `latestOpinionatedReviews`
+  returns one decisive review per author and names the commit each was submitted against. If it
+  does not, task 3.1 reads the reviews from REST instead and keeps each author's latest decisive
+  one.
+- **Unmeasured: `Answers #n` closes nothing on merge** (task 1.3). The event it creates was
+  measured; the merge was not. If merging closes the issue, the adapter's non-closing reference
+  becomes a plain mention of the issue's URL, and task 1.3 measures that form instead.
+- **Unmeasured: the cost of review data in discovery** (task 3.4). If it is too high, reviews are
+  read only for an Igor's own open gate-one artifacts, in a second request.
 
 ## Interactions with open work
 
@@ -375,6 +400,10 @@ its recommendation.
   and it is the review that counts. Where #139's bug-hunter decisions are answered by mention
   at gate two, that is #140's "answer to a question the Igor asked", on the same pull request,
   and nothing here changes it.
+- **#140, #153 and #216 rewrite `role-config`'s key list and its Override list.** None of them
+  includes `workflow`, which this change adds to both, so whichever archives last must keep it.
+- **#120 `rename-arrives-whole`.** It refuses a run with an unreadable path, and left gate one's
+  case to this change: gate one drops such a path outside `openspec/changes/` and names it.
 - **#141 `closed-pr-defers`.** A closed spec pull request is an Igor's own pull request closed
   without merging, so #141's rule covers it with nothing added: defer, ask once, and restart
   only on an answer from someone with write access. This change adds only what #141 can't say
@@ -387,12 +416,10 @@ its recommendation.
 - **#146 `claim-window`.** Gate two and each revision take an ordinary claim through
   `takeClaim`, so *A claim that cannot be kept is given back, out loud* applies to them
   unchanged. Nothing here depends on #146 landing first.
-- **#139 bug-hunter as a pipeline step.** Gate two runs it where it is configured. This change
-  specifies only where the step sits, after the implementation and before the commit and the
-  title and body update. #139 owns how it runs and what trailer it mints. Gate-one commits carry
-  `Bug-hunter: skipped at triage (spec only)` once #139 lands, the same trailer this pull
-  request's own commit carries. Gate two's body includes bug-hunter's open decisions under
-  #139 §3b.
+- **#153 `signed-publishing`.** Gate two runs its bug-hunter step where the role's `skills`
+  list names `bug-hunter`. This change specifies only where the step sits, after the
+  implementation and before the commit and the title and body update. #153 owns how it runs,
+  the trailers every commit carries and the signed replies, and issue #139 defers to it.
 - **#125 `carry-only-what-happened`.** It states its rule over paths, and gate one's confinement
   follows it. They are independent filters on the same list. Confinement runs after #125's rule.
 - **`budget-pacing`, #143.** Gate two and revisions are ordinary spends through the gate, and
@@ -400,10 +427,6 @@ its recommendation.
 
 ## Risks
 
-- **An Igor that is not an App breaks the `Bot` test.** Today's build runs an Igor as a machine
-  user, whose reviews are authored by a `User` and would count. `igor doctor` (#113) reports any
-  role whose GitHub identity is not an App as a finding (task 2.5). An approving review stays the
-  only go signal: nothing the pull request's author posts can stand in for one.
 - **Review data widens the discovery request.** `latestOpinionatedReviews` and `headRefOid` on
   every cross-referenced pull request add to the GraphQL cost of each page. Measure before and
   after on a real query (task 3.4).
@@ -426,8 +449,8 @@ its recommendation.
 
 ## Roads not taken
 
-- **A second pull request for gate two.** Adam's workflow says never. It would also split the
-  review conversation across two pull requests.
+- **A second pull request for gate two.** It would split the review conversation across two
+  pull requests, and leave the first, a spec with nothing built, for someone to merge or close.
 - **Recording the phase on the state branch.** It is a cache, and a lost cache would put a
   gate-two artifact back through gate one.
 - **A mention as the go signal.** It is text, and it needs `directed-interaction`. The review is

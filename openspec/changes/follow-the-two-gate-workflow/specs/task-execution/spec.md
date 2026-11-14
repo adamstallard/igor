@@ -6,9 +6,9 @@ An artifact SHALL carry every change execution read out of the working tree — 
 modified and removed. A removal SHALL NOT be dropped, and a change consisting only of removals
 SHALL be published rather than refused.
 
-The one exception is gate one of the two-gate workflow, where the artifact SHALL carry only
-changes under `openspec/changes/**` and SHALL name in its body each change it did not carry.
-Outside gate one the rule applies unchanged; design.md's open questions name a conflict.
+The one exception is gate one of the two-gate workflow, its revisions included, where the
+artifact SHALL carry only changes under `openspec/changes/**` and SHALL name each change it did
+not carry, in its body or, for a revision, in the reply.
 
 #### Scenario: A removal alongside edits
 
@@ -26,6 +26,11 @@ Outside gate one the rule applies unchanged; design.md's open questions name a c
 
 - **WHEN** a worker renames a file
 - **THEN** the artifact carries the new path and no longer carries the old one
+
+#### Scenario: A gate-one revision is confined too
+
+- **WHEN** a revision of a gate-one artifact changes a path outside `openspec/changes/`
+- **THEN** the revision does not carry that change, and its reply names it
 
 #### Scenario: Gate one's exception is named, not silent
 

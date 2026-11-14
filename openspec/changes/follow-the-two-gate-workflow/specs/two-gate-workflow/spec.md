@@ -44,6 +44,12 @@ Igor's report on the item.
 - **WHEN** a role does not declare `workflow: two-gate`
 - **THEN** every change the worker made is carried, as before
 
+#### Scenario: An unreadable path outside the specification path is dropped
+
+- **WHEN** a gate-one worker leaves a path outside `openspec/changes/` whose content the loop
+  cannot read, such as a file without read permission
+- **THEN** it is dropped and named like any other path outside it, and the run is not refused
+
 #### Scenario: Catching up a spec carries the base's own changes
 
 - **WHEN** a gate-one artifact that stopped merging is brought up to date, and the base changed
@@ -65,12 +71,12 @@ nothing SHALL be published, and the item SHALL be handed off naming what was dro
 ### Requirement: A gate-one artifact says it is a specification and closes nothing
 
 A gate-one artifact's title SHALL carry a marker saying it is a specification. Its body SHALL
-open by saying it is specification only and nothing outside `openspec/changes/` is included.
-It SHALL refer to its item through the tracker adapter's non-closing reference.
+open by saying it is specification only. It SHALL refer to its item through the tracker adapter's
+non-closing reference.
 
-No gate-one artifact, commit on its branch, or body SHALL carry a closing keyword the code host
-honours for the item, whatever its source: the adapter's linkage, the worker's output, or the
-item's own title used as a commit message.
+Nothing a gate-one artifact carries, its commits and body included, SHALL hold a closing keyword
+the code host honours for the item, from any source: the adapter's linkage, the worker's output,
+a dropped path's name, or the item's title as a commit message.
 
 #### Scenario: The title and body say what the artifact is
 
@@ -94,6 +100,11 @@ item's own title used as a commit message.
 - **WHEN** a gate-one item's title contains a closing keyword for itself
 - **THEN** neither the commit message nor the body carries it as a closing keyword
 
+#### Scenario: A dropped path's name is shown as a name
+
+- **WHEN** a gate-one worker writes a file outside `openspec/changes/` named `fixes #12 @alice.md`
+- **THEN** the body names the path as code, closing nothing and mentioning nobody
+
 #### Scenario: Merging a spec alone closes nothing
 
 - **WHEN** a gate-one artifact is merged before gate two runs
@@ -101,19 +112,20 @@ item's own title used as a commit message.
 
 ### Requirement: Gate one ends with a release, not a completion
 
-When gate one publishes, the Igor SHALL release its claim on the item and SHALL NOT take the
-role's configured completion action. The completion action SHALL be taken when gate two
-publishes.
+When gate one publishes, the Igor SHALL release its claim on the item and leave the item open, as
+any finished run does. Completing the item, which closes it, SHALL come only from the merge of
+gate two's artifact, whatever the role.
 
 #### Scenario: A role that closes on completion does not close at gate one
 
-- **WHEN** a two-gate role with `completion: close` publishes a gate-one artifact
+- **WHEN** a two-gate role publishes a gate-one artifact for an item it is to close once complete
 - **THEN** the claim is released and the item stays open
 
 #### Scenario: The completion action waits for gate two
 
 - **WHEN** gate two publishes for the same item
-- **THEN** the role's completion action is taken
+- **THEN** the claim is released and the item stays open
+- **AND** the item closes when gate two's artifact merges, and not before
 
 ### Requirement: An approving review from someone with authority is the go signal
 
@@ -149,6 +161,16 @@ dismissed review, and any text in a review's body.
 - **THEN** gate two starts
 - **AND** the comments are passed to the worker as untrusted data
 
+#### Scenario: A comment-only or dismissed review is not a go
+
+- **WHEN** someone with write access leaves a comment-only review, or an approval later dismissed
+- **THEN** gate two does not start
+
+#### Scenario: Only a reviewer's latest decisive review counts
+
+- **WHEN** a person with authority approved, and later requested changes
+- **THEN** the change request is the review that counts, and the Igor revises
+
 #### Scenario: Somebody else's spec is not resumed
 
 - **WHEN** an approval lands on a gate-one-shaped artifact another party opened
@@ -159,9 +181,8 @@ dismissed review, and any text in a review's body.
 Authority SHALL mean being named in the store's `reviewers` or having write access to the
 repository. A review's author SHALL be read from the code host's metadata, and its permission
 from the permission data. Authority SHALL fail closed: an author whose permission can't be read
-has none, even a store reviewer. An author whose account type is `Bot` SHALL have no authority,
-whatever its access. Every Igor is a GitHub App, so an approval from an Igor never starts gate
-two.
+has none, even one the store's `reviewers` names. An author whose account type is `Bot` SHALL have no authority,
+whatever its access. A review without authority SHALL be ignored, with no reply.
 
 #### Scenario: An approval from a store reviewer without write access starts gate two
 
@@ -186,10 +207,10 @@ two.
 
 ### Requirement: A review stays current through merges of the base and is answered only by name
 
-A review SHALL count as current while nothing but merges of the base has landed on the
-artifact's branch since it was submitted, and as unanswered until the Igor posts a hand-back
-reply on the artifact that names it. Nothing else the Igor or anyone else posts SHALL answer a
-review.
+A review SHALL count as current while nothing but merges of the base, none with a resolved
+conflict, has landed on the artifact's branch since it was submitted. It is unanswered until the
+Igor posts a hand-back reply on the artifact naming it in a line the loop writes. Nothing else
+SHALL answer a review, a review id in the worker's text included.
 
 #### Scenario: Other posts on the artifact do not answer an approval
 
@@ -201,6 +222,17 @@ review.
 
 - **WHEN** an approval was given before the Igor's latest revision landed
 - **THEN** it is not current, and gate two waits for an approval of the revised spec
+
+#### Scenario: A resolved conflict supersedes an approval
+
+- **WHEN** an approval was given, and afterwards a merge of the base whose conflict a worker or a
+  person resolved landed on the branch
+- **THEN** the approval is not current, and gate two waits for an approval of the result
+
+#### Scenario: A review id in the worker's text answers nothing
+
+- **WHEN** a revision's worker writes an approval's id into the text of the reply
+- **THEN** the approval is still unanswered
 
 #### Scenario: A merge of the base does not supersede an approval
 
@@ -261,8 +293,9 @@ again, and release the claim.
 
 Where a revision made under *A change request is answered on the same branch* leaves nothing to
 publish, the Igor SHALL reply on the artifact, naming each change request it answers and saying
-why it could not revise, and SHALL hand the item off. That reply answers those change requests
-and no other review, so the same change request SHALL NOT be acted on again.
+why it could not revise, and SHALL release its claim. That reply is the hand-off, and the item
+SHALL NOT be deferred. It answers those change requests and no other review, so none of them
+SHALL be acted on again.
 
 #### Scenario: A revision that changes nothing ends the round
 
@@ -283,8 +316,7 @@ On an actionable approval, the Igor SHALL take a fresh claim on the item, provis
 the artifact's branch, and ask the worker to implement the tasks of the artifact's change,
 passing the approving review's body and inline comments as untrusted data. Gate one's
 confinement SHALL NOT apply, and the role's action space SHALL. Gate two SHALL publish as a
-commit on the existing branch. It is a spend, and SHALL start only where the budget gate names
-a seat (a model subscription) for it.
+commit on the existing branch. It is a worker run, and goes through the budget gate as any is.
 
 #### Scenario: Gate two lands on the spec's branch
 
@@ -302,8 +334,12 @@ a seat (a model subscription) for it.
 
 - **WHEN** an approval is actionable and the budget gate names no seat
 - **THEN** nothing is claimed and no worker runs
-- **AND** the approval is still actionable on a later cycle, with nothing recorded against the
-  item
+- **AND** the approval is still actionable on a later cycle, and the item is not deferred
+
+#### Scenario: The action space binds gate two
+
+- **WHEN** gate two's worker changes something the role's `allow` does not permit
+- **THEN** that change is refused, as in any run of the role
 
 #### Scenario: A stop binds gate two
 
@@ -312,22 +348,28 @@ a seat (a model subscription) for it.
 
 ### Requirement: Gate two runs bug-hunter before publishing and hands back after
 
-Where the role configures bug-hunter as a pipeline step, gate two SHALL run it after the
-implementation and before publishing. Once the artifact's title and body are replaced, the Igor
-SHALL request review, release the claim, and take the role's completion action. For whom to
-ask, design.md's settled question 4 gives context.
+Where the role's `skills` list names `bug-hunter`, gate two SHALL run the bug-hunter step that
+`signed-publishing` (#153) defines, after the implementation and before publishing. Once the
+artifact's title and body are replaced, the Igor SHALL request review from the role's
+`reviewers` and release the claim.
 
 #### Scenario: Bug-hunter runs where configured
 
-- **WHEN** the role configures bug-hunter as a pipeline step
+- **WHEN** the role's `skills` list names `bug-hunter`
 - **THEN** it runs over gate two's changes before they are published
+
+#### Scenario: Gate two hands back for review
+
+- **WHEN** gate two has published and replaced the title and body
+- **THEN** review is requested from the role's `reviewers`, and the claim is released
 
 ### Requirement: Gate two rewrites the artifact's title and body
 
 After publishing, gate two SHALL replace the artifact's title and body. The title SHALL drop the
 specification marker. The body SHALL describe the implementation as well as the specification
 and carry the tracker adapter's linkage for the item, which may close it, depending on the
-adapter. Where the item was edited after the approval, the body SHALL say so and link the item.
+adapter. Where the item's title, body or labels changed after the approval, the body SHALL say so and link
+the item.
 
 #### Scenario: The title and body stop saying specification only
 
@@ -345,14 +387,14 @@ adapter. Where the item was edited after the approval, the body SHALL say so and
 
 Where gate two leaves nothing to publish outside `openspec/changes/`, the Igor SHALL publish
 nothing and SHALL leave the title and body as they are. It SHALL reply on the artifact, naming
-the approval it answers and saying why, and SHALL hand the item off. The same approval SHALL NOT
-be acted on again.
+the approval it answers and saying why, and SHALL release its claim without deferring the item.
+The same approval SHALL NOT be acted on again.
 
 #### Scenario: An implementation confined to the spec path is not published
 
 - **WHEN** gate two's worker changes nothing outside `openspec/changes/`
 - **THEN** nothing is published and the title and body are unchanged
-- **AND** a reply on the artifact says why, the item is handed off, and the same approval is not
+- **AND** a reply on the artifact says why, the claim is released, and the same approval is not
   acted on again
 
 ### Requirement: A resumed item passes the stop gate and the deferral gate
@@ -380,6 +422,11 @@ model triage call SHALL be made for it, and it SHALL NOT hold any source's water
 
 - **WHEN** an item is resumed for gate two
 - **THEN** no triage model call is made for it
+
+#### Scenario: A resumed item holds no watermark
+
+- **WHEN** an item is resumed for gate two
+- **THEN** its source's watermark moves as if the item had not been examined
 
 #### Scenario: A conflicting spec is caught up before it is resumed
 
@@ -417,12 +464,18 @@ updated to describe what the artifact now carries.
 - **WHEN** the requested change is to a file under `src/`
 - **THEN** the revision carries it
 
+#### Scenario: A gate-two revision rewrites the title and body
+
+- **WHEN** a gate-two revision has been committed
+- **THEN** the title and body describe what the artifact now carries
+
 ### Requirement: A spec pull request merged before gate two defers its item
 
 Where the Igor's own gate-one artifact is merged before gate two published, the Igor SHALL NOT
 start another gate one for the item. It SHALL say on the item, once, that the specification was
-merged with nothing built and ask whether to build it. The item SHALL stay deferred until
-someone with write access answers.
+merged with nothing built, ask whether to build it, and defer the item as a hand-off does. After
+an answer from someone with write access, the item's next run SHALL be gate two on a fresh
+branch, implementing the merged change.
 
 #### Scenario: A merged spec is not specified again
 
@@ -433,4 +486,60 @@ someone with write access answers.
 #### Scenario: An answer from someone with write access restarts it
 
 - **WHEN** someone with write access replies on the item
-- **THEN** it may be worked again
+- **THEN** the next run on it is gate two, on a fresh branch, implementing the merged change's
+  tasks
+
+### Requirement: An artifact's phase is read from its diff
+
+An Igor's own two-gate artifact SHALL be at gate one while its diff against its base, taken from
+the merge base, holds no path outside `openspec/changes/**`, and past gate one otherwise. The
+phase SHALL NOT be read from the title or the state branch. An item's first run is a run on an
+item with no gate-one artifact of the Igor's own, open or merged; a closed one does not count.
+
+#### Scenario: A tidied title does not change the phase
+
+- **WHEN** a person removes the specification marker from a gate-one artifact's title
+- **THEN** the artifact is still at gate one
+
+#### Scenario: A person's code push moves the artifact past gate one
+
+- **WHEN** a person pushes a change under `src/` onto a gate-one artifact's branch
+- **THEN** the artifact is past gate one
+
+### Requirement: Resuming is not a claim of a hand-over
+
+Where a person hands an item to the Igor while its own gate-one artifact is open, a revision or
+gate two SHALL take its claim as a catch-up does, which `work-claiming` does not count as a claim
+of the hand-over, and its release SHALL leave the person's holder entry in place.
+
+#### Scenario: A hand-over during review does not block resuming
+
+- **WHEN** a person adds the Igor's `igor:<role>` label while its spec awaits review, and the
+  spec is approved
+- **THEN** gate two runs
+- **AND** the label is still on the item after gate two releases its claim
+
+### Requirement: A resumed run commits onto the artifact's head
+
+A revision and gate two SHALL build their commit on the head of the artifact's branch, removals
+included. Where the claim is lost before they publish, they SHALL commit what exists onto that
+branch, request no review, and leave a message on the item naming what exists, and SHALL NOT
+change the
+artifact's title, body or draft state.
+
+#### Scenario: A lost claim during gate two keeps the pull request as it was
+
+- **WHEN** gate two's claim is lost after its worker finished
+- **THEN** what exists is committed onto the branch, and a message names it
+- **AND** no review is requested, and the title, body and draft state are unchanged
+
+### Requirement: Each hand-back follows a consistency read
+
+Before each hand-back to a person, at gate one, after each revision and at gate two, the loop
+SHALL make sure spec-check has read the whole change on the branch, committing the read's
+`Spec-check:` trailer onto it, and SHALL NOT hand back while any change there awaits its read.
+
+#### Scenario: A hand-back waits for the read
+
+- **WHEN** a revision has edited the change and no consistency read covers the edit
+- **THEN** the loop runs the read and commits it before it requests review

@@ -3,7 +3,7 @@
 This project works in two gates. A person reviews a specification first: an OpenSpec proposal,
 design, spec deltas and tasks. Only then does the implementation land, **on the same branch**,
 followed by a bug hunt, a second review and the merge. It never uses a second pull request.
-Adam wants Igors to work the same way ([#149](https://github.com/adamstallard/igor/issues/149)).
+Igors are to work the same way ([#149](https://github.com/adamstallard/igor/issues/149)).
 
 An Igor can't today. Its run has one shape: claim, work, publish everything the worker changed,
 release. Each part of the workflow runs into something built for that shape.
@@ -22,7 +22,8 @@ release. Each part of the workflow runs into something built for that shape.
 
 ## What Changes
 
-Everything below applies only to a role that opts in, and all of it is settled.
+Everything below applies only to a role that opts in. `design.md`'s open questions are three
+facts still to measure, each with what happens if it turns out false.
 
 - **A role opts in with `workflow: two-gate`.** A role without it behaves exactly as today.
 - **Gate one publishes a specification and nothing else.** The worker is asked for an OpenSpec
@@ -31,18 +32,23 @@ Everything below applies only to a role that opts in, and all of it is settled.
   path publishes nothing and hands off.
 - **A gate-one pull request says what it is and closes nothing.** Its title carries a
   specification marker, its body opens by saying it is specification only, and it refers to its
-  item without a closing keyword. Gate one releases the claim, and does not take the role's
-  completion action.
+  item without a closing keyword. Gate one releases the claim and leaves the item open, as any
+  run does.
 - **The go signal is an approving review** on the spec pull request, from a person with
   authority over the repository: the store's `reviewers`, or anyone with write access (§5.4). It
   is structured data, and no text is interpreted. A review from an Igor never counts: every
   Igor is a GitHub App, so its review's author is a `Bot` account.
 - **A change request is answered on the same branch.** The Igor reads the review as data,
-  amends the spec, commits onto the branch, replies to the review and asks for it again.
+  amends the spec, commits onto the branch, replies to the review and asks for it again. The
+  revision is confined as gate one is.
 - **Gate two implements on the same branch.** After approval: a fresh claim on the item, the
-  implementation of the change's tasks, bug-hunter where configured (#139), then a new title and
+  implementation of the change's tasks, `signed-publishing`'s (#153) bug-hunter step where the
+  role's `skills` list names it, then a new title and
   body that describe the code as well as the spec and now carry the closing keyword. Then the
   pull request goes back for the second review.
+- **Every hand-back follows a consistency read.** Before each hand-back of the change to a
+  person, at gate one, after each revision and at gate two, the loop has spec-check read the
+  whole change, as #149 decided.
 - **The in-flight skip gains a second exception.** An Igor's own gate-one artifact carrying a
   current approval or change request is resumed rather than skipped, as an artifact of its own
   that stopped merging already is.
@@ -56,8 +62,8 @@ a question in `design.md` (questions 6 and 7):
 
 Explicitly out of scope:
 
-- **Running bug-hunter.** #139 makes it a pipeline step, and gate two invokes that step where
-  it is configured.
+- **How bug-hunter runs.** #153 defines its step. Gate two only invokes it, where the role's
+  `skills` list names it.
 - **Merging.** A person merges after the gate-two review, as today.
 - **Any workflow other than two-gate.** The setting names a workflow so that another could be
   added, not because one is planned.
@@ -76,7 +82,9 @@ Explicitly out of scope:
   decisive review, alongside its own artifact that cannot merge.
 - `task-execution`: an artifact carries every change the worker made, except where gate one
   confines it to the specification path.
-- `role-config`: a role may declare `workflow: two-gate`.
+- `role-config`: a role may declare `workflow: two-gate`, in the key list and as an overriding
+  setting.
+- `surface-adapter`: each tracker adapter supplies a non-closing reference beside its linkage.
 
 ## Impact
 
