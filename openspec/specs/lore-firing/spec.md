@@ -1,7 +1,13 @@
 # lore-firing Specification
 
 ## Purpose
-TBD - created by archiving change lore-retrieval. Update Purpose after archive.
+Give a worker the team's lessons without it having to ask. Before a worker runs, every lore entry
+that review has made active and whose scope covers the worker's role is placed in its
+instructions, where it is trusted as the work item is not. Each entry arrives with its
+conditions, its body, and its support (how many people asserted it), and the worker judges which
+apply; nothing ranks or selects among them. This spec covers that injection; a token budget on
+it, where going over is reported and no entry is dropped to fit; and the record of which entries
+each run received.
 ## Requirements
 ### Requirement: Lore reaches the worker unbidden
 

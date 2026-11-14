@@ -69,7 +69,7 @@ function entry(id: string, overrides: Partial<Entry> = {}): Entry {
 }
 
 function config(destination: string): Config {
-  return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] } }
+  return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] }, conditions: { threshold: 3, cooldownMs: 900_000, maxCooldownMs: 21_600_000 } }
 }
 
 /** A merged proposal of one candidate, whose text is readable at the proposing commit. */

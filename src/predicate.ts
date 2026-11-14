@@ -44,14 +44,41 @@ export function staleOwnArtifact(candidate: Candidate, as?: string): InFlight | 
 }
 
 /**
+ * What a tracker's holder field shows for this Igor, and whether that field is separate from
+ * the assignee. Read off the tracker, so these rules never name the field.
+ */
+export interface Holding {
+  holder: string
+  distinctFromAssignee: boolean
+}
+
+/**
+ * Who, other than this Igor, holds an item: the reason it is not this Igor's to claim. Empty
+ * where it may be claimed.
+ *
+ * - **Another holder in the holder field** means the item is somebody else's, even where this
+ *   Igor is also there: on GitHub, another Igor's `igor:` label. A person reassigns an issue by
+ *   removing the holding Igor's label first, never by adding a second.
+ * - **Where the holder field is distinct from the assignee**, an item assigned to a person is
+ *   theirs unless the holder field names this Igor: handing it over is their decision.
+ *
+ * Without `holding` (a preview that does not know which Igor would run), every assignee other
+ * than `as` reads as somebody else, which is the safe direction.
+ */
+export function heldByOthers(candidate: Candidate, as?: string, holding?: Holding): string[] {
+  if (holding === undefined) return candidate.assignees.filter((a) => a !== as)
+  const others = candidate.holders.filter((h) => h !== holding.holder)
+  if (others.length > 0) return others
+  if (holding.distinctFromAssignee && !candidate.holders.includes(holding.holder)) return [...candidate.assignees]
+  return []
+}
+
+/**
  * Skips no configuration can switch off. These are not lanes an org could forget to write:
  * acting on a closed item, on one already being worked, or on one somebody else holds is
  * visible noise on a surface people watch rather than an organizational preference.
  *
- * A name other than `as` means the item is not ours even where ours is also on it — the same
- * reading `verdictFrom` applies mid-run, because people add themselves to a holder list rather
- * than replacing what is there. Without an identity every holder reads as foreign, which is
- * the safe direction for a preview that does not know who would be running.
+ * Who holds an item is `heldByOthers`, the same reading a stopped item is checked against.
  *
  * The in-flight rule narrows rather than gains an exception. It exists because duplicating
  * work in review is never an organizational preference — and an artifact of one's own that
@@ -59,9 +86,9 @@ export function staleOwnArtifact(candidate: Candidate, as?: string): InFlight | 
  * an item both in flight and taken over by somebody else reports the holder, which is the
  * more useful of the two reasons and the one that keeps the Igor off it either way.
  */
-export function universalSkip(candidate: Candidate, as?: string): Verdict | undefined {
+export function universalSkip(candidate: Candidate, as?: string, holding?: Holding): Verdict | undefined {
   if (candidate.state === 'closed') return skip('universal', 'item is closed')
-  const others = candidate.assignees.filter((a) => a !== as)
+  const others = heldByOthers(candidate, as, holding)
   if (others.length > 0) return skip('universal', `held by ${others.join(', ')}`)
   if (candidate.inFlight && staleOwnArtifact(candidate, as) === undefined) {
     return skip('universal', `work already in flight: ${candidate.inFlight.ref}`)
@@ -110,10 +137,10 @@ export interface Triaged {
  * including the skips, so the ratio at each stage is determinable from the record rather than
  * estimated.
  */
-export function screen(lane: Lane, candidates: readonly Candidate[], as?: string): Triaged[] {
+export function screen(lane: Lane, candidates: readonly Candidate[], as?: string, holding?: Holding): Triaged[] {
   return candidates.map((candidate) => ({
     candidate,
-    verdict: universalSkip(candidate, as) ?? laneVerdict(lane, candidate),
+    verdict: universalSkip(candidate, as, holding) ?? laneVerdict(lane, candidate),
   }))
 }
 

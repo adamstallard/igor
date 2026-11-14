@@ -80,10 +80,10 @@ reading taken, then add your reserve. Or declare a `capacity_estimate` in the co
 knows roughly what the window is worth — it is reported as an assumption until a reading
 replaces it.
 
-Taking that reading on a schedule is still being built
-([igor#30](https://github.com/adamstallard/igor/issues/30)), so today it is a thing somebody
-does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
-assuming a number in a file did the work.
+Reading a seat that nothing has run on is specified in
+[#143](https://github.com/adamstallard/igor/pull/143): the Igor server probes it with the
+seat's own token, so nothing runs on your machine. However the reading is taken, ask what the
+fleet actually spent rather than assuming a number in a file did the work.
 
 ## Handing it over
 
