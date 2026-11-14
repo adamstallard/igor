@@ -3,28 +3,10 @@
 ### Requirement: A role declares the skills its worker uses
 
 A role MAY declare `skills: [<name>, …]`, the pinned skills its worker uses, named from the
-skills a command loads (#174). The list decides which skills' steps Igor
-runs and which checks Igor's code makes on what it publishes; a listed skill other than `prose`
-and `bug-hunter` gets no step and no check from `signed-publishing`, and another capability may
-give it a use of its own. It does not decide what
-loads: #174 loads every installed skill, as `igor:<name>`, for every role. The org base MAY set
-`skills` for every role, and the list is inherited by appending, as *Merge semantics differ by
-field kind* sets out.
-
-Every command that runs a model step, a dry run included, SHALL refuse to start when a role it
-runs lists a name that is not among the skills that command loads, naming it and the skills
-loaded. Under `igor serve` those are the skills installed under `skills_dir`; where
-`skills_dir` is missing, #174 refuses the start first. Under `igor run` they are the skills
-under `skills_dir` or, where it is missing, the skills the shared-skills manager installed in
-the person's home, which #174 passes to each model step; where neither exists, no skill loads,
-and a role that lists one is refused. A command that runs no model step, such as `igor role
-explain`, SHALL NOT check the names.
-
-Listing a skill grants the worker nothing: it adds nothing to `commands`, and Igor's code runs
-every script of a listed skill itself, as `signed-publishing` requires.
-
-A role that declares no `skills`, and inherits none, gets no step or check from the list; its
-worker may still invoke any skill #174 loads.
+skills a command loads (#174). The list decides which skills' steps Igor runs and which checks
+Igor's code makes on what it publishes; a listed skill other than `prose` and `bug-hunter` gets
+none from `signed-publishing`, and another capability may give it a use of its own. The list
+SHALL NOT decide what loads: #174 loads every installed skill, as `igor:<name>`, for every role.
 
 #### Scenario: The org base sets the list for every role
 
@@ -36,11 +18,31 @@ worker may still invoke any skill #174 loads.
 - **WHEN** the org base declares `skills: [prose]` and a role declares `skills: []`
 - **THEN** the role's effective `skills` is still `[prose]`
 
+#### Scenario: A role with no skills gets no step or check from the list
+
+- **WHEN** a role declares no `skills` and inherits none
+- **THEN** Igor runs no skill's step and makes no skill's check for it because of the list
+- **AND** its worker may still invoke any skill #174 loads
+
+### Requirement: Listing a skill grants the worker nothing
+
+Listing a skill SHALL grant the worker nothing: it adds nothing to `commands`, and no script of
+a listed skill runs as the worker. Igor's code runs each one that runs, as `signed-publishing`
+requires.
+
 #### Scenario: Listing a skill grants no command
 
 - **WHEN** a role declares `skills: [prose]`
 - **THEN** its effective `commands` are the ones it declares and inherits, with nothing added
   for prose, and Igor's code runs prose's calls itself
+
+### Requirement: A command that runs a model step refuses a skill it does not load
+
+Every command that runs a model step, a dry run included, SHALL refuse to start when a role it
+runs lists a skill that command does not load, naming it and the skills loaded. `igor serve` loads those under `skills_dir`, and #174 refuses its start first where
+`skills_dir` is missing; `igor run` loads those under `skills_dir` or, without it, those the shared-skills
+manager installed in the person's home. A command that runs no model step, such as `igor role
+explain`, SHALL NOT check the names.
 
 #### Scenario: An unknown skill is refused
 
@@ -80,15 +82,9 @@ worker may still invoke any skill #174 loads.
 A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`,
 `commands`, `budget_share`, `reserve`, `reviewers` and `skills`. Each `sources` entry MUST name
 a `tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
-rejected rather than loaded.
-
-`commands` names the shell commands a worker may run, and is the only thing that lets one
-run anything at all. It is declared on the role and nowhere else: a worker that can edit
-files can edit a settings file in the repository it is working, so an allowlist read from
-there is one the worker can widen for itself. One command is the exception: every worker may
-run `igor lore-search`, whatever its role's `commands` list. `lore-firing`'s *An Igor runs its
-worker's lore searches*, which #216 (`lore-search`) adds, defines the command: the Igor, not
-the worker, runs the search, over the lore store the run already reads.
+rejected rather than loaded. `commands` names the shell commands a worker may run, is the only
+thing that lets a worker run anything at all, `igor lore-search` (#216) aside, and is declared on the
+role and nowhere else.
 
 #### Scenario: Well-formed role accepted
 
@@ -100,6 +96,15 @@ the worker, runs the search, over the lore store the run already reads.
 
 - **WHEN** a role declares `commands` and an item is executed
 - **THEN** the worker may run those commands, `igor lore-search`, and nothing else
+
+#### Scenario: Every worker may run the search command
+
+- **WHEN** a role's `commands` do not list `igor lore-search`, or the role declares no
+  `commands`
+- **THEN** its worker may still run `igor lore-search`, as `lore-firing`'s *An Igor runs its
+  worker's lore searches*, which #216 (`lore-search`) adds, defines the command: the Igor, not
+  the worker, runs the search, over the lore repository (the store of reviewed lore entries)
+  the run already reads
 
 #### Scenario: Source without a tracker rejected
 
@@ -114,22 +119,13 @@ the worker, runs the search, over the lore store the run already reads.
 
 ### Requirement: Merge semantics differ by field kind
 
-Inheritance SHALL apply three merge semantics, selected per field:
+Inheritance SHALL merge each field by kind:
 
-- **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`, `reserve`,
-  repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
-  widen it. For `reserve` the restriction is a higher value. `igor lore-search` is outside
-  this rule: every worker may run it, so a role listing it does not widen its `commands`, and
-  a role cannot restrict it away.
-- **Override** for settings (`seat`, poll interval, settle interval, cooldown): the most specific
-  level wins.
-- **Append** for `instructions`, `lane` and `skills`: levels accumulate, with lane constraints
-  conjoined.
-
-The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
-granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
-that lists any other word is refused at load, naming the valid actions. The safe default an org
-base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
+- **Monotonic** for permissions and limits (`allow`, `commands`, `budget_share`, `reserve`, repositories
+  and surfaces in reach): a role MAY narrow any, `reserve` by raising it, and MUST NOT widen them.
+  `igor lore-search` is outside this rule.
+- **Override** for settings (`seat`, poll, settle and cooldown intervals): the most specific wins.
+- **Append** for `instructions`, `lane` and `skills`: levels accumulate, lanes conjoined.
 
 #### Scenario: Role narrows a permission
 
@@ -153,10 +149,17 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
   `igor lore-search`
 - **THEN** validation passes, and the role's worker may run both
 
+#### Scenario: No role can restrict the search command away
+
+- **WHEN** the org base permits the command `npm test`, and a role narrows its `commands` to a
+  list without `igor lore-search`
+- **THEN** the role's worker may still run `igor lore-search`
+
 #### Scenario: An action outside the vocabulary is refused
 
-- **WHEN** a role's `allow` lists `unassign`
-- **THEN** the role is refused at load, naming the valid actions
+- **WHEN** a role's `allow` lists a word outside its closed set, such as `unassign`
+- **THEN** the role is refused at load, naming the valid actions: `comment`, `review-comment`,
+  `draft-pr`, `pr`, `label`, `merge` and `send`, the closed set `allow` takes
 
 #### Scenario: Setting overridden
 
