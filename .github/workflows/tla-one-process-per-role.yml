@@ -1,0 +1,115 @@
+# Runs TLC on the TLA+ model of the OpenSpec change one-process-per-role.
+#
+# - "TLC <config>": the change as specified. Each configuration the matrix
+#   below lists must pass, so a failure is a regression in the spec or the
+#   model. A configuration added to model/ runs only once it is listed.
+# - "TLC negative configurations": each guard of the change is a TRUE or
+#   FALSE constant in the model. Each file in model/negative/ sets one FALSE, or,
+#   in LateStandDown.cfg, sets the stand-down age equal to the watch length.
+#   TLC must find a violation there; a file that passes means the model does
+#   not show that guard is needed. The same step runs each file in
+#   model/rejected/ against IntervalTimed.tla, the record timing tied to the
+#   poll interval that the change rejects, and requires a violation too.
+#
+# To move to another tla2tools.jar release, change TLA_TOOLS_VERSION and
+# TLA_TOOLS_SHA256 together: the checksum step rejects any other file.
+name: TLA+ one-process-per-role
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'openspec/changes/one-process-per-role/model/**'
+      - '.github/workflows/tla-one-process-per-role.yml'
+  pull_request:
+    paths:
+      - 'openspec/changes/one-process-per-role/model/**'
+      - '.github/workflows/tla-one-process-per-role.yml'
+
+permissions:
+  contents: read
+
+env:
+  TLA_TOOLS_VERSION: v1.7.4
+  TLA_TOOLS_SHA256: 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+
+jobs:
+  tlc:
+    name: TLC ${{ matrix.config }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - OneProcessPerRole.cfg
+          - OneProcessPerRoleLostRecord.cfg
+          - OneProcessPerRoleSameHost.cfg
+          - OneProcessPerRoleFirstStart.cfg
+          - OneProcessPerRoleStale.cfg
+          - OneProcessPerRoleSlowPollLost.cfg
+          - OneProcessPerRoleMidPollLost.cfg
+          - OneProcessPerRoleSlowPollPause.cfg
+          - OneProcessPerRoleAllFaults.cfg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch tla2tools.jar and check its checksum
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum -c -
+      - name: Run TLC
+        working-directory: openspec/changes/one-process-per-role/model
+        run: |
+          java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \
+            -workers auto -cleanup -metadir "$RUNNER_TEMP/states" \
+            -config "${{ matrix.config }}" OneProcessPerRole.tla
+
+  negative:
+    name: TLC negative configurations
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch tla2tools.jar and check its checksum
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum -c -
+      - name: Run TLC on each negative configuration, expecting a violation
+        working-directory: openspec/changes/one-process-per-role/model
+        run: |
+          # TLC exits 12 for a broken invariant. Any other code, including 0,
+          # fails this step.
+          failed=""
+          for cfg in negative/*.cfg rejected/*.cfg; do
+            case $cfg in
+              rejected/*) spec=rejected/IntervalTimed.tla ;;
+              *) spec=OneProcessPerRole.tla ;;
+            esac
+            echo "::group::TLC $cfg"
+            set +e
+            java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \
+              -workers 1 -cleanup -metadir "$RUNNER_TEMP/states-$(basename "$cfg")" \
+              -config "$cfg" "$spec"
+            code=$?
+            set -e
+            echo "::endgroup::"
+            case $code in
+              12) echo "$cfg: violation found, as required" ;;
+              *) echo "::error file=openspec/changes/one-process-per-role/model/$cfg::TLC exited $code; a violation was required"
+                 failed="$failed $cfg" ;;
+            esac
+          done
+          if [ -n "$failed" ]; then
+            echo "Failed:$failed"
+            exit 1
+          fi
