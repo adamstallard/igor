@@ -20,8 +20,8 @@ service; *the Igor* is the one that opened the pull request. From that table the
 3. **The rule for the label:** `review: skim` only when all four hold:
    - every one of the role's `checks` (`loop-verifies-commands`) passed when the loop ran it. A
      CI-only check, which the repository's own CI runs and Igor never does, is left out, since
-     Igor checked nothing about it (Adam, 2026-10-21);
-   - the scope result for this push (decision 6) found no changed path outside scope;
+     Igor checked nothing about it;
+   - the scope result for the run's push (decision 6) found no changed path outside scope;
    - the run's change is small, and it did not declare that it undoes a change the base branch
      made. A catch-up resolution, a run that merges the base branch into the pull request and
      resolves its conflicts, must declare such an undo, under the in-force `task-execution`
@@ -49,7 +49,7 @@ service; *the Igor* is the one that opened the pull request. From that table the
    that marking; this change only shows them. *Rejected:* making every resolution `review: read`, which would
    relabel a reviewed pull request each time the base moved.
 
-**Decided (Adam, 2026-10-21):**
+**Settled, and not asked of the reviewer:**
 
 - **Igor never reads a CI-only check's result** (#189's decision 33). A repository's `ci_only`
   lines, in its entry in #189's `repos` map, are the checks it leaves to its own CI, such as one
@@ -67,16 +67,10 @@ service; *the Igor* is the one that opened the pull request. From that table the
   it ran in, and the table does no trimming of its own. *Rejected:* cutting the table where the
   repository is public, to keep out text from a private tracker, which would hide what was run
   from the readers of the repository it ran in.
-
-**Decided (Adam, 2026-10-19):**
-
 - **`redact-state-branch` (#217) owns credential redaction**, the rule this change applies to
   every command, path and output in the table, and is built before this change (see
   *Dependencies*).
   *Rejected:* keeping #188 as the rule's owner, which would have #217 and #188 each define it.
-
-**Decided (Adam, 2026-10-13):**
-
 - **The loop sets the label without `label` in the role's `allow`**, as it sets its
   `igor:<role>` claim label. `allow` governs what the worker's output may become; the label is
   the loop's own. *Rejected:* requiring `label` in `allow`, under which the org base's default
@@ -108,9 +102,10 @@ service; *the Igor* is the one that opened the pull request. From that table the
   patterns. The row reads `not checked`, with the reason, where it cannot apply, including
   where spec-trace finds no test files, though spec-trace as merged reports no such case, as
   *Still open* records. `signed-publishing` (#153) is built before this change, as issue #204's
-  order sets. Under #153, a role whose `skills` lists `spec-trace` has its worker directed to use `igor:spec-trace`, as #153 does for `prose` and
-  `bug-hunter`. #174 already loads every installed skill for every role, so listing it adds only
-  that direction. The worker so directed tags the scenario on each test it writes. The loop's run of the script is
+  order sets, and adds the role key `skills`. A role whose `skills` lists `spec-trace` has its
+  worker's standing instructions direct it to use `igor:spec-trace`. Under `igor serve`, #174
+  loads every installed skill for every role, so listing it adds only that direction. The worker so directed is expected to tag the scenario on each test it writes; the loop does not
+  enforce it, and the row shows whether it did. The loop's run of the script is
   the check: deterministic, with no model call. The row never changes the label. *Rejected:*
   fetching or porting the script, which leaves two copies to keep in step; and a test-pattern
   setting in Igor, which spec-trace's own detection makes unnecessary; and letting the row change
@@ -124,15 +119,15 @@ service; *the Igor* is the one that opened the pull request. From that table the
   carried-forward `not checked`, in this change's wording; #187 decides both of
   those cases. *Rejected:* a scope rule of this change's own, which could drift from #187's.
 
-- **The opening block is defined once, in this change's requirement *A pull request body holds a
-  capped summary, then the loop's evidence*; #153 points at it.** On a revision, a push
+- **The opening block is defined once, in this change's requirement *What the opening block
+  holds*; #153 points at it.** On a revision, a push
   answering a reviewer's change request under #150, it is recomputed from the latest
   bug-hunter run, and the "item changed" note compares the item with
-  the version approved at gate one (*Decided (Adam, 2026-10-13)*, above). *Rejected:* keeping gate two's block
+  the version approved at gate one. *Rejected:* keeping gate two's block
   unchanged, which would show bug-hunter decisions a revision has already settled.
 - **The Commands row, renamed "Commands run", shows the shell calls of every model step #188
   logs**: the worker (its subagents included) and #153's bug-hunter step and prose pass. #188
-  labels each call with its step, `worker`, `bug-hunter` or `prose` (*Decided (Adam, 2026-10-13)*, above). *Rejected:* the
+  labels each call with its step, `worker`, `bug-hunter` or `prose`. *Rejected:* the
   worker's calls alone, which hides the tests bug-hunter ran.
 
 **Where this meets #153.** For a role that lists `prose`, the body is the opening block, then
@@ -161,8 +156,7 @@ as exactly the span between the opening block and the marker, and `prose verify-
     signed the description, so a description quoting a secret no longer verifies. Igor cuts a
     command the sandbox denied to 200 characters as it reads the run, before this change
     redacts it, so a token the cut splits is published. The spec does not say which user runs
-    `spec_trace.py`, or with which git directory. The citation of `prBody` should end at
-    `src/execute.ts:1185`, not 1180. And the caps of 10 paths, 10 denied commands and 200
+    `spec_trace.py`, or with which git directory. And the caps of 10 paths, 10 denied commands and 200
     characters per command are in tasks but in no decision.
 - **For whoever next edits this change,** from a consistency read on 2026-10-21. None is
   decided, and none is fixed in this text; the rules above hold until each is. Each needs this change amended, unless the change
@@ -196,7 +190,8 @@ as exactly the span between the opening block and the marker, and `prose verify-
     - #153 is built first and defines the opening block and "revision" itself, so until this
       change ships there are two definitions, whose contents differ.
     - This change's text names #189's `repos` and `ci_only` keys, which #189 adds after this
-      change archives, with no record that Adam accepted that citing ahead.
+      change archives, and nothing records that citing those keys before #189 archives was
+      accepted.
     - On a gate-one revision, the recomputed opening block leaves out #150's list of dropped
       paths.
     - At gate one, where the checks run on the base's own code, nearly every small
@@ -206,19 +201,17 @@ as exactly the span between the opening block and the marker, and `prose verify-
       grep` in the worker's tree, whose git configuration can run commands.
     - A failed evidence replacement has no rule, and task 2.5 records it in `reviewLabel`, a
       field defined for the label.
-    - These SHALLs, besides the ones listed below, have no scenario: the role key's refusal,
+    - These SHALLs have no scenario:
       keeping the transcript pointer on a rebuild, recomputing the opening block, returning a
       description to the prose pass, the changed-line count, no model call for the Spec
       scenarios row, and that row never changing the label.
-    - The `prBody` range is `src/execute.ts:1169-1184`, which corrects both the citation and the
-      earlier correction above.
   - **Markup and names.** A 700-character cut through the worker's summary can leave an open
     `<!--` or code fence that hides the evidence section after it. A scenario name holding a
     backtick or `|` breaks its table cell. And a repository that declined spec-trace shows
     "no test" on every pull request, where `not checked` would be true.
-  - **The spec itself.** Several SHALLs have no scenario; "the sandbox" is defined nowhere; and
-    the Sandbox denials row reads `none` for model steps whose denials nothing records.
-  - **From a second consistency read, the same day:**
+  - **The spec itself.** Several SHALLs have no scenario, and the Sandbox denials row reads
+    `none` for model steps whose denials nothing records.
+  - **Further open points:**
     - **The label.** A resolution's scope part reads "this push was not checked", which the
       label rule makes `review: read`, while the scenario *A resolution keeps the scope
       condition it last met* expects `skim`. The label also judges only the latest push: a
@@ -230,10 +223,9 @@ as exactly the span between the opening block and the marker, and `prose verify-
       for that case (*The Spec scenarios row comes from spec-trace*, above) cannot occur as written. Its
       report is a markdown table for people; nobody has checked that the loop can read it
       back per spec file, and tell this pull request's scenarios from other open changes'.
-    - **#153.** It no longer refuses an unknown skill at load (its decision 29), so the
-      scenario *A missing skill is not checked*, which assumes that refusal, has a false
-      premise. #153 also adds model steps that fit none of #188's three labels, so the
-      Commands run table cannot label their calls.
+    - **#153.** It runs a cold-read step, a fresh model step that reads the description (#153's
+      design), which none of #188's three labels names, so the Commands run table cannot label
+      its calls.
     - **The opening block.** It lists the paths gate one refused to publish, which the worker
       chose, and bug-hunter's open decisions, both unquoted. Either can hold
       `<!-- igor:evidence -->`, and the next rebuild of the evidence section would then cut
@@ -242,9 +234,7 @@ as exactly the span between the opening block and the marker, and `prose verify-
       the opening block to hold. The two role keys restate role-config's merge rule, "the
       most specific level wins", where they belong in its list of settings that follow it.
       #189 starts the worker a second time after a failed check, and the Cost row does not
-      say whether it sums both passes and #153's steps. "Sentence end" and "catch-up
-      resolution" are undefined in the spec, and several requirements carry rationale that
-      belongs in this proposal.
+      say whether it sums both passes and #153's steps.
     - **The order.** Issue #204's archive order does not list `scope-check` (#187), which this
       change places after itself.
 
@@ -252,11 +242,11 @@ as exactly the span between the opening block and the marker, and `prose verify-
 
 An Igor's pull request shows only the worker's own account of its work (#181). The body is the
 line linking it to its issue, then the worker's final text cut at 700 characters (`prBody`,
-`src/execute.ts:1169-1180`). So a reviewer reads the whole diff to learn whether tests pass,
+`src/execute.ts:1178-1193`). So a reviewer reads the whole diff to learn whether tests pass,
 whether the change stayed in scope, or whether the sandbox stopped the worker. Most of these
-facts are already in `executions.ndjson` (`src/execute.ts:2125-2160`), and none reaches the pull
+facts are already in `executions.ndjson` (`src/execute.ts:2170-2212`), and none reaches the pull
 request. No requirement governs the body: the 700-character limit exists only in code
-(`PR_BODY_LIMIT`, `src/execute.ts:1109`).
+(`PR_BODY_LIMIT`, `src/execute.ts:1118`).
 
 ## What Changes
 
@@ -267,7 +257,7 @@ request. No requirement governs the body: the 700-character limit exists only in
   files changed, spec scenarios, sandbox denials, and cost and turns.
 - The execution record keeps the turn count on every run, and the count of lines the run
   changed. Today
-  the turn count is kept only when the provider reported no cost (`src/execute.ts:1496-1498`).
+  the turn count is kept only when the provider reported no cost (`src/execute.ts:1520-1523`).
 - Two role keys, `skim_max_paths` and `skim_max_lines`, set how small a change must be for
   `review: skim`.
 - Igor sets one label on the pull request, `review: skim` or `review: read`.
@@ -307,7 +297,7 @@ None.
 
 ### Modified Capabilities
 
-- `task-execution`: adds four requirements: what the body holds, what each evidence row
+- `task-execution`: adds requirements for what the body holds, what each evidence row
   reports, how the Spec scenarios row is read, and the review label.
 - `role-config`: adds `skim_max_paths` and `skim_max_lines`.
 

@@ -7,7 +7,7 @@
 ## 1. The record
 
 - [ ] 1.1 Keep `assistantTurns` in the execution record on every run, not only where `costUsd`
-      is undefined (`src/execute.ts:1496-1498`).
+      is undefined (`src/execute.ts:1520-1523`).
 - [ ] 1.2 Add `reviewLabel` to the execution record: the label set, or the error that stopped it
       being set.
 - [ ] 1.3 Add `linesChanged` to the execution record: the lines the run's published paths add
@@ -133,7 +133,8 @@
       Redacting before the 200-character cut means a token the cut would split is still found. To quote: a newline becomes a space, `|` becomes `\|`, and a value holding
       a backtick is quoted with a longer run of backticks.
 - [ ] 2.2 Write `reviewLabel(record, role)`, returning `review: skim` only when all four
-      conditions of *One review label sorts a pull request for triage, never for merging* hold,
+      conditions of *A pull request is labelled skim only when its evidence is clean* hold and no
+      Tests row or scope part says `not checked`, as that requirement says,
       with the role's `skim_max_paths` and `skim_max_lines` as the role file resolves them (task
       1.4), and `review: read` otherwise. A `ci_only` line is left out of the label's test
       (proposal, decision 3). Test: *A CI-only check does not keep a pull request from skim*. The label names are the deliverable and may not be reworded:
@@ -146,20 +147,23 @@
       summary, then the loop's evidence*: the opening block (with #150's opening text, gate
       two's note and bug-hunter's open decisions, where #150 applies), the summary or signed
       description, then the section from 2.1. Before that, remove every occurrence of
-      `<!-- igor:evidence -->` from the summary and drop every summary line that, trimmed, equals
+      `<!-- igor:evidence -->` from the summary and drop every summary line that contains
       `**Checked by Igor, not reported by the worker**`. For a role whose `skills` lists `prose`,
       run `prose verify-post` on the span #153 defines. A signed description that holds
       the marker or the heading is not edited, since that would break its footer: it goes back to
       the prose pass, as #153 returns any text that fails.
 - [ ] 2.4 Add `CodeHost.setReviewLabel(artifact, label)`, which adds one label and removes the
-      other, and `CodeHost.replaceEvidence(artifact, table)`, which replaces the body from
+      other, `CodeHost.replaceBody(artifact, body)` for 2.5's revisions, and `CodeHost.replaceEvidence(artifact, table)`, which replaces the body from
       `<!-- igor:evidence -->` to its end. Where the body has no marker, as on a pull request
       opened before this change shipped, it appends the section. Implement both in `src/github.ts`.
 - [ ] 2.5 Call `setReviewLabel` after `produce()`, which opens every new pull request with its
       section already in the body (2.3), gate one's included. Call both after a catch-up's
       `resolve()`, after a failed action log write (2.1), and, for a `two-gate` role, after gate two's and each revision's publish (#150
       task 7.1), not after a clean
-      server-side `catchUp` that ran no worker. A failure of either call is recorded in
+      server-side `catchUp` that ran no worker. On a revision, also replace the body before the
+      marker: the recomputed opening block, then the revision run's summary, capped as in 2.3, or
+      the description #153 rewrites, with `CodeHost.replaceBody(artifact, body)`, which replaces
+      the whole body. A failure of any of these calls is recorded in
       `reviewLabel` (1.2) and leaves the pull request open as it is.
 
 ## 3. Rows filled here
@@ -169,7 +173,9 @@
 - [ ] 3.2 Fill the Spec scenarios row by running
       `python3 <skills_dir>/skills/spec-trace/scripts/spec_trace.py report --include-changes`
       in a tree holding exactly the pull request's head, from the pinned skills directory of
-      `pinned-skills` (#174), passing no test patterns. Keep the scenarios of the spec files the
+      `pinned-skills` (#174), passing no test patterns. First measure whether the Igor image carries
+      the OpenSpec CLI, 1.15.0 or later, which `report` reads scenarios through, and record the
+      answer in design.md in place of its open question on it. Keep the scenarios of the spec files the
       pull request changes against its base. At gate one, where the tree has no
       `openspec/specs/`, where the script is missing, where it exits non-zero, or where it finds
       no test files, use the matching `not checked` value from 2.1.
