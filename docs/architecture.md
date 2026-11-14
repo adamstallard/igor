@@ -1333,13 +1333,14 @@ threshold it crossed in `surpassedThreshold` — or `rejected`; `isUsingOverage`
 usage is being spent. `unifiedWindows` reported the five-hour window at 7% while the event was
 about the weekly one, so every window appears to be included whichever one is being warned about.
 
-**A seat below every threshold reports too** (measured 2026-10-11, on a seat at 42% of its
+**A seat below every threshold reports too** (measured 2026-10-11, on a seat at 43% of its
 five-hour window and 11% of its week, status `allowed`). The event arrives with `utilization`
 and `resetsAt` for both windows inside `unifiedWindows`, and with no top-level `utilization` or
 `surpassedThreshold`: the top level carries `status`, `resetsAt`, `rateLimitType`,
 `isUsingOverage`, and `overageStatus` with `overageDisabledReason`. So `unifiedWindows` is where a
-reading is taken, whatever the status. **A run gets one event, right after its first API call's
-response**, and none after later calls, so a reading describes the seat as the run began. The
+reading is taken, whatever the status. **In both runs captured on 2026-10-11, a run of one API call
+and a run of three, one event arrived, right after the first call's response**, and none after later calls, so a reading describes the seat as the
+run began; whether every ordinary run does the same is not yet measured. The
 captures are kept with the `read-seat-windows-from-the-stream` change.
 
 **What Igor does with it.**
@@ -1435,8 +1436,9 @@ may raise the reserve it inherits, never lower it.
 - **A reserve that decays on a schedule of its own.** The line narrows the reserve in both
   windows, the week included, all the way to the reset.
 
-**Accepted cost: overshoot by about two runs.** A run's one event arrives right after its first
-API call (§6.3.3), so its reading shows none of that run's own spend. When the gate admits an item,
+**Accepted cost: overshoot by about two runs.** In both runs captured (§6.3.3) the one event arrived right
+after the first API call, so such a run's reading shows at most that first call's spend; whether
+every ordinary run does the same is not yet measured. When the gate admits an item,
 the reading it sees therefore misses the previous run, and the item it admits adds a second run
 before the next reading shows either. So each Igor process can overshoot the line by about two
 runs. Igors sharing a seat do not coordinate, so N processes on one seat can overshoot by about 2N
@@ -1446,11 +1448,14 @@ runs; a coordination marker is taken up once a reserved seat is actually shared 
 window resets, and an input to the line: #39's row for a refused run, and #75's for a refused
 triage call. Unlike a stream reading, it needs no `rate_limit_event`.
 
-**A probe opens and clears the credential stop.** A probe that gets a 401 opens
-`seat:<id>:credential`, and a probe that succeeds counts as the clearing check. So a revoked seat
-nobody has read is reported out of rotation, and clearing it claims no tracker item. That stop is the seat's
-credential condition, rebuilt from the execution log; a run the provider refuses for its credential
-also opens it.
+**A probe counts toward and clears the seat's credential condition.** That condition,
+`seat:<id>:credential`, is rebuilt from the execution log, and a run the provider refuses for its
+credential counts toward it too. A probe that gets a 401 counts as one occurrence, and the
+condition opens once occurrences reach the recurrence threshold of #101 (`condition-backoff`, the
+rules for stuck conditions), provisionally 3. A probe that succeeds clears it at once. Probes are
+made on seats nothing has read and on seats whose credential condition is open, so a revoked seat
+no run reaches is still reported out of rotation, and clearing it takes no work item, unlike the
+usual route, which lets one work item through after a cooldown to test the condition.
 
 **A handoff for a window the line has shut states the crossing, marked approximate.** The line
 rises as the window runs down, so a reading `u` below 1 is under the line again once

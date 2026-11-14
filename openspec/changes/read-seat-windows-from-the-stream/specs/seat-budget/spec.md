@@ -77,11 +77,12 @@ instant it was taken.
 
 ### Requirement: A reading bounds its window from below until the window resets
 
-A reading's fullness SHALL be treated as a lower bound on its window from when it was taken until
-the reset it reports, which this spec calls unreset or unexpired, and SHALL NOT describe any later
-instance of the window, an instance being one stretch from one reset to the next. A reading whose
-reset never resolved is unreset until one window length after it was taken. Where a newer reading
-of an instance is lower than an older one, the newer SHALL govern.
+Until its reset passes, a reading is unreset (or unexpired), and while it is also its instance's
+newest reading its fullness SHALL bound its window from below, and SHALL NOT describe a later
+instance of the window, an instance being one stretch between resets. A reading whose reset never
+resolved is unreset until one window length after it was taken. A newer reading of the same instance
+SHALL replace an older one even where lower, save an unreset reading at 100%, which holds until its
+reset.
 
 #### Scenario: An old reading still bounds the present
 
@@ -94,6 +95,16 @@ of an instance is lower than an older one, the newer SHALL govern.
 - **WHEN** the reset a reading reported has passed
 - **THEN** the reading no longer bears on that window's fullness
 - **AND** it remains in the log
+
+#### Scenario: A newer, lower reading governs
+
+- **WHEN** a seat's week reading is 60% at 09:00 and 40% at 11:00, in one instance of the week
+- **THEN** the window is treated as at least 40% full
+
+#### Scenario: A refusal holds over a newer, lower reading
+
+- **WHEN** a seat has an unreset refusal of its week, and a newer reading of that instance is 40%
+- **THEN** the week is still treated as at 100% until the refusal's reset
 
 ### Requirement: A seat spending extra usage has no headroom
 
@@ -244,6 +255,11 @@ cost.
 - **THEN** its reported cost is recorded against the seat it read, as a seat probe
 - **AND** spend attribution, capacity and reporting count it
 
+#### Scenario: A probe's spend row counts toward no condition
+
+- **WHEN** a seat probe is recorded on a spend row
+- **THEN** that row neither opens nor clears any condition on the seat, nor counts toward one
+
 ### Requirement: A seat is probed at most once an hour, and not for five hours after a probe got no event
 
 A seat SHALL NOT be probed more than once an hour, counted from the most recent probe of it any
@@ -330,27 +346,29 @@ is made the seat stays held, recorded as holding back at the line.
 #### Scenario: A seat probed just before its crossing waits for the hour
 
 - **WHEN** a seat was probed less than an hour before its line crossed its reading
-- **THEN** it stays held, as holding back at the line, until the hourly limit allows the next probe
+- **THEN** it stays held, as holding back at the line, until the hourly limit, and the five-hour
+  back-off where that applies, allows the next probe
 
 ### Requirement: A seat probe checks the seat's credential too
 
-A probe answered with an authentication failure (HTTP 401) SHALL be recorded as an execution-log
-row carrying the key `seat:<id>:credential` and a full hash of the credential used, which opens the
-seat's credential condition; one that succeeds SHALL be recorded as a check of that key that found
-the condition not holding, which clears it. A seat whose condition is open SHALL be probed as that
-check at most hourly, even with an unexpired reading of every window, unless another exclusion
-applies.
+A probe answered with an authentication failure (401) SHALL be recorded as an execution-log row with
+the key `seat:<id>:credential` and a full hash of the credential, and one that succeeds as a check
+of that key that found it not holding; `stuck-conditions`' *A seat's refused credential is a
+condition on that seat* says how each counts. A seat whose condition is open SHALL be probed hourly
+at most to check its credential, whatever its readings, unless another exclusion holds it.
 
 #### Scenario: A probe refused its credential opens the condition
 
 - **WHEN** a seat probe is answered with an authentication failure
-- **THEN** the seat's credential condition `seat:<id>:credential` is opened
+- **THEN** it is recorded as a row carrying `seat:<id>:credential`, which `stuck-conditions`
+  counts
 - **AND** no observation is recorded
 
 #### Scenario: A probe that succeeds clears the condition
 
 - **WHEN** a seat's credential condition is open and a probe of it succeeds
-- **THEN** the condition is cleared
+- **THEN** it is recorded as a check of `seat:<id>:credential` that found the condition not
+  holding, which `stuck-conditions` counts as clearing it
 - **AND** any reading the probe carried is recorded as usual
 
 #### Scenario: A stopped credential is checked hourly
@@ -362,30 +380,30 @@ applies.
 ### Requirement: A seat probe runs where only the Igor can write
 
 For each seat probe the Igor SHALL create two new, empty directories of mode `0700`, the probe's
-working directory and its `HOME`, in `<state dir>/probes/<role>-<rank>`, with `<state dir>` as
-`graceful-handoff` defines it and `<rank>` as `concurrent-instances` numbers it. The Igor SHALL
-remove both once the probe exits, and `igor serve` SHALL remove at start any left in its own probe
-directory, and none in another's.
+working directory and its `HOME`, in `<state dir>/probes/<role>`, with `<state dir>` the
+Igor's state directory, which #216 defines in `graceful-handoff`, each named with the id of the process making the probe. The Igor
+SHALL remove both once the probe exits, and `igor serve` SHALL remove at start any left in its
+role's probe directory by a process no longer running, and no other.
 
 #### Scenario: A probe runs under the Igor's state directory
 
 - **WHEN** `igor serve` probes a seat
 - **THEN** the probe's working directory and its `HOME` are new directories of mode `0700` in
-  `<state dir>/probes/<role>-<rank>`, which under the shipped unit is in `/var/lib/igor/probes`
+  `<state dir>/probes/<role>`, which under the shipped unit is in `/var/lib/igor/probes`
 - **AND** neither is under the system's temporary directory
 
 #### Scenario: A probe's directories do not outlive it
 
 - **WHEN** a seat probe exits, or `igor serve` starts after a crash left a probe's directories
   behind
-- **THEN** no directory of that probe remains in the probe directory of the process that made
-  it
+- **THEN** no directory of that probe remains in the probe directory of the role whose process
+  made it
 
 #### Scenario: A start leaves another process's probe alone
 
-- **WHEN** `igor serve` for rank 1 of a role starts while rank 2 of the same role is making a
-  seat probe
-- **THEN** rank 2's probe directories remain until rank 2's probe exits
+- **WHEN** `igor serve` starts while another `igor serve` on the same host, of this role or
+  another, is making a seat probe
+- **THEN** the other process's probe directories remain until its probe exits
 
 #### Scenario: The shipped unit and image provide the state directory
 
@@ -397,9 +415,15 @@ directory, and none in another's.
 
 Immediately before each seat probe the Igor SHALL check every directory from the probe's working
 directory up to the root: owned by root or the Igor's user, with neither the group nor the other
-write bit set, and holding no `.claude` directory or `CLAUDE.md`. Where one fails, or the two
+write bit set, and holding no `.claude`, `CLAUDE.md`, `CLAUDE.local.md` or `.mcp.json`. Where one fails, or the two
 directories cannot be created, the probe SHALL NOT be spawned, and SHALL be recorded as one that
 errored: a spend row with no cost and no event, and no observation or check row.
+
+#### Scenario: A settings file above the probe stops it
+
+- **WHEN** a directory above the probe's working directory holds a `.claude`, `CLAUDE.md`,
+  `CLAUDE.local.md` or `.mcp.json`
+- **THEN** no probe is spawned, and it is recorded as one that errored
 
 #### Scenario: A directory others could write stops the probe
 
@@ -415,13 +439,18 @@ errored: a spend row with no cost and no event, and no observation or check row.
 - **WHEN** the probe made at a crossing is refused by the directory check
 - **THEN** the gate decides on the reading it already had
 
+#### Scenario: Directories that cannot be made stop the probe
+
+- **WHEN** a seat probe's two directories cannot be created
+- **THEN** no probe is spawned, and it is recorded as one that errored, with no cost and no event
+
 ### Requirement: A role has a seat it can spend when the gate would choose one now
 
 A role SHALL have *a seat it can spend* exactly when the budget gate, deciding for that role now,
 would choose a seat: some seat serving the role is admitted by every rule the gate applies, so it
 is below the role's line in every window, and not refused, not spending extra usage, and not passed
 over for want of a reading. A role whose every seat is at or past its line, or passed over for any
-other reason, has none. Other changes SHALL cite this rather than restate the gate.
+other reason, has none.
 
 #### Scenario: Seats at their lines leave none to spend
 
@@ -593,13 +622,14 @@ reading) ÷ r × window length`, when it would admit work again if nothing more 
 
 ### Requirement: A handoff for a window the line shut states its crossing, marked approximate
 
-Where a window is shut because its reading is at or above the seat's reserve line, and the reading
+Where a window is shut because its reading is at or above the reserve line the gate checks, and the reading
 is below 100%, the hour a handoff states for that window SHALL be the instant the line rises past
 the reading, not the window's reset, and it SHALL be marked approximate.
 
 #### Scenario: A reserve line's crossing is stated, and hedged
 
-- **WHEN** a window is shut because its reading, below 100%, is at or above the seat's reserve line
+- **WHEN** a window is shut because its reading, below 100%, is at or above the reserve line the
+  gate checks
 - **THEN** the hour stated for it is the instant the line rises past that reading, not its reset
 - **AND** it is marked approximate
 
@@ -610,19 +640,18 @@ the reading, not the window's reset, and it SHALL be marked approximate.
 
 ### Requirement: A seat's fullness is read from the seat, not supplied by a person
 
-How full a seat is SHALL be established from the seat itself: by the live `/usage` read where its
-credential yields windows to it, which a `setup-token` one does not, and otherwise from its
-recorded observations. The system MUST NOT require a person to submit a usage figure, and neither a
+How full a seat is SHALL be established from the seat itself: from its recorded observations,
+and from a live `/usage` read wherever one is made and its credential yields windows to it, which
+a `setup-token` one does not. The system MUST NOT require a person to submit a usage figure, and neither a
 usage figure nor a capacity SHALL be configured. A seat whose named token is not available SHALL be
 reported unreadable, and no other credential SHALL be used in its place.
 
 #### Scenario: Capacity established without a person
 
 - **WHEN** an Igor needs to know whether it may spend
-- **THEN** the seat's usage comes from the live `/usage` read where its credential yields windows
-  to it
-- **AND** otherwise from recorded observations of that seat, including readings taken with its own
-  credential in a run's or a probe's stream
+- **THEN** the seat's usage comes from recorded observations of that seat, including readings taken
+  with its own credential in a run's or a probe's stream
+- **AND** from a live `/usage` read wherever one is made and its credential yields windows to it
 - **AND** no human supplies how full the window is, in either case
 
 #### Scenario: A seat is read through its own credential
@@ -717,8 +746,8 @@ whatever seats the role draws on, a seat no person uses included.
 ### Requirement: The line is checked against the newest unreset reading, a refusal included
 
 The reading the line is checked against SHALL be the newest unreset reading of the window, all
-models, whatever its source: a live `/usage` read at the gate, a `stream` reading, a `usage` row,
-or a refusal. A refusal counts as an observation at 100% of the window it names until its reset,
+models, whatever its source, such as a `stream` reading, a `usage` row, a refusal, or a live
+`/usage` read wherever one is made. A refusal counts as an observation at 100% of the window it names until its reset,
 from a refused worker run's envelope or a refused triage call, and needs no `rate_limit_event`. A
 reading whose reset cannot be resolved SHALL take `remaining` as 1, so its line is `1 − r`.
 
@@ -767,12 +796,52 @@ capacity, and says the record opens and shuts nothing.
 
 ## MODIFIED Requirements
 
+### Requirement: A seat shut in both windows returns on the later of the two
+
+Where a seat is shut in both its session and its weekly window, and both returns can be placed on
+a clock, the hour stated for that seat SHALL be the later of the two, whichever window it belongs
+to and whether it is a reset or a line's crossing. This governs which of a seat's own hours is
+stated, not how seats are ordered: a role is still back when its first seat is.
+
+#### Scenario: The later hour is stated for a seat that could be read
+
+- **WHEN** a seat's own reading reports both windows exhausted, the week returning at 5pm and
+  the session at 8pm
+- **THEN** the hour stated for that seat is 8pm
+- **AND** the week's hour is not chosen for being the week's
+
+#### Scenario: The later hour is stated for a seat that could not be read
+
+- **WHEN** a seat that no live read reaches at the gate is shut in both windows by readings and
+  refusals recorded earlier
+- **THEN** the hour stated for that seat is the later of the two returns
+
+#### Scenario: Both paths answer alike
+
+- **WHEN** two seats are shut in both windows with the same two return times, one by refusals and
+  one by its line, two of the paths by which a window shuts
+- **THEN** the same hour is stated for each
+
+#### Scenario: A return that cannot be placed is not ordered against
+
+- **WHEN** one of a seat's two shut windows names no return, or names one that cannot be
+  resolved to a comparable instant
+- **THEN** the hour stated for that seat is not arrived at by comparing the two
+- **AND** which hour is stated is decided by the rules already governing an unplaceable return,
+  which this requirement does not disturb
+
+#### Scenario: The role is still back on its earliest seat
+
+- **WHEN** several seats that serve the role are each shut in both windows
+- **THEN** each seat answers with the later of its own two returns
+- **AND** the role's stated return is the earliest of those
+
 ### Requirement: Seats are named configuration entities with an owner and a reserve
 
 Organization configuration SHALL declare seats, each with an identifier, an `owner`, the person who
 can read that seat's usage, and a `reserve`, a fraction from 0 to 1, both included, of the
-remaining window held back from Igors, as *The reserve is untouchable* defines it; a seat nobody
-works on has reserve 0 by default. A role SHALL reference the seat it spends from, and MAY hold
+remaining window held back from Igors, as *The reserve is untouchable* defines it; a seat that declares
+no reserve has reserve 0. A role SHALL reference the seat it spends from, and MAY hold
 back more of it than the seat does, never less (*A role may hold back more of a seat than the seat
 does*).
 
@@ -860,7 +929,7 @@ A seat SHALL be drawn on only where it is known to be below its line in every wi
 is untouchable*). Where it has no unreset reading of a window and the reserve its line uses is not
 0, it SHALL be passed over for that role, saying so; where that reserve is 0 it MAY be drawn on,
 stopped by the provider's refusal. No capacity figure SHALL admit a seat or keep one out. Apart
-from the probe and the live `/usage` read, no call is made on a seat passed over this way.
+from the probe and any read of the seat's windows, no call is made on a seat passed over this way.
 
 #### Scenario: A reserved seat is not spent from on a guess
 
@@ -923,7 +992,8 @@ line:
     remaining = (resetsAt − now) ÷ window length, clamped to [0, 1]
 
 with `resetsAt` that reading's reset and the length that *A window's length is measured, and so
-is whether it starts at first use* gives.
+is whether it starts at first use* gives. Reaching the line SHALL NOT stop an item already running
+on the seat.
 
 #### Scenario: Igor stops at the reserve
 
@@ -966,8 +1036,8 @@ is whether it starts at first use* gives.
 
 - **WHEN** an Igor shares a seat with the person who owns it
 - **THEN** the reserved share of what remains of the window is left for that person, whatever
-  Igor does, minus an overshoot for each Igor process drawing on the seat: the item it admits and
-  what the previous run spent after its last event arrived
+  Igor does, minus an overshoot for each worker drawing on the seat: the item the gate admits for
+  it and what its previous run spent after its last event arrived
 
 #### Scenario: The floor holds without observing the owner
 

@@ -10,16 +10,16 @@
       still worth recording. The seat probe (section 6) is not built as written, and what starts a
       fresh reserved seat goes back to Adam as `design.md` *A seat probe* describes, since under the
       line such a seat is not drawn on without a reading. Measured 2026-10-11 on
-      `claude-adam-personal` rather than a fresh seat, since it was below every threshold (42% of
+      `claude-adam-personal` rather than a fresh seat, since it was below every threshold (43% of
       the five-hour window, 11% of the week, `allowed`): an event arrives, with `utilization` and
       `resetsAt` per window in `unifiedWindows` and none at the top level. The probe is built as
       written. Captures in `captures/`
-- [x] 1.1a In the same capture, and on the next few ordinary worker runs, record **when** in a run
+- [x] 1.1a In the same capture, record **when** in a run
       each `rate_limit_event` arrives relative to the run's first and last API call. This bounds how
       far past its line one run can carry a seat (`design.md`, *How far past the line one Igor can
       go*); record the answer there. Measured 2026-10-11 on two captured runs only, one of one API
       call and one of three: one event per run, right after the first API call's response, none
-      after later calls; so the bound is about two runs per process (`design.md`). Ordinary worker
+      after later calls; so the bound is about two runs per worker (`design.md`). Ordinary worker
       runs were not captured; 1.1b covers them. The captures keep only their events and five
       `init` fields (decision 40), so this task, not the captures, records when each event
       arrived: right after the first API call's response, in both runs. Both captured events read
@@ -35,9 +35,9 @@
       is tested against what the provider sent rather than what was guessed
 - [ ] 1.3 Check that fullness does not fall within an instance: compare the successive readings of
       one window instance across several runs on one seat, and record in `design.md` whether any
-      later reading is lower. If one is, treating an old reading as a lower bound (*A reading
-      bounds its window from below until the window resets*) goes back to Adam; the gate already
-      reads the newest reading either way
+      later reading is lower. If one is, report it to Adam, since the gate then holds back less
+      than the older reading showed: *A reading bounds its window from below until the window
+      resets* follows the newer reading, save a refusal's 100%
 - [ ] 1.4 Capture an event with `isUsingOverage: true` and record in `design.md` what it means
       beside `overageStatus` and `overageDisabledReason`. Task 4.2 is not built until this
       confirms the flag means extra usage is being spent; if it means something else, 4.2 reads
@@ -51,8 +51,7 @@
       which window a per-model refusal names
 - [ ] 1.6 Once 1.3 confirms that no later reading of an instance is lower, close issue #69, which
       asks how old a reading may be before the line distrusts it, with this change's reasoning: a reading bounds its window from below until its reset, so it needs no
-      age limit (*A reading bounds its window from below until the window resets*; Adam,
-      2026-10-17), and remove the *Still open* line naming #69 from `docs/architecture.md` §6.3.
+      age limit (*A reading bounds its window from below until the window resets*), and remove the *Still open* line naming #69 from `docs/architecture.md` §6.3.4.
       If 1.3 finds a lower reading, leave #69 open
 
 
@@ -200,9 +199,9 @@
 - [ ] 6.3 Record its event through 3.2's path as `stream` rows, timed at arrival. Record every probe,
       an error exit included, on a spend row that `loadSpend` returns: against the seat, marked
       as a seat probe in place of a role, with its cost (0 where none was reported) and whether
-      an event arrived. 6.1's hourly limit and five-hour back-off read these rows. Where #101's
-      code has merged, make its condition reader skip a row marked as a seat probe, and test
-      that such a row neither opens nor clears any condition. Where #101 has merged, its `check` row for the credential (6.7) is a
+      an event arrived. 6.1's hourly limit and five-hour back-off read these rows. Make #101's
+      condition reader skip a row marked as a seat probe, and test
+      that such a row neither opens nor clears any condition. Its `check` row for the credential (6.7) is a
       second row and carries no cost. Record no observation when no event arrived
 - [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat whose post-reset probe
       was excluded is probed once no exclusion applies; the probe runs with an empty `HOME`, the
@@ -218,19 +217,19 @@
 - [ ] 6.5 `igor budget` names a figure that came from a probe, or says a seat was probed and
       returned nothing, so an operator can tell a probed seat from an unread one. **May be
       reworded**
-- [ ] 6.6 The two limits are settled (Adam, 2026-09-27): at most one probe per seat per hour, and
+- [ ] 6.6 The two limits are settled: at most one probe per seat per hour, and
       five hours before re-probing after a probe that got no event. Build them as constants, not
       configuration
 - [ ] 6.7 A probe answered with an authentication failure (401) appends its row to
       `executions.ndjson` (a row of its own kind, #101's task 2.3) carrying `seat:<id>:credential`
-      and the credential's full hash, which opens the seat's credential condition as #101 rebuilds
-      it. A probe that succeeds appends a check row of `seat:<id>:credential` that found the
+      and the credential's full hash, which counts as one occurrence of the seat's credential
+      condition, opening it at #101's recurrence threshold. A probe that succeeds appends a check row of `seat:<id>:credential` that found the
       condition not holding (`met: false`), which clears it. A 401 is not "no
-      event": the five-hour back-off does not follow it. A seat whose stop is open is selected by
+      event": the five-hour back-off does not follow it. A seat whose credential condition is open is selected by
       6.1 as a clearing check whatever its readings, still under the hourly limit and the refusal,
-      overage and line exclusions. Tests: a 401 opens the stop and records nothing; a success clears
+      overage and line exclusions. Tests: a 401 records one occurrence and no reading, and enough of them open the condition; a success clears
       it and records its reading; a stopped seat is not re-probed within the hour
-- [ ] 6.8 **A seat is probed at its crossing before it is drawn on again** (Adam, 2026-10-10).
+- [ ] 6.8 **A seat is probed at its crossing before it is drawn on again**.
       Where the gate (7.2, 7.3) finds that the line has risen past a seat's most recent unreset
       reading, and that reading was at or past the line when taken, it starts no work on the seat
       and selects it for a probe (6.1); the next gate call decides on the probe's reading. A probe
@@ -239,25 +238,27 @@
       has read is probed on the Igor server with its own token*, and a seat probed within the hour
       before its crossing staying held until the hour has passed
 - [ ] 6.9 **The probe's directories** (*A seat probe runs where only the Igor can write*). For
-      each probe, make two new directories of mode `0700` with `mkdtemp` in
-      `<state dir>/probes/<role>-<rank>`, the state directory as #216 (`lore-search`) defines
-      it and the process's own directory (proposal, decision 43). Create `<state dir>/probes` and
-      `<state dir>/probes/<role>-<rank>` with mode `0700` where either is missing. One new
+      each probe, make two new directories of mode `0700` with `mkdtemp`, each name prefixed with
+      the process's id, in
+      `<state dir>/probes/<role>`, the state directory as #216 (`lore-search`) defines
+      it and the role's own directory (proposal, decision 43). Create `<state dir>/probes` and
+      `<state dir>/probes/<role>` with mode `0700` where either is missing. One new
       directory is the probe's working directory, the other its `HOME`. Remove
-      both once the probe exits, and remove whatever is left in the process's own directory,
-      and nothing in another's, when `igor serve` starts. Immediately before
+      both once the probe exits, and when `igor serve` starts, remove whatever is left in the
+      role's own directory by a process no longer running on this host, and nothing else. Immediately before
       spawning, resolve the working directory's real path and walk from it to `/`. Using
       `lstat`, refuse the probe where any directory is owned by neither root nor the Igor's
       user, has the group or other write bit set, or holds an entry named `.claude` or
-      `CLAUDE.md`, and refuse it where the directories cannot be made. A refused probe spawns
+      `CLAUDE.md`, `CLAUDE.local.md` or `.mcp.json`, and refuse it where the directories cannot
+      be made. A refused probe spawns
       nothing, writes a spend row with cost 0 and no event (6.3), writes no observation and no
       check row, and logs the directory and the condition it failed. 6.8 treats a refused
       crossing probe as one that recorded nothing.
-      Where #179's (`concurrent-instances`) task 1.8 has not landed, add `StateDirectory=igor`
-      to `deploy/igor.service`. Where the container image exists (#192, `deploy-image`), its
-      `Dockerfile` creates `/var/lib/igor` owned by the user Igor runs as, mode `0755`.
-      Tests: both directories are in `<state dir>/probes/<role>-<rank>`, a start leaves another
-      process's probe directory alone, and neither is under the system's
+      Add `StateDirectory=igor` to `deploy/igor.service`. Where the container image exists (#192, `deploy-image`), its
+      `Dockerfile` creates `/var/lib/igor` owned by the user Igor runs as, mode `0755`, and
+      `deploy/docker-compose.yml` sets `STATE_DIRECTORY=/var/lib/igor`, as #216 also does.
+      Tests: both directories are in `<state dir>/probes/<role>`, a start leaves the probe
+      directories of a live process alone, of its own role or another, and neither is under the system's
       temporary directory; both are gone after the probe exits, and a start removes ones a crash
       left; an ancestor that is group-writable, one that is world-writable with the sticky bit as
       `/tmp` is, one owned by another user, and one holding a `CLAUDE.md` each refuse the probe;
@@ -291,7 +292,7 @@
 - [ ] 7.5 Verdicts and states. `SeatVerdict` (`src/budget.ts`) replaces `no-figure` with a
       verdict for a seat with no unreset reading (e.g. `unread`) and adds one for a seat at its
       line (e.g. `holding`); its comment drops "`no-figure` to `igor observe` or a declared
-      capacity". Where #101 has merged, `SeatVerdict` also holds its `rejected` verdict, which
+      capacity". `SeatVerdict` also holds its `rejected` verdict, which
       stays. `NO_CAPACITY_FIGURE` and `hasBoundHeadroom` go. `poolVerdict` orders the new
       verdicts, `rejected` included. `derivedReset` states the instant a seat holding back passes
       its line (section 13), and keeps "not known" for an unread one. The handoff text in
@@ -322,7 +323,7 @@
       chosen; one at or past it is passed over; one with no unreset reading is passed over at
       `r` > 0 and chosen at `r` = 0; the line rises with time on unchanged readings; both windows
       must pass; a capacity figure changes no verdict
-- [ ] 7.10 `budget_share` is measured against the reading on every path (Adam, 2026-09-28). On
+- [ ] 7.10 `budget_share` is measured against the reading on every path. On
       the derived path in `chooseSeat` replace
       `(capacity.spentUsd / capacity.capacityUsd) * 100` with the window's newest unreset reading
       (4.4), passed to `roleSharePercent` exactly as the live path does. A window with
@@ -330,8 +331,8 @@
       seat. Afterwards no gate reads `capacityUsd`. Update 'budget_share is a ceiling, not a
       reservation' (`test/budget.test.ts`) and add a test that a share is reached on a seat
       with a reading and no capacity figure
-- [ ] 7.11 **A handoff states the crossing for a window the line shut** (moved from #74,
-      `reset-by-comparison`, Adam, 2026-10-10). Where `budgetGate`'s `live` candidate builder, and
+- [ ] 7.11 **A handoff states the crossing for a window the line shut** (from #74,
+      `reset-by-comparison`). Where `budgetGate`'s `live` candidate builder, and
       `derivedReset` on the derived path, find a window shut below 100%, the hour is the line's
       crossing, `resetsAt − (1 − reading) ÷ r × window length`, with `resetApproximate` set. A
       window at 100% still states its reset. Where both windows are shut, the later of the two
@@ -383,8 +384,10 @@
       assert the old text
 - [ ] 9.4 Leave `Observation.source`'s `'usage'` member in place, and test that a `usage` row is
       still read while nothing writes one
-- [ ] 9.5 Verify that `README.md`, `docs/deployment.md` and `docs/seats.md` still name no
-      `igor observe` command and no `capacity_estimate`
+- [ ] 9.5 Remove the two passages of `docs/deployment.md` that send an operator to `igor
+      observe` (under its seat rows and its token step), and verify that `README.md`,
+      `docs/deployment.md` and `docs/seats.md` then name no `igor observe` command and no
+      `capacity_estimate`
 
 ## 10. Docs
 
@@ -412,7 +415,7 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 
 - [ ] 12.1 `src/role.ts`: an optional `reserve`, a number from 0 to 1 inclusive, beside
       `budget_share` in the role's fields, its key list and its parser, refused outside that
-      range. Inheritance raises, never lowers (Adam, 2026-09-28; role-config's *A role's reserve
+      range. Inheritance raises, never lowers (role-config's *A role's reserve
       is raised by inheritance and never lowered*): resolve the effective reserve as the largest
       along the role's parents and `roles/org.yaml` (where `budget_share` takes the smallest), a
       role declaring none inheriting its parent's. A child declaring a reserve below its parent's
@@ -455,7 +458,7 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 
 ## 14. Removing `capacity_estimate`
 
-- [ ] 14.1 Remove the key (Adam, 2026-09-28). In `src/budget.ts`: `Seat.capacityEstimate` and its
+- [ ] 14.1 Remove the key. In `src/budget.ts`: `Seat.capacityEstimate` and its
       comment, `DeclaredEstimate`, `parseDeclaredEstimate`, its call and field in
       `parseOrgBudget`, and the declared-capacity wording in `describeWindow` ("or declare a
       capacity_estimate"). In
@@ -465,7 +468,7 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
       and the rolling-window comment around `:560-568`). The `capacity_estimate` example in
       `src/keys.ts`'s doc comment
 - [ ] 14.2 Take `capacity_estimate` out of `SEAT_KEYS` (`src/budget.ts`). Add no message of
-      its own: the generic unknown-key refusal is all an old config gets (Adam, 2026-10-11)
+      its own: the generic unknown-key refusal is all an old config gets
 - [ ] 14.3 Tests: remove or rewrite the tests that
       declare it: every test in `test/budget.test.ts` that sets `capacityEstimate` or
       `capacity_estimate`, and
@@ -477,14 +480,13 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 PR #101 (`condition-backoff`) is merged, and its requirements are in force as the capability
 `stuck-conditions`, in `openspec/specs/stuck-conditions/spec.md`. Each task below can be done now:
 
-- [ ] 15.1 Move the credential rules of *A probe checks the credential too*, and task 6.7 (a probe's
-      401 row), out of seat-budget into a stuck-conditions delta written against #101's text (Adam,
-      2026-10-17). In it, a probe's 401 counts as one occurrence of `seat:<id>:credential`, as a
+- [x] 15.1 Move the credential rules of *A probe checks the credential too*, and task 6.7 (a probe's
+      401 row), into a stuck-conditions delta written against #101's text: done, in
+      `specs/stuck-conditions/spec.md`. In it, a probe's 401 counts as one occurrence of `seat:<id>:credential`, as a
       run's does, so one probe 401 no longer opens the condition alone: it opens once its occurrences
       reach #101's recurrence threshold. A probe that succeeds clears the condition; how else
       #101 clears it is unchanged. That clearing probe keeps this change's limit of once an hour,
-      and does not wait for #101's cooldown, which grows from 15 minutes to 6 hours (Adam,
-      2026-10-17). The delta modifies #101's *A seat's refused credential is a condition on that
+      and does not wait for #101's cooldown, which grows from 15 minutes to 6 hours. The delta modifies #101's *A seat's refused credential is a condition on that
       seat*. #171 (`seat-files`) modifies the same requirement and archives after this change, in
       the same commit, so #171's block would replace this delta's. #171's block must therefore
       carry this delta's rules too: when writing this delta, tell #171. #171 also carries a
@@ -493,36 +495,40 @@ PR #101 (`condition-backoff`) is merged, and its requirements are in force as th
       requirement has to be matched in #171's block.
       When writing that delta, also update the sentence in `docs/architecture.md` that says one
       probe 401 opens `seat:<id>:credential`
-- [ ] 15.2 `archive/2026-10-24-condition-backoff/design.md` (from #101),
-      `concurrent-instances/design.md` and `archive/2026-10-10-reset-by-comparison/design.md` link
-      to `docs/architecture.md` §6.3.4 by the anchor `#634-…specified-on-143-not-built`. This
-      change renames that heading to "— **built**", so all three links are broken on this branch.
-      Update them to the anchor the renamed heading generates, in gate two (the implementation
+- [ ] 15.2 `archive/2026-10-24-condition-backoff/design.md` (from #101) and
+      `archive/2026-10-10-reset-by-comparison/design.md` link to `docs/architecture.md` §6.3.4 by
+      the anchor `#634-…specified-on-143-not-built`. This change renames that heading to
+      "— **built**", so both links are broken on this branch. #82's `stopped-scope-visible` and
+      #75's `triage-refusal-calibrates` designs link to it too; tell each. Update the two to the anchor the renamed heading generates, in gate two (the implementation
       pushed onto this branch)
-- [ ] 15.3 The in-force `stuck-conditions` spec, and #101's task 3.3, say "from pacing". Pacing is
-      withdrawn here; the state is "holding back at the line". Change that wording in the spec
+- [ ] 15.3 The in-force `stuck-conditions` requirement *A condition that recurs stops the affected
+      scope from taking new work* says "from pacing" in a scenario, and pacing is withdrawn here; the
+      state is "holding back at the line". This change has no block on that requirement, so the
+      word changes in #171's `MODIFIED` copy of it, which archives with this change. Before
+      archiving, check that the copy says "from holding back at the line"
 
 ## 16. Archiving
 
-- [ ] 16.1 Archive this change and `seat-files` (#171) together, in one commit (Adam, 2026-10-17).
+- [ ] 16.1 Archive this change and `seat-files` (#171) together, in one commit.
       Archived alone, this change would leave the in-force pool requirement naming
       `capacity_estimate`, which it removes; only `seat-files` removes that requirement. Run the
       `openspec archive` steps in the order issue #204 holds, which runs this change's before
       `seat-files`'; every change #204 places between the two archives in that same commit too.
-      This change goes first because `seat-files`' deltas are written against this change's text. Do 15.1
-      first: until it is done, one probe 401 here opens a seat condition that #101 opens only at
-      its threshold. Before archiving, check that #171's `MODIFIED` blocks on *A seat nothing has
-      read is probed on the Igor server with its own token* and *A role may hold back more of a
-      seat than the seat does* carry this change's current text of both, since #171's blocks
-      replace them
-- [ ] 16.2 If #196 (spec-trace) has merged by the time this change archives, its CI fails each new
-      scenario with no tagged test. Tag a test for each scenario this change adds
+      This change goes first because `seat-files`' deltas are written against this change's text.
+      Before archiving, check that each of #171's `MODIFIED` blocks on a requirement this
+      change adds or modifies carries this change's current text, since #171's blocks replace
+      them: the four probe requirements decision 18 names, *A role may hold back more of a seat
+      than the seat does*, *Seats are named…*, *`budget_share` is a ceiling…* and
+      `stuck-conditions`' *A seat's refused credential is a condition on that seat*
+- [ ] 16.2 spec-trace is in force on main (`.github/workflows/spec-trace.yml`), and its CI fails
+      each scenario with neither a tagged test nor a line in `openspec/spec-trace-baseline.txt`.
+      Tag a test for each scenario this change adds, and remove the baseline lines for scenarios
+      it removes or renames
 - [ ] 16.3 Before archiving, check that every other change modifying role-config's *A role
       declares its sources, lane, behaviour, permissions, and reviewers* or *Merge semantics
-      differ by field kind* (among open changes, #153 and `lore-from-corrections`)
+      differ by field kind* (among open changes, #153, #140, #216 and, for the second only,
+      `lore-from-corrections`)
       carries `reserve` in its copy, since a later block replaces this change's
-- [ ] 16.4 Before archiving, file as an issue the removal of the live `/usage` read in the first
-      change built after #171's code lands (decision 37), naming the functions it removes, the
-      edits to `runUsage` in #174's and #175's tasks that go with them, and task 6.1's skip of a
-      seat with no token, and tick this task with a
-      pointer to it
+- [ ] 16.4 Before archiving, check that #175's task 1.10, which removes the live `/usage` read
+      (decision 37), also removes task 6.1's skip of a seat with no token; where it does not, file
+      that as an issue, and tick this task with a pointer to it
