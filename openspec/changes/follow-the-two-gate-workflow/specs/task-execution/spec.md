@@ -2,13 +2,13 @@
 
 ### Requirement: The artifact carries every change the worker made, including removals
 
-An artifact SHALL carry every change that execution read out of the working tree — files added,
-modified and removed — whether opened or brought up to date. A removal SHALL NOT be dropped, and
-a change consisting only of removals SHALL be published rather than refused.
+An artifact SHALL carry every change execution read out of the working tree — files added,
+modified and removed. A removal SHALL NOT be dropped, and a change consisting only of removals
+SHALL be published rather than refused.
 
-The one exception is gate one of the two-gate workflow, and any revision confined as gate one
-is, where the artifact SHALL carry only changes under `openspec/changes/**` and SHALL name every
-change it did not carry.
+The one exception is gate one of the two-gate workflow, where the artifact SHALL carry only
+changes under `openspec/changes/**` and SHALL name in its body each change it did not carry.
+Outside gate one the rule applies unchanged; design.md's open questions name a conflict.
 
 #### Scenario: A removal alongside edits
 

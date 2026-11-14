@@ -355,6 +355,16 @@ its recommendation.
     inline comments go to the worker as untrusted data, which the implementation considers.
     Nothing in them can turn the approval into a change request, or widen what gate two may do.
 
+## Open Questions
+
+- **A gate-one revision and the carry rule.** *A change request is answered on the same branch*
+  answers a change request on a gate-one artifact with a revision "confined as gate one is", so
+  it carries only `openspec/changes/**`. `task-execution`'s carry rule, *The artifact carries
+  every change the worker made, including removals*, makes gate one its one exception. If that
+  revision does not count as gate one there, the carry rule requires it to carry a path outside
+  `openspec/changes/**` that the confinement drops. Either the exception names a gate-one
+  revision, or the revision is not confined. Nothing in this change decides which.
+
 ## Interactions with open work
 
 - **#140 `directed-interaction`.** It is not needed for the go signal, which is a review and
