@@ -1,7 +1,14 @@
 # surface-adapter Specification
 
 ## Purpose
-TBD - created by archiving change core-igor-loop. Update Purpose after archive.
+Let an Igor's cycle of finding, claiming and doing work run against any tracker and code host,
+without knowing which product it is talking to. A surface plays one or both of two roles: a
+tracker, where work is found, claimed and reported on, and a code host, where an Igor's artifact
+lands and is linked back to its item. This spec covers what every adapter supplies: candidates in
+one normalized shape, claims and their verification, work already in flight, how a claim is
+expressed, and how an artifact is linked to its item. It also covers the GitHub adapter, on which
+every call an Igor makes acts as that Igor's own GitHub App, so its actions show as its role and
+never as a person.
 ## Requirements
 ### Requirement: A surface plays a tracker role, a code-host role, or both
 

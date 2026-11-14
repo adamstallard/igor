@@ -1,5 +1,6 @@
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, ReleaseHow, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
+import { cureFor, describeCondition, type Condition } from './conditions.js'
 import {
   checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, RECEIPT_MARKER, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
   waitingMarker, waitingNotice,
@@ -110,7 +111,26 @@ export interface ItemRun {
    * item per poll, indefinitely, which is enough volume to trip the rate limit that caused it.
    */
   surfaceFailed?: true
+  /** Set where the claim was refused because the tracker gave no answer; see `ClaimResult`. */
+  unanswered?: true
 }
+
+/**
+ * Whether the discovery watermark may move past the item this run was for.
+ *
+ * The watermark is one timestamp per source, and discovery reconsiders only items updated after
+ * it. It may move past this item unless the run was refused with nothing posted and the tracker
+ * gave no answer (`unanswered`). Any other run either moved the item's `updatedAt`, so the next
+ * cycle sees it anyway, or met a refusal the tracker answered, with a 4xx or by not recording the
+ * claim. Every retry of that would meet the same refusal until the item or a permission changed,
+ * and holding the mark below the item would triage every item updated after it again each cycle.
+ *
+ * A run `stoppedBy` refuses for a condition would pass too, so neither caller hands `runItem` a
+ * gate carrying a condition: `serve` stops on `gate.exhausted()` and `igor run` on
+ * `gate.condition` first, and the items left keep the mark below them as untaken.
+ */
+export const passesMark = (run: Pick<ItemRun, 'outcome' | 'spoke' | 'unanswered'>): boolean =>
+  run.outcome !== 'refused' || run.spoke || run.unanswered !== true
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
 
@@ -127,6 +147,21 @@ export interface RunOptions extends ExecuteOptions {
     resetApproximate?: boolean
     blocked?: SeatVerdict
     passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
+    /** The condition that stops this role, where one does. Nothing is claimed or requested. */
+    condition?: Condition
+  }
+}
+
+/**
+ * Refuses an item outright where a condition stops the role, before any claim or host request.
+ * Checked here as well as by each caller: a claim handed back on a condition posts a handoff
+ * blaming the budget on an item that had nothing to do with it.
+ */
+function stoppedBy(candidate: Candidate, budget: RunOptions['budget']): ItemRun | undefined {
+  if (budget?.condition === undefined) return undefined
+  return {
+    outcome: 'refused', candidate, reason: `stopped: ${describeCondition(budget.condition)}`,
+    costUsd: 0, spoke: false, cures: [],
   }
 }
 
@@ -138,6 +173,8 @@ export async function runItem(
   options: RunOptions = {},
 ): Promise<ItemRun> {
   const { tracker } = deps
+  const stopped = stoppedBy(candidate, options.budget)
+  if (stopped !== undefined) return stopped
 
   const step = options.onStep ?? (() => {})
   step('claiming')
@@ -176,6 +213,7 @@ export async function runItem(
       spoke: claim.spoke ?? false,
       cures: [],
       ...(claim.surfaceFailed === true ? { surfaceFailed: true as const } : {}),
+      ...(claim.unanswered === true ? { unanswered: true as const } : {}),
     }
   }
 
@@ -242,12 +280,19 @@ export async function runItem(
     // **What a retry would cost decides what happens next, not whose fault the throw was**,
     // which nothing here can tell. A retry is *dear* where it would spend the whole worker again
     // to reach the same failure: the worker ran and nothing was published. Then the item is
-    // handed off and waits in the deferral record until someone with write access answers.
-    // Otherwise the item is refused and tried again next cycle. Before the worker ran a retry
-    // is cheap, and once something is published the in-flight rule keeps the item off the claim
-    // path anyway, so deferring it would only stop that artifact being caught up. A run
-    // `execute` reports as refused is never dear: a stop or a loss is handled above, and the
-    // only other refusal is the action space, which carries a cure.
+    // handed off and waits in the deferral record until someone other than the Igor replies to
+    // it or the item is edited.
+    //
+    // Otherwise the item is refused and tried again next cycle. A retry is cheap in two cases:
+    // - Before the worker ran, nothing has been spent.
+    // - Once something is published, the in-flight rule keeps the item off the claim path anyway.
+    //   Deferring it then would only stop a later cycle bringing that pull request up to date with
+    //   its base (a catch-up).
+    //
+    // A run `execute` reported as refused reaches this handler only when something after it threw,
+    // such as the release. It is never dear: a stop or a loss is handled above, and the only other
+    // refusal is the role's action space. That refusal carries a cure key, so the handoff names
+    // the setting to change and the item is not deferred.
     //
     // Decided before the handoff is composed, because the handoff says which way it went.
     const spent = reached.output !== undefined
@@ -293,6 +338,9 @@ function standIn(reached: Reached, role: Role, detail: string): ExecutionResult 
     ...(typeof output?.session_id === 'string' && output.session_id !== '' ? { session: output.session_id } : {}),
     ...(denials.length === 0 ? {} : { denials }),
     ...(published === undefined ? {} : { artifact: published.artifact, caughtUp: published.caughtUp }),
+    // With no worker output, as after a clean merge, the run ran no command, so it is marked
+    // `workerless` exactly as `execute` marks such a run: it observed no condition.
+    ...(output === undefined ? { workerless: true as const } : {}),
     reason: detail,
   }
 }
@@ -539,6 +587,8 @@ export async function catchUpItem(
   identity: string,
   options: RunOptions = {},
 ): Promise<ItemRun> {
+  const stopped = stoppedBy(candidate, options.budget)
+  if (stopped !== undefined) return stopped
   const artifact = candidate.inFlight
   if (artifact === undefined) {
     return {
@@ -748,6 +798,19 @@ export interface CycleReport {
     passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
   }
   /**
+   * The condition that stopped this role before triage, where one did. A fourth reason to be
+   * idle, apart from a held pool, from pacing and from an empty queue: the role is stuck on its
+   * own configuration, and the key says what would cure it.
+   */
+  condition?: Condition
+  /**
+   * Saves the discovery watermark, kept earlier than the `updatedAt` of each `toClaim` item whose
+   * id is passed in `untaken`. Set only where `markAfterWork` asked for it and the cycle was not a
+   * preview. Until it is called the mark is where the cycle found it: a cycle that fails before
+   * calling it drops no item, though it pays again next cycle for the triage calls it made.
+   */
+  settle?: (untaken: readonly string[]) => Promise<void>
+  /**
    * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
    * marks the ones only the clock will bring back, which the watermark has to wait for.
    */
@@ -807,6 +870,17 @@ export interface CycleOptions extends RunOptions {
    */
   identity?: string
   /**
+   * Leave the discovery watermark unsaved and hand back `settle` instead, for a caller that works
+   * the items it is told to claim and may stop before taking them all.
+   */
+  markAfterWork?: boolean
+  /**
+   * The condition that keeps this role from taking any item, asked once before triage. A stopped
+   * role spends no model call and claims nothing. The items it would have asked about are left
+   * untriaged, so they hold the discovery watermark and are read again next cycle.
+   */
+  stopped?: () => Promise<Condition | undefined>
+  /**
    * Show what a cycle would decide and persist none of it — no watermark, no cycle record.
    * A preview that moved the mark would leave every candidate it triaged marked seen, and no
    * later cycle would rediscover them.
@@ -826,6 +900,9 @@ const NO_CREDENTIAL = "the chosen seat's credential could not be read"
 
 /** And where the cycle's own cap on model calls was reached before the candidate was. */
 const OVER_LIMIT = "this cycle's triage limit was reached first"
+
+/** Where a condition stopped the role: the key that stopped it is in the cycle's `condition`. */
+export const UNTRIAGED_CONDITION = 'a condition on this role stopped it before triage'
 
 /**
  * Discovery, triage, and the decision — everything up to but not including a claim.
@@ -1019,7 +1096,20 @@ export async function planCycle(
   for (const candidate of survivors) {
     if (!examined.has(candidate.id)) report.untriaged.push({ candidate, reason: OVER_LIMIT })
   }
-  if (considered.length > 0) {
+  // Before triage rather than per item: a role stuck on its own configuration would meet the
+  // same cure on every item, so it asks the model about none and claims none. The items are left
+  // untriaged, which holds the discovery watermark below them, and the directed ones and the
+  // catch-ups are found again next cycle, so dropping them here loses nothing.
+  const condition = await options.stopped?.().catch((error: unknown) => {
+    report.failures.push(`could not read conditions: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  })
+  if (condition !== undefined) {
+    report.condition = condition
+    for (const candidate of considered) report.untriaged.push({ candidate, reason: UNTRIAGED_CONDITION })
+    report.toClaim = []
+    report.toCatchUp = []
+  } else if (considered.length > 0) {
     // Resolved only now — a cycle with nothing to triage never reads a seat's usage for it.
     // The seat a worker would draw from, spending what it allows and nothing wider. Where it
     // names no seat there is no call: the triage model call is a spend like any other.
@@ -1080,27 +1170,36 @@ export async function planCycle(
   // decided nothing, and a mark or a record saying otherwise costs those items the real cycle
   // that would have worked them.
   if (options.preview !== true) {
-    // A look-back reaches deliberately behind the mark, so it must not carry the mark over what
-    // it finds there. Separately: an item dropped before anything examined it holds the mark
-    // back. A cooldown ends with the clock and an outage with the tracker's recovery, so neither
-    // touches the item to lift it above a mark that passed it. Every other skip was a decision,
-    // and the edit or the reply that reverses one lifts the item by itself.
+    // The watermark is a timestamp per source: discovery reconsiders only items whose `updatedAt`
+    // is after it. Saving it decides which items the next cycle sees again.
+    //
+    // A look-back (`sinceDays`) reads deliberately behind the stored mark, so it saves no mark.
+    //
+    // An item dropped before anything examined it holds the mark below its `updatedAt`. A
+    // cooldown ends with the clock and an outage with the tracker's recovery, and neither edits
+    // the item, so nothing else would bring it above a mark that passed it. Every other skip was
+    // a decision, and the edit or reply that would reverse that decision moves the item's
+    // `updatedAt` by itself.
     //
     // An item the model stage never asked about is the same case one stage later, and a worse
     // one: it was never dropped, so nothing in `skipped` holds it, and a mark let past it drops
-    // it from the pool for good.
+    // it from the pool for good. Triage takes items oldest first and stops at its cap, so these
+    // are the newest items read, and the mark is held below one only where it is newer than every
+    // item this source decided. Where one ties a decided item, as tracker timestamps coarse enough
+    // for one bulk edit to stamp a page of items can, it is passed rather than holding the mark
+    // below the decided item too, which would triage that again every cycle the tie lasted.
     //
-    // A mark held below an untriaged candidate still has to clear everything the cycle decided,
-    // and where the two share a timestamp it can do neither. Tracker timestamps are coarse enough
-    // for one bulk edit to tie a page of items, so the tie is conceded rather than pinning the
-    // mark: the item is passed over as it would have been anyway, where holding it would triage
-    // the same items again every cycle for as long as the tie lasted.
+    // `decided` is per source, because each source's mark moves on its own: an item decided in
+    // another source is nothing this source's mark has to clear.
     //
-    // Which is a question per source, because the marks move independently: a verdict in another
-    // source is nothing this one's mark has to clear, and conceding a tie with it drops an item
-    // this mark could have sat cleanly below.
-    if (options.sinceDays === undefined && results.length > 0) {
-      const held = report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id)
+    // An item the model said to proceed with is decided, but the cycle has not acted on it until
+    // a caller takes it. A caller that may stop before taking every one, because the budget ran
+    // out or a condition opened, settles the mark itself (`markAfterWork`) and names the ones it
+    // never took. Those hold the mark as an unexamined item does: passed by it, an item the cycle
+    // chose to work would never be seen again.
+    const saveMark = async (untaken: readonly string[] = []): Promise<void> => {
+      if (options.sinceDays !== undefined || results.length === 0) return
+      const held = [...report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id), ...untaken]
       const marks = results.flatMap((result) => {
         const here = new Set(result.candidates.map((c) => c.id))
         const decided = report.verdicts.reduce(
@@ -1116,8 +1215,14 @@ export async function planCycle(
         ])
         return heldBelow([result], unexamined)
       })
-      await saveDiscoveryState(deps.destination, advance(stored, marks))
+      // Onto the file as it stands now, not as the cycle read it. It holds every role's sources,
+      // and a cycle settled hours after it read the file would otherwise put back the older marks
+      // of every source other roles saved meanwhile.
+      const current = await loadDiscoveryState(deps.destination)
+      await saveDiscoveryState(deps.destination, advance(current, marks))
     }
+    if (options.markAfterWork === true) report.settle = saveMark
+    else await saveMark()
     // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
     // say afterwards what this cycle decided — so it is reported like any other cycle failure.
     await recordDecisions(deps.destination, role, report).catch((error: unknown) => {
@@ -1517,10 +1622,13 @@ export async function recordDecisions(
 ): Promise<void> {
   // A cycle whose only decision was a catch-up has no fresh items and no failures, and its
   // one decision would otherwise go unwritten — which is the cycle most worth a record.
+  // A stopped cycle is recorded whatever it found: the record is where an operator tells a role
+  // stuck on its configuration from one with nothing to do.
   if (
     report.fresh === 0 &&
     report.failures.length === 0 &&
     report.toCatchUp.length === 0 &&
+    report.condition === undefined &&
     !report.toClaim.some((c) => c.directed === true)
   ) return
   await write(
@@ -1539,6 +1647,18 @@ export async function recordDecisions(
       triaged: report.triaged,
       ...(report.untriaged.length === 0 ? {} : { untriaged: report.untriaged.length }),
       ...(report.heldPool === undefined ? {} : { heldPool: report.heldPool }),
+      ...(report.condition === undefined
+        ? {}
+        : {
+            condition: {
+              key: report.condition.key,
+              state: report.condition.state,
+              count: report.condition.count,
+              since: report.condition.first,
+              ...(report.condition.probeAt === undefined ? {} : { probeAt: report.condition.probeAt }),
+              cure: cureFor(report.condition.key),
+            },
+          }),
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
       ...(report.triageCostUnreported > 0 ? { triageCostUnreported: report.triageCostUnreported } : {}),

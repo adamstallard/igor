@@ -25,9 +25,18 @@ export class GhError extends Error {
   }
 }
 
-/** `gh` reports a failing request as `gh: <message> (HTTP <code>)` on stderr and nowhere else. */
+/**
+ * The HTTP status `gh` reports for a failing request. It is read from stderr only: stdout carries
+ * the response body, which can contain any text, including something that looks like a status.
+ *
+ * `gh` prints one of two forms. Where the response body was JSON carrying a message, it prints
+ * `gh: <message> (HTTP <code>)`, and the parenthesised `(HTTP <code>)` is distinctive enough to
+ * match anywhere. Otherwise, such as for a proxy's HTML page or an empty JSON object, it prints a
+ * bare `gh: HTTP <code>` line, which is matched only as a whole line so that `HTTP` and three
+ * digits inside some other message are not read as a status.
+ */
 function statusFrom(stderr: string): number | undefined {
-  const match = stderr.match(/\(HTTP (\d{3})\)/)
+  const match = stderr.match(/\(HTTP (\d{3})\)/) ?? stderr.match(/^gh: HTTP (\d{3})\s*$/m)
   return match?.[1] === undefined ? undefined : Number(match[1])
 }
 
