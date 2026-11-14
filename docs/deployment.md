@@ -280,10 +280,17 @@ nothing else is what stands in for the isolation there.
 A `claude setup-token` credential lasts **one year**, and the lifetime cannot be configured.
 Nothing warns beforehand.
 
-What you get instead is a clear failure: the seat reports its credential unreadable in
-`igor budget` — distinctly from a seat nobody has observed and from one that has run out — and
-a worker's handoff carries the message the CLI actually gave rather than an exit code. Rotating
-is the same command the colleague ran the first time, and step 2 again.
+What you get instead is a clear failure. The provider refuses each run on the seat, and after
+three refusals of one credential in a row the seat stops on `seat:<id>:credential`: no role
+draws on it, and `igor budget` says so on the seat's own line, distinctly from a credential
+this machine could not read. While it is stopped, one item is let through after a cooldown to
+test whether the provider still refuses that credential, and `igor budget --credentials` prints
+which credential resolves and when that item is due.
+
+To rotate, the seat's owner runs `claude setup-token` again, signed in as that seat, and you
+store the new token as in step 2 of *Before it can run*. You do not wait for the test item: the
+seat is chosen again on the next cycle, because Igor reads the new token, sees a credential the
+provider never refused, and clears the stop.
 
 A calendar reminder eleven months out is cruder than it should be and is currently the only
 way to be told in advance.
@@ -327,6 +334,7 @@ which disappears when the manager cleans up. Point at a stable interpreter.
 
 ```bash
 igor budget                 # what each seat has left, and what state each one is in
+igor budget --credentials   # which credential each seat resolves, and any refusals of it
 igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
 
