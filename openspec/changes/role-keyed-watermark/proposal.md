@@ -11,14 +11,17 @@ below a dependency listed too; this change takes nothing from them directly.
 1. **A watermark records how far one role has considered a source** (#104). It is keyed by the
    role's name and the source, never by a process start and never by a seat (a Claude subscription the role's model calls
    are paid from).
-2. **Modified, not added**: the change modifies *Watermarks reduce reconsideration without
-   governing it*, so the in-force "per-source watermark" wording is replaced rather than
-   narrowed from elsewhere.
+2. **The per-source wording is modified, not narrowed by an added requirement**: the change
+   modifies *Watermarks reduce reconsideration without governing it*, so the in-force
+   "per-source watermark" wording is replaced. The requirement it adds, *A role's watermark is
+   its own*, holds rules the compacted requirement had no room for, and narrows nothing.
 3. **One mark per role and source.** Under #242 (`one-process-per-role`) one serving process
-   serves a role, so no two processes of a role write one mark, and no mark per process is
+   serves a role, so no two serving processes of a role write the same mark, and no mark per process is
    needed; a restarted process continues the role's mark.
-   `igor run` is a dev tool that #242's design, decision 3, says not to point at a served role, so
-   nothing here gives it a rule of its own.
+   `igor run` is a dev tool that #242's design, decision 3, says not to point at a served role.
+   Pointed at one anyway, it would write the role's mark beside the serving process, but the two
+   would already claim the same items with nothing coordinating them, a larger harm that a rule
+   for the mark would not prevent, so nothing here gives it one.
 4. **Every role and source starts cold once when this change is first deployed**: with no mark
    of its own, it considers only items within the look-back window, rather than seeding new
    marks from the old per-source entry.
@@ -108,27 +111,14 @@ rejected is still fresh to another role polling the same source.
 
 It settles three things the implementation must not be left to decide:
 
-- **The upgrade.** Every role and source pair with no mark of its own is a first run, so the
-  in-force *A first run does not face the whole backlog* governs it and the look-back window
-  bounds the cost. Every source cold-starts once. That is acceptable — nobody but the author runs
-  Igor — and it is stated rather than discovered.
-- **What identifies the role.** Its name, which `role-config`'s *A role is a file whose name is
-  its identity* already establishes. Not the seat, and never the run: a restarted process
-  continues its mark. The consequence is that **a renamed role begins again** — one
-  bounded cold start — which is the same consequence editing a query already has today, since the
-  key hashes the query string as written.
-- **Orphaned entries are left in place.** A cycle runs one role (`planCycle` takes a single
-  `role: Role`) and `advance` copies the stored map and overwrites only the keys it has, so a
-  cycle cannot tell another role's live mark from a dead one. A prune would delete the marks of
-  every role that was not running. Deleting a live mark costs candidates; keeping a dead one costs
-  bytes.
+- **The upgrade:** every role and source cold-starts once (decision 4).
+- **What identifies the role:** its name, which `role-config`'s *A role is a file whose name is
+  its identity* already establishes, so a renamed role begins again.
+- **A stored mark that no configured role and source matches is left in place** (decision 5).
 
-**Stated as scope rather than as a key format.** What the requirement promises is that one role's
-mark does not bound another's discovery. A composite key is how that will be built and `tasks.md`
-says so, but a requirement naming the string would be satisfied by a key that contains the role
-yet is read wrongly, such as code that looks up `tracker:repo:hash` with the role dropped when
-the role's own key is missing, so one role's mark still bounds another's, and would forbid a shape — a file per role — that keeps the promise
-and is turned down only because it buys nothing.
+Each one's reason is in `openspec/specs/work-discovery/decisions.md`.
+
+The requirement states the mark's scope rather than its key format (decision 7).
 
 ### Explicitly out of scope
 

@@ -47,12 +47,13 @@ copy #101 (`condition-backoff`) archived, which holds the mark below an item a c
 below the items a cycle never reached because `work-claiming`'s two-in-a-row rules ended it. How this change's
 block carries them is the proposal's decision 6.
 
-`openspec/specs/work-triage/spec.md:357` still says "marks advance per source". That is a
-narrowing rather than a contradiction — there is still a mark per source, and this requirement says
-whose. Two more in-force texts narrow the same way: `work-discovery`'s Purpose, "the per-source
-watermarks", and *A first run does not face the whole backlog*, which speaks of "a source with no
-watermark"; *A role's watermark is its own* supplies the case of a source another role has a mark
-for, and none of the three needs rewording.
+Three in-force texts still speak of a source's mark: `work-triage`'s candidate that holds "its
+source's" mark back (`openspec/specs/work-triage/spec.md:276` and `:304`), `work-discovery`'s
+Purpose ("the per-source watermarks"), and *A first run does not face the whole backlog* ("a
+source with no watermark"). None needs rewording. Each source still has marks, and the modified
+watermark requirement says which role each belongs to; *A role's watermark is its own* adds that
+a role with no mark of its own takes a first run even where another role has a mark for that
+source.
 
 ### The role is its name, and a rename is a cold start
 

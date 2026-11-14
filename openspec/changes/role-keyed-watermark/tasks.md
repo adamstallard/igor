@@ -21,7 +21,10 @@
       and the other edits proposal decision 6 lists, every scenario of #173's copy with the seat
       case added to the slot scenario, and this change's own scenarios
 - [ ] 1.7 Before archive, compare this block with the archived text of #242's and #173's copies,
-      and carry any change either made to its copy after 2026-11-13
+      and carry any change either made to its copy after 2026-11-13, when this block last copied
+      them. Compare `openspec/specs/work-discovery/decisions.md` with the copy #173 merged to
+      `main` the same way, keeping #173's paragraph in the Rationale for *Watermarks reduce
+      reconsideration without governing it* word for word
 - [x] 1.8 *A role's watermark is its own* states what identifies a mark, the first run of a role
       and source with no mark, and that a cycle changes no other role's mark and keeps one no
       configured role and source resolves to
